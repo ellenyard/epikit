@@ -1,30 +1,30 @@
 import { useState } from 'react';
-import { DataImport } from './DataImport';
-import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
-import { DescriptiveStats } from './DescriptiveStats';
-import { EpiCurve } from './EpiCurve';
-import { SpotMap } from './SpotMap';
+import { DataImport } from '../analysis/DataImport';
+import { LineListing } from '../analysis/LineListing';
 import type { Dataset, DataColumn, CaseRecord } from '../../types/analysis';
 
-type AnalysisTab = 'epicurve' | 'spotmap' | 'descriptive' | '2x2';
-
-interface AnalysisProps {
+interface ReviewProps {
   datasets: Dataset[];
   activeDatasetId: string | null;
   setActiveDatasetId: (id: string | null) => void;
   createDataset: (name: string, columns: DataColumn[], records: CaseRecord[], source?: 'import' | 'form') => Dataset;
   deleteDataset: (id: string) => void;
+  addRecord: (datasetId: string, record: Omit<CaseRecord, 'id'>) => CaseRecord;
+  updateRecord: (datasetId: string, recordId: string, updates: Partial<CaseRecord>) => void;
+  deleteRecord: (datasetId: string, recordId: string) => void;
 }
 
-export function Analysis({
+export function Review({
   datasets,
   activeDatasetId,
   setActiveDatasetId,
   createDataset,
   deleteDataset,
-}: AnalysisProps) {
+  addRecord,
+  updateRecord,
+  deleteRecord,
+}: ReviewProps) {
   const [showImport, setShowImport] = useState(false);
-  const [activeTab, setActiveTab] = useState<AnalysisTab>('epicurve');
   const [showSidebar, setShowSidebar] = useState(false);
 
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
@@ -33,13 +33,6 @@ export function Analysis({
     createDataset(name, columns, records, 'import');
     setShowImport(false);
   };
-
-  const tabs: { id: AnalysisTab; label: string; icon: string }[] = [
-    { id: 'epicurve', label: 'Epi Curve', icon: '📈' },
-    { id: 'spotmap', label: 'Spot Map', icon: '📍' },
-    { id: 'descriptive', label: 'Descriptive', icon: '📊' },
-    { id: '2x2', label: '2x2 Table', icon: '⊞' },
-  ];
 
   const handleSelectDataset = (id: string) => {
     setActiveDatasetId(id);
@@ -259,55 +252,19 @@ export function Analysis({
         {/* Main Area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {activeDataset ? (
-            <>
-              {/* Tab Navigation */}
-              <div className="bg-white border-b border-gray-200 px-2 sm:px-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-0.5 sm:gap-1 overflow-x-auto">
-                    {tabs.map(tab => (
-                      <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`px-2 sm:px-4 py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                          activeTab === tab.id
-                            ? 'border-blue-500 text-blue-600'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                        }`}
-                      >
-                        <span className="sm:mr-2">{tab.icon}</span>
-                        <span className="hidden sm:inline">{tab.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="text-sm text-gray-500 hidden md:block">
-                    {activeDataset.name} &bull; {activeDataset.records.length} records
-                  </div>
-                </div>
-              </div>
-
-              {/* Tab Content */}
-              <div className="flex-1 overflow-auto bg-white">
-                {activeTab === 'epicurve' && (
-                  <EpiCurve dataset={activeDataset} />
-                )}
-                {activeTab === 'spotmap' && (
-                  <SpotMap dataset={activeDataset} />
-                )}
-                {activeTab === 'descriptive' && (
-                  <DescriptiveStats dataset={activeDataset} />
-                )}
-                {activeTab === '2x2' && (
-                  <TwoByTwoAnalysis dataset={activeDataset} />
-                )}
-              </div>
-            </>
+            <LineListing
+              dataset={activeDataset}
+              onUpdateRecord={(recordId, updates) => updateRecord(activeDataset.id, recordId, updates)}
+              onDeleteRecord={(recordId) => deleteRecord(activeDataset.id, recordId)}
+              onAddRecord={(record) => addRecord(activeDataset.id, record)}
+            />
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
               <div className="text-center">
                 <svg className="mx-auto h-16 w-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                 </svg>
-                <p className="mt-4 text-lg">Select a dataset or import data</p>
+                <p className="mt-4 text-lg">Select a dataset to review records</p>
                 <button
                   onClick={() => setShowImport(true)}
                   className="mt-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"

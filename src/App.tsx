@@ -5,11 +5,12 @@ import { FormBuilder } from './components/FormBuilder';
 import { FormPreview } from './components/FormPreview';
 import { ExportModal } from './components/ExportModal';
 import { Analysis } from './components/analysis/Analysis';
+import { Review } from './components/review/Review';
 import { Collect } from './components/collect/Collect';
 import { demoFormItems, demoColumns, demoCaseRecords, demoDatasetName } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 
-type Module = 'forms' | 'collect' | 'analysis';
+type Module = 'forms' | 'collect' | 'review' | 'analyze';
 type FormView = 'builder' | 'preview';
 
 // Create demo dataset
@@ -229,14 +230,24 @@ function App() {
                 Collect
               </button>
               <button
-                onClick={() => setActiveModule('analysis')}
+                onClick={() => setActiveModule('review')}
                 className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  activeModule === 'analysis'
+                  activeModule === 'review'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
-                Analysis
+                Review
+              </button>
+              <button
+                onClick={() => setActiveModule('analyze')}
+                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  activeModule === 'analyze'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Analyze
               </button>
             </div>
           </div>
@@ -274,11 +285,11 @@ function App() {
                   setActiveDatasetId(dataset.id);
                 }
               }
-              setActiveModule('analysis');
+              setActiveModule('review');
             }}
           />
-        ) : (
-          <Analysis
+        ) : activeModule === 'review' ? (
+          <Review
             datasets={datasets}
             activeDatasetId={activeDatasetId}
             setActiveDatasetId={setActiveDatasetId}
@@ -287,6 +298,14 @@ function App() {
             addRecord={addRecord}
             updateRecord={updateRecord}
             deleteRecord={deleteRecord}
+          />
+        ) : (
+          <Analysis
+            datasets={datasets}
+            activeDatasetId={activeDatasetId}
+            setActiveDatasetId={setActiveDatasetId}
+            createDataset={createDataset}
+            deleteDataset={deleteDataset}
           />
         )}
       </div>
