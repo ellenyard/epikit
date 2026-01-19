@@ -47,14 +47,14 @@ function App() {
   return (
     <div className="h-screen flex flex-col">
       {/* Top Navigation */}
-      <nav className="bg-slate-800 text-white px-6 py-2">
+      <nav className="bg-slate-800 text-white px-3 sm:px-6 py-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <span className="text-xl font-bold text-blue-400">EpiKit</span>
+          <div className="flex items-center gap-3 sm:gap-6">
+            <span className="text-lg sm:text-xl font-bold text-blue-400">EpiKit</span>
             <div className="flex gap-1">
               <button
                 onClick={() => { setActiveModule('forms'); setFormView('builder'); }}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                   activeModule === 'forms'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -64,7 +64,7 @@ function App() {
               </button>
               <button
                 onClick={() => setActiveModule('analysis')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
                   activeModule === 'analysis'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -74,7 +74,7 @@ function App() {
               </button>
             </div>
           </div>
-          <div className="text-sm text-slate-400">
+          <div className="text-sm text-slate-400 hidden sm:block">
             Epidemiology Toolkit
           </div>
         </div>
