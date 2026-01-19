@@ -1,9 +1,14 @@
 import { useState, useCallback } from 'react';
 import type { Dataset, CaseRecord, DataColumn, FilterCondition, SortConfig } from '../types/analysis';
 
-export function useDataset() {
-  const [datasets, setDatasets] = useState<Dataset[]>([]);
-  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(null);
+interface UseDatasetOptions {
+  initialDatasets?: Dataset[];
+  initialActiveId?: string;
+}
+
+export function useDataset(options?: UseDatasetOptions) {
+  const [datasets, setDatasets] = useState<Dataset[]>(options?.initialDatasets || []);
+  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(options?.initialActiveId || null);
 
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 

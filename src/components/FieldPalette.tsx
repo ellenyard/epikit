@@ -1,16 +1,17 @@
 import { useDraggable } from '@dnd-kit/core';
-import type { FieldType } from '../types/form';
+import type { FieldType, LayoutElementType, FormItemType } from '../types/form';
 
 interface FieldPaletteItemProps {
-  type: FieldType;
+  type: FormItemType;
   label: string;
   icon: string;
+  isLayout?: boolean;
 }
 
-function FieldPaletteItem({ type, label, icon }: FieldPaletteItemProps) {
+function FieldPaletteItem({ type, label, icon, isLayout }: FieldPaletteItemProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `palette-${type}`,
-    data: { type, fromPalette: true },
+    data: { type, fromPalette: true, isLayout },
   });
 
   return (
@@ -38,6 +39,12 @@ const fieldTypes: { type: FieldType; label: string; icon: string }[] = [
   { type: 'gps', label: 'GPS Location', icon: '📍' },
 ];
 
+const layoutElements: { type: LayoutElementType; label: string; icon: string }[] = [
+  { type: 'section', label: 'Section Header', icon: '§' },
+  { type: 'instruction', label: 'Instructions', icon: '¶' },
+  { type: 'divider', label: 'Divider', icon: '—' },
+];
+
 export function FieldPalette() {
   return (
     <div className="w-64 bg-gray-50 border-r border-gray-200 p-4 overflow-y-auto">
@@ -50,9 +57,18 @@ export function FieldPalette() {
         ))}
       </div>
 
+      <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4 mt-6 pt-4 border-t border-gray-200">
+        Layout Elements
+      </h2>
+      <div className="space-y-2">
+        {layoutElements.map((element) => (
+          <FieldPaletteItem key={element.type} {...element} isLayout />
+        ))}
+      </div>
+
       <div className="mt-6 pt-4 border-t border-gray-200">
         <p className="text-xs text-gray-500">
-          Drag fields to the canvas to build your form
+          Drag items to the canvas to build your form
         </p>
       </div>
     </div>

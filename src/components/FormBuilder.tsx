@@ -9,7 +9,7 @@ import {
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { arrayMove } from '@dnd-kit/sortable';
 import { v4 as uuidv4 } from 'uuid';
-import type { FormField, FieldType } from '../types/form';
+import type { FormField, FormItem, FieldType, LayoutElementType, LayoutElement } from '../types/form';
 import { FieldPalette } from './FieldPalette';
 import { FormCanvas } from './FormCanvas';
 import { FieldEditor } from './FieldEditor';
@@ -24,16 +24,23 @@ const defaultFieldLabels: Record<FieldType, string> = {
   gps: 'GPS Coordinates',
 };
 
+const defaultLayoutLabels: Record<LayoutElementType, string> = {
+  section: 'Section Title',
+  instruction: 'Add instructions or explanatory text here.',
+  divider: '',
+};
+
 interface FormBuilderProps {
-  onPreview: (fields: FormField[]) => void;
-  onExport: (fields: FormField[]) => void;
+  onPreview: (items: FormItem[]) => void;
+  onExport: (items: FormItem[]) => void;
+  initialItems?: FormItem[];
 }
 
-export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
-  const [fields, setFields] = useState<FormField[]>([]);
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+export function FormBuilder({ onPreview, onExport, initialItems }: FormBuilderProps) {
+  const [items, setItems] = useState<FormItem[]>(initialItems || []);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [formName, setFormName] = useState('Untitled Form');
+  const [formName, setFormName] = useState(initialItems ? 'Foodborne Outbreak Investigation' : 'Untitled Form');
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -43,13 +50,14 @@ export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
     })
   );
 
-  const selectedField = fields.find((f) => f.id === selectedFieldId);
+  const selectedItem = items.find((f) => f.id === selectedItemId);
 
   const createField = (type: FieldType): FormField => ({
     id: uuidv4(),
     type,
     label: defaultFieldLabels[type],
     required: false,
+    width: 'full',
     options:
       type === 'dropdown' || type === 'multiselect'
         ? [
@@ -57,6 +65,13 @@ export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
             { label: 'Option 2', value: 'option_2' },
           ]
         : undefined,
+  });
+
+  const createLayoutElement = (type: LayoutElementType): LayoutElement => ({
+    id: uuidv4(),
+    type,
+    content: defaultLayoutLabels[type],
+    width: 'full',
   });
 
   const handleDragStart = (event: DragStartEvent) => {
@@ -73,35 +88,52 @@ export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
 
     // Dropping from palette to canvas
     if (activeData?.fromPalette && over.id === 'form-canvas') {
-      const newField = createField(activeData.type as FieldType);
-      setFields([...fields, newField]);
-      setSelectedFieldId(newField.id);
+      let newItem: FormItem;
+      if (activeData.isLayout) {
+        newItem = createLayoutElement(activeData.type as LayoutElementType);
+      } else {
+        newItem = createField(activeData.type as FieldType);
+      }
+      setItems([...items, newItem]);
+      setSelectedItemId(newItem.id);
       return;
     }
 
     // Reordering within canvas
     if (!activeData?.fromPalette) {
-      const oldIndex = fields.findIndex((f) => f.id === active.id);
-      const newIndex = fields.findIndex((f) => f.id === over.id);
+      const oldIndex = items.findIndex((f) => f.id === active.id);
+      const newIndex = items.findIndex((f) => f.id === over.id);
 
       if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-        setFields(arrayMove(fields, oldIndex, newIndex));
+        setItems(arrayMove(items, oldIndex, newIndex));
       }
     }
   };
 
-  const handleDeleteField = (id: string) => {
-    setFields(fields.filter((f) => f.id !== id));
-    if (selectedFieldId === id) {
-      setSelectedFieldId(null);
+  const handleDeleteItem = (id: string) => {
+    setItems(items.filter((f) => f.id !== id));
+    if (selectedItemId === id) {
+      setSelectedItemId(null);
     }
   };
 
-  const handleUpdateField = (updates: Partial<FormField>) => {
-    if (!selectedFieldId) return;
-    setFields(
-      fields.map((f) => (f.id === selectedFieldId ? { ...f, ...updates } : f))
+  const handleUpdateItem = (updates: Partial<FormItem>) => {
+    if (!selectedItemId) return;
+    setItems(
+      items.map((f) => (f.id === selectedItemId ? { ...f, ...updates } as FormItem : f))
     );
+  };
+
+  // Get the drag overlay label
+  const getDragOverlayLabel = (id: string): string => {
+    const type = id.replace('palette-', '');
+    if (type in defaultFieldLabels) {
+      return defaultFieldLabels[type as FieldType];
+    }
+    if (type in defaultLayoutLabels) {
+      return type === 'divider' ? 'Divider' : defaultLayoutLabels[type as LayoutElementType];
+    }
+    return type;
   };
 
   return (
@@ -122,20 +154,20 @@ export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
                 className="text-lg font-medium text-gray-900 border-none focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-2 py-1"
               />
               <span className="text-sm text-gray-500">
-                {fields.length} field{fields.length !== 1 ? 's' : ''}
+                {items.length} item{items.length !== 1 ? 's' : ''}
               </span>
             </div>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => onPreview(fields)}
-                disabled={fields.length === 0}
+                onClick={() => onPreview(items)}
+                disabled={items.length === 0}
                 className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Preview
               </button>
               <button
-                onClick={() => onExport(fields)}
-                disabled={fields.length === 0}
+                onClick={() => onExport(items)}
+                disabled={items.length === 0}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Export
@@ -148,16 +180,16 @@ export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
         <div className="flex-1 flex overflow-hidden">
           <FieldPalette />
           <FormCanvas
-            fields={fields}
-            selectedFieldId={selectedFieldId}
-            onSelectField={setSelectedFieldId}
-            onDeleteField={handleDeleteField}
+            items={items}
+            selectedItemId={selectedItemId}
+            onSelectItem={setSelectedItemId}
+            onDeleteItem={handleDeleteItem}
           />
-          {selectedField && (
+          {selectedItem && (
             <FieldEditor
-              field={selectedField}
-              allFields={fields}
-              onUpdate={handleUpdateField}
+              item={selectedItem}
+              allItems={items}
+              onUpdate={handleUpdateItem}
             />
           )}
         </div>
@@ -167,7 +199,7 @@ export function FormBuilder({ onPreview, onExport }: FormBuilderProps) {
         {activeId && activeId.startsWith('palette-') && (
           <div className="p-3 bg-white border-2 border-blue-400 rounded-lg shadow-lg">
             <span className="text-sm font-medium">
-              {defaultFieldLabels[activeId.replace('palette-', '') as FieldType]}
+              {getDragOverlayLabel(activeId)}
             </span>
           </div>
         )}

@@ -1,13 +1,117 @@
-import type { FormField, FieldOption, SkipLogic } from '../types/form';
+import type { FormItem, FormField, LayoutElement, FieldOption, SkipLogic, FieldWidth } from '../types/form';
+import { isFormField, isLayoutElement } from '../types/form';
 
 interface FieldEditorProps {
-  field: FormField;
-  allFields: FormField[];
-  onUpdate: (updates: Partial<FormField>) => void;
+  item: FormItem;
+  allItems: FormItem[];
+  onUpdate: (updates: Partial<FormItem>) => void;
 }
 
-export function FieldEditor({ field, allFields, onUpdate }: FieldEditorProps) {
-  const otherFields = allFields.filter((f) => f.id !== field.id);
+const widthOptions: { value: FieldWidth; label: string }[] = [
+  { value: 'full', label: 'Full width (100%)' },
+  { value: '3/4', label: '3/4 width (75%)' },
+  { value: '2/3', label: '2/3 width (67%)' },
+  { value: '1/2', label: 'Half width (50%)' },
+  { value: '1/3', label: '1/3 width (33%)' },
+  { value: '1/4', label: '1/4 width (25%)' },
+];
+
+export function FieldEditor({ item, allItems, onUpdate }: FieldEditorProps) {
+  if (isLayoutElement(item)) {
+    return <LayoutElementEditor element={item} onUpdate={onUpdate} />;
+  }
+
+  return (
+    <FormFieldEditor
+      field={item as FormField}
+      allItems={allItems}
+      onUpdate={onUpdate as (updates: Partial<FormField>) => void}
+    />
+  );
+}
+
+// Editor for layout elements (section, instruction, divider)
+function LayoutElementEditor({
+  element,
+  onUpdate,
+}: {
+  element: LayoutElement;
+  onUpdate: (updates: Partial<LayoutElement>) => void;
+}) {
+  return (
+    <div className="w-80 bg-white border-l border-gray-200 p-4 overflow-y-auto">
+      <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
+        {element.type === 'section' && 'Section Header'}
+        {element.type === 'instruction' && 'Instructions'}
+        {element.type === 'divider' && 'Divider'}
+      </h2>
+
+      <div className="space-y-4">
+        {/* Content (not for divider) */}
+        {element.type !== 'divider' && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {element.type === 'section' ? 'Section Title' : 'Instructions Text'}
+            </label>
+            {element.type === 'section' ? (
+              <input
+                type="text"
+                value={element.content}
+                onChange={(e) => onUpdate({ content: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter section title..."
+              />
+            ) : (
+              <textarea
+                value={element.content}
+                onChange={(e) => onUpdate({ content: e.target.value })}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter instructions or explanatory text..."
+              />
+            )}
+          </div>
+        )}
+
+        {/* Width */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Width
+          </label>
+          <select
+            value={element.width || 'full'}
+            onChange={(e) => onUpdate({ width: e.target.value as FieldWidth })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          >
+            {widthOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Use smaller widths to place items side-by-side
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Editor for form fields
+function FormFieldEditor({
+  field,
+  allItems,
+  onUpdate,
+}: {
+  field: FormField;
+  allItems: FormItem[];
+  onUpdate: (updates: Partial<FormField>) => void;
+}) {
+  // Get other form fields (not layout elements) for skip logic
+  const otherFields = allItems.filter(
+    (item) => item.id !== field.id && isFormField(item)
+  ) as FormField[];
 
   const addOption = () => {
     const newOption: FieldOption = {
@@ -71,6 +175,27 @@ export function FieldEditor({ field, allFields, onUpdate }: FieldEditorProps) {
             onChange={(e) => onUpdate({ label: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
           />
+        </div>
+
+        {/* Width */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Width
+          </label>
+          <select
+            value={field.width || 'full'}
+            onChange={(e) => onUpdate({ width: e.target.value as FieldWidth })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          >
+            {widthOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">
+            Use smaller widths to place fields side-by-side
+          </p>
         </div>
 
         {/* Required */}

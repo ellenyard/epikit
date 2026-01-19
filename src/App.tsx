@@ -1,26 +1,43 @@
-import { useState } from 'react';
-import type { FormField } from './types/form';
+import { useState, useMemo } from 'react';
+import type { FormItem } from './types/form';
+import type { Dataset } from './types/analysis';
 import { FormBuilder } from './components/FormBuilder';
 import { FormPreview } from './components/FormPreview';
 import { ExportModal } from './components/ExportModal';
 import { Analysis } from './components/analysis/Analysis';
+import { demoFormItems, demoColumns, demoCaseRecords, demoDatasetName } from './data/demoData';
 
 type Module = 'forms' | 'analysis';
 type FormView = 'builder' | 'preview';
 
+// Create demo dataset
+const DEMO_DATASET_ID = 'demo-outbreak-2024';
+const createDemoDataset = (): Dataset => ({
+  id: DEMO_DATASET_ID,
+  name: demoDatasetName,
+  source: 'import',
+  columns: demoColumns,
+  records: demoCaseRecords,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
+
 function App() {
   const [activeModule, setActiveModule] = useState<Module>('forms');
   const [formView, setFormView] = useState<FormView>('builder');
-  const [previewFields, setPreviewFields] = useState<FormField[]>([]);
-  const [exportFields, setExportFields] = useState<FormField[] | null>(null);
+  const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
+  const [exportItems, setExportItems] = useState<FormItem[] | null>(null);
 
-  const handlePreview = (fields: FormField[]) => {
-    setPreviewFields(fields);
+  // Initialize demo dataset
+  const demoDatasets = useMemo(() => [createDemoDataset()], []);
+
+  const handlePreview = (items: FormItem[]) => {
+    setPreviewItems(items);
     setFormView('preview');
   };
 
-  const handleExport = (fields: FormField[]) => {
-    setExportFields(fields);
+  const handleExport = (items: FormItem[]) => {
+    setExportItems(items);
   };
 
   const handleBackToBuilder = () => {
@@ -67,21 +84,28 @@ function App() {
       <div className="flex-1 overflow-hidden">
         {activeModule === 'forms' ? (
           formView === 'builder' ? (
-            <FormBuilder onPreview={handlePreview} onExport={handleExport} />
+            <FormBuilder
+              onPreview={handlePreview}
+              onExport={handleExport}
+              initialItems={demoFormItems}
+            />
           ) : (
-            <FormPreview fields={previewFields} onBack={handleBackToBuilder} />
+            <FormPreview items={previewItems} onBack={handleBackToBuilder} />
           )
         ) : (
-          <Analysis />
+          <Analysis
+            initialDatasets={demoDatasets}
+            initialActiveId={DEMO_DATASET_ID}
+          />
         )}
       </div>
 
       {/* Export Modal */}
-      {exportFields && (
+      {exportItems && (
         <ExportModal
-          fields={exportFields}
+          items={exportItems}
           formName="Untitled Form"
-          onClose={() => setExportFields(null)}
+          onClose={() => setExportItems(null)}
         />
       )}
     </div>

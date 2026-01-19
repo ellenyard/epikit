@@ -1,19 +1,23 @@
 import { useState } from 'react';
-import type { FormField, FormDefinition } from '../types/form';
+import type { FormItem, FormField, FormDefinition } from '../types/form';
+import { isFormField } from '../types/form';
 
 interface ExportModalProps {
-  fields: FormField[];
+  items: FormItem[];
   formName: string;
   onClose: () => void;
 }
 
-export function ExportModal({ fields, formName, onClose }: ExportModalProps) {
+export function ExportModal({ items, formName, onClose }: ExportModalProps) {
   const [exportFormat, setExportFormat] = useState<'json' | 'csv'>('json');
+
+  // Get only form fields (not layout elements) for CSV export
+  const fields = items.filter(isFormField) as FormField[];
 
   const formDefinition: FormDefinition = {
     id: crypto.randomUUID?.() || Math.random().toString(36).substring(2),
     name: formName,
-    fields,
+    fields: items,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -22,7 +26,7 @@ export function ExportModal({ fields, formName, onClose }: ExportModalProps) {
     if (exportFormat === 'json') {
       return JSON.stringify(formDefinition, null, 2);
     } else {
-      // CSV export - create a template for data collection
+      // CSV export - create a template for data collection (only fields, not layout elements)
       const headers = fields.map((f) => f.label).join(',');
       const fieldIds = fields.map((f) => f.id).join(',');
       return `# Form: ${formName}\n# Field IDs: ${fieldIds}\n${headers}\n`;

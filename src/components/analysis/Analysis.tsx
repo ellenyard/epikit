@@ -6,11 +6,16 @@ import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
 import { DescriptiveStats } from './DescriptiveStats';
 import { EpiCurve } from './EpiCurve';
 import { SpotMap } from './SpotMap';
-import type { DataColumn, CaseRecord } from '../../types/analysis';
+import type { Dataset, DataColumn, CaseRecord } from '../../types/analysis';
 
 type AnalysisTab = 'linelist' | 'epicurve' | 'spotmap' | '2x2' | 'descriptive';
 
-export function Analysis() {
+interface AnalysisProps {
+  initialDatasets?: Dataset[];
+  initialActiveId?: string;
+}
+
+export function Analysis({ initialDatasets, initialActiveId }: AnalysisProps = {}) {
   const {
     datasets,
     activeDataset,
@@ -21,7 +26,7 @@ export function Analysis() {
     addRecord,
     updateRecord,
     deleteRecord,
-  } = useDataset();
+  } = useDataset({ initialDatasets, initialActiveId });
 
   const [showImport, setShowImport] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>('linelist');

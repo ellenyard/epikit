@@ -1,18 +1,33 @@
 import { useState, useMemo } from 'react';
-import type { FormField } from '../types/form';
+import type { FormItem, FormField, LayoutElement, FieldWidth } from '../types/form';
+import { isLayoutElement } from '../types/form';
 
 interface FormPreviewProps {
-  fields: FormField[];
+  items: FormItem[];
   onBack: () => void;
 }
 
-export function FormPreview({ fields, onBack }: FormPreviewProps) {
+// Convert width to CSS grid column span classes
+const widthToGridClass: Record<FieldWidth, string> = {
+  '1/4': 'col-span-12 sm:col-span-3',
+  '1/3': 'col-span-12 sm:col-span-4',
+  '1/2': 'col-span-12 sm:col-span-6',
+  '2/3': 'col-span-12 sm:col-span-8',
+  '3/4': 'col-span-12 sm:col-span-9',
+  'full': 'col-span-12',
+};
+
+export function FormPreview({ items, onBack }: FormPreviewProps) {
   const [formData, setFormData] = useState<Record<string, unknown>>({});
   const [submitted, setSubmitted] = useState(false);
 
-  // Evaluate skip logic to determine which fields are visible
-  const visibleFields = useMemo(() => {
-    return fields.filter((field) => {
+  // Evaluate skip logic to determine which items are visible
+  const visibleItems = useMemo(() => {
+    return items.filter((item) => {
+      // Layout elements are always visible
+      if (isLayoutElement(item)) return true;
+
+      const field = item as FormField;
       if (!field.skipLogic) return true;
 
       const { action, conditions, logic } = field.skipLogic;
@@ -45,7 +60,7 @@ export function FormPreview({ fields, onBack }: FormPreviewProps) {
 
       return action === 'show' ? conditionMet : !conditionMet;
     });
-  }, [fields, formData]);
+  }, [items, formData]);
 
   const updateField = (fieldId: string, value: unknown) => {
     setFormData((prev) => ({ ...prev, [fieldId]: value }));
@@ -120,7 +135,7 @@ export function FormPreview({ fields, onBack }: FormPreviewProps) {
   return (
     <div className="min-h-screen bg-gray-100">
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-bold text-blue-600">EpiKit</h1>
             <span className="text-sm bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
@@ -136,33 +151,29 @@ export function FormPreview({ fields, onBack }: FormPreviewProps) {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto py-8 px-4">
+      <main className="max-w-3xl mx-auto py-8 px-4">
         <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm p-6">
-          {visibleFields.length === 0 ? (
+          {visibleItems.length === 0 ? (
             <p className="text-gray-500 text-center py-8">
               No fields to display
             </p>
           ) : (
-            <div className="space-y-6">
-              {visibleFields.map((field) => (
-                <div key={field.id}>
-                  <label className="block text-sm font-medium text-gray-900 mb-1">
-                    {field.label}
-                    {field.required && (
-                      <span className="text-red-500 ml-1">*</span>
-                    )}
-                  </label>
-                  {field.helpText && (
-                    <p className="text-sm text-gray-500 mb-2">
-                      {field.helpText}
-                    </p>
+            <div className="grid grid-cols-12 gap-4">
+              {visibleItems.map((item) => (
+                <div
+                  key={item.id}
+                  className={widthToGridClass[item.width || 'full']}
+                >
+                  {isLayoutElement(item) ? (
+                    <LayoutElementPreview element={item as LayoutElement} />
+                  ) : (
+                    <FormFieldPreview
+                      field={item as FormField}
+                      value={formData[(item as FormField).id]}
+                      onChange={(value) => updateField((item as FormField).id, value)}
+                      onCaptureGPS={() => captureGPS((item as FormField).id)}
+                    />
                   )}
-                  <FieldInput
-                    field={field}
-                    value={formData[field.id]}
-                    onChange={(value) => updateField(field.id, value)}
-                    onCaptureGPS={() => captureGPS(field.id)}
-                  />
                 </div>
               ))}
             </div>
@@ -178,6 +189,64 @@ export function FormPreview({ fields, onBack }: FormPreviewProps) {
           </div>
         </form>
       </main>
+    </div>
+  );
+}
+
+// Layout Element Preview
+function LayoutElementPreview({ element }: { element: LayoutElement }) {
+  switch (element.type) {
+    case 'section':
+      return (
+        <div className="pt-4 pb-2">
+          <h2 className="text-lg font-semibold text-gray-900 border-b border-gray-200 pb-2">
+            {element.content || 'Section Title'}
+          </h2>
+        </div>
+      );
+    case 'instruction':
+      return (
+        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r">
+          <p className="text-sm text-blue-800">
+            {element.content || 'Instructions text'}
+          </p>
+        </div>
+      );
+    case 'divider':
+      return <hr className="border-gray-300 my-4" />;
+    default:
+      return null;
+  }
+}
+
+// Form Field Preview
+interface FormFieldPreviewProps {
+  field: FormField;
+  value: unknown;
+  onChange: (value: unknown) => void;
+  onCaptureGPS: () => void;
+}
+
+function FormFieldPreview({ field, value, onChange, onCaptureGPS }: FormFieldPreviewProps) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-900 mb-1">
+        {field.label}
+        {field.required && (
+          <span className="text-red-500 ml-1">*</span>
+        )}
+      </label>
+      {field.helpText && (
+        <p className="text-sm text-gray-500 mb-2">
+          {field.helpText}
+        </p>
+      )}
+      <FieldInput
+        field={field}
+        value={value}
+        onChange={onChange}
+        onCaptureGPS={onCaptureGPS}
+      />
     </div>
   );
 }
