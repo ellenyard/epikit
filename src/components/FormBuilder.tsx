@@ -43,14 +43,17 @@ function toVariableName(label: string): string {
 interface FormBuilderProps {
   onPreview: (items: FormItem[]) => void;
   onExport: (items: FormItem[]) => void;
+  onSave?: (items: FormItem[], formName: string) => void;
   initialItems?: FormItem[];
+  initialFormName?: string;
 }
 
-export function FormBuilder({ onPreview, onExport, initialItems }: FormBuilderProps) {
+export function FormBuilder({ onPreview, onExport, onSave, initialItems, initialFormName }: FormBuilderProps) {
   const [items, setItems] = useState<FormItem[]>(initialItems || []);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [formName, setFormName] = useState(initialItems ? 'Foodborne Outbreak Investigation' : 'Untitled Form');
+  const [formName, setFormName] = useState(initialFormName || 'Untitled Form');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -160,6 +163,18 @@ export function FormBuilder({ onPreview, onExport, initialItems }: FormBuilderPr
     if (id) setShowEditor(true);
   };
 
+  // Handle save
+  const handleSave = () => {
+    if (onSave) {
+      setSaveStatus('saving');
+      onSave(items, formName);
+      setTimeout(() => {
+        setSaveStatus('saved');
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      }, 300);
+    }
+  };
+
   return (
     <DndContext
       sensors={sensors}
@@ -192,10 +207,23 @@ export function FormBuilder({ onPreview, onExport, initialItems }: FormBuilderPr
               <button
                 onClick={() => onExport(items)}
                 disabled={items.length === 0}
-                className="px-3 sm:px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed hidden sm:block"
+                className="px-3 sm:px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed hidden sm:block"
               >
                 Export
               </button>
+              {onSave && (
+                <button
+                  onClick={handleSave}
+                  disabled={items.length === 0 || saveStatus === 'saving'}
+                  className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+                    saveStatus === 'saved'
+                      ? 'text-green-700 bg-green-100 border border-green-300'
+                      : 'text-white bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : 'Save'}
+                </button>
+              )}
             </div>
           </div>
         </header>

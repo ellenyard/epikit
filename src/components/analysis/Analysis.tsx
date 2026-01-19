@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useDataset } from '../../hooks/useDataset';
 import { DataImport } from './DataImport';
 import { LineListing } from './LineListing';
 import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
@@ -11,26 +10,31 @@ import type { Dataset, DataColumn, CaseRecord } from '../../types/analysis';
 type AnalysisTab = 'linelist' | 'epicurve' | 'spotmap' | '2x2' | 'descriptive';
 
 interface AnalysisProps {
-  initialDatasets?: Dataset[];
-  initialActiveId?: string;
+  datasets: Dataset[];
+  activeDatasetId: string | null;
+  setActiveDatasetId: (id: string | null) => void;
+  createDataset: (name: string, columns: DataColumn[], records: CaseRecord[], source?: 'import' | 'form') => Dataset;
+  deleteDataset: (id: string) => void;
+  addRecord: (datasetId: string, record: Omit<CaseRecord, 'id'>) => CaseRecord;
+  updateRecord: (datasetId: string, recordId: string, updates: Partial<CaseRecord>) => void;
+  deleteRecord: (datasetId: string, recordId: string) => void;
 }
 
-export function Analysis({ initialDatasets, initialActiveId }: AnalysisProps = {}) {
-  const {
-    datasets,
-    activeDataset,
-    activeDatasetId,
-    setActiveDatasetId,
-    createDataset,
-    deleteDataset,
-    addRecord,
-    updateRecord,
-    deleteRecord,
-  } = useDataset({ initialDatasets, initialActiveId });
-
+export function Analysis({
+  datasets,
+  activeDatasetId,
+  setActiveDatasetId,
+  createDataset,
+  deleteDataset,
+  addRecord,
+  updateRecord,
+  deleteRecord,
+}: AnalysisProps) {
   const [showImport, setShowImport] = useState(false);
   const [activeTab, setActiveTab] = useState<AnalysisTab>('linelist');
   const [showSidebar, setShowSidebar] = useState(false);
+
+  const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
   const handleImport = (name: string, columns: DataColumn[], records: CaseRecord[]) => {
     createDataset(name, columns, records, 'import');
@@ -123,11 +127,18 @@ export function Analysis({ initialDatasets, initialActiveId }: AnalysisProps = {
                     onClick={() => setActiveDatasetId(dataset.id)}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${
-                        activeDatasetId === dataset.id ? 'text-blue-900' : 'text-gray-900'
-                      }`}>
-                        {dataset.name}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm font-medium truncate ${
+                          activeDatasetId === dataset.id ? 'text-blue-900' : 'text-gray-900'
+                        }`}>
+                          {dataset.name}
+                        </p>
+                        {dataset.source === 'form' && (
+                          <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                            Form
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-gray-500">
                         {dataset.records.length} records &bull; {dataset.columns.length} columns
                       </p>
@@ -220,11 +231,18 @@ export function Analysis({ initialDatasets, initialActiveId }: AnalysisProps = {
                         onClick={() => handleSelectDataset(dataset.id)}
                       >
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-medium truncate ${
-                            activeDatasetId === dataset.id ? 'text-blue-900' : 'text-gray-900'
-                          }`}>
-                            {dataset.name}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className={`text-sm font-medium truncate ${
+                              activeDatasetId === dataset.id ? 'text-blue-900' : 'text-gray-900'
+                            }`}>
+                              {dataset.name}
+                            </p>
+                            {dataset.source === 'form' && (
+                              <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                Form
+                              </span>
+                            )}
+                          </div>
                           <p className="text-xs text-gray-500">
                             {dataset.records.length} records
                           </p>
