@@ -1,6 +1,16 @@
 import type { FormItem, FormField, LayoutElement, FieldOption, SkipLogic, FieldWidth } from '../types/form';
 import { isFormField, isLayoutElement } from '../types/form';
 
+// Convert a label to a valid variable name
+function toVariableName(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    || 'field';
+}
+
 interface FieldEditorProps {
   item: FormItem;
   allItems: FormItem[];
@@ -172,9 +182,33 @@ function FormFieldEditor({
           <input
             type="text"
             value={field.label}
-            onChange={(e) => onUpdate({ label: e.target.value })}
+            onChange={(e) => {
+              const updates: Partial<FormField> = { label: e.target.value };
+              // Auto-generate variable name if it hasn't been manually edited
+              if (!field.variableName || field.variableName === toVariableName(field.label)) {
+                updates.variableName = toVariableName(e.target.value);
+              }
+              onUpdate(updates);
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
           />
+        </div>
+
+        {/* Variable Name */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Variable Name
+          </label>
+          <input
+            type="text"
+            value={field.variableName || ''}
+            onChange={(e) => onUpdate({ variableName: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '_') })}
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+            placeholder="e.g., case_id"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Used as column name in data export
+          </p>
         </div>
 
         {/* Width */}

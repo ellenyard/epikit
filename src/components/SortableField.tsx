@@ -21,15 +21,6 @@ const fieldTypeLabels: Record<string, string> = {
   gps: 'GPS Location',
 };
 
-const widthLabels: Record<string, string> = {
-  '1/4': '25%',
-  '1/3': '33%',
-  '1/2': '50%',
-  '2/3': '67%',
-  '3/4': '75%',
-  'full': '100%',
-};
-
 export function SortableItem({
   item,
   isSelected,
@@ -175,9 +166,6 @@ function LayoutElementCard({
         </div>
 
         <div className="flex items-center gap-2">
-          {element.width && element.width !== 'full' && (
-            <span className="text-xs text-gray-400">{widthLabels[element.width]}</span>
-          )}
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -273,16 +261,9 @@ function FormFieldCard({
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-500">
-              {fieldTypeLabels[field.type]}
-            </span>
-            {field.width && field.width !== 'full' && (
-              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-                {widthLabels[field.width]}
-              </span>
-            )}
-          </div>
+          <span className="text-sm text-gray-500">
+            {fieldTypeLabels[field.type]}
+          </span>
           {field.helpText && (
             <p className="text-xs text-gray-400 mt-1">{field.helpText}</p>
           )}

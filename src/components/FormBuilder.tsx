@@ -30,6 +30,16 @@ const defaultLayoutLabels: Record<LayoutElementType, string> = {
   divider: '',
 };
 
+// Convert a label to a valid variable name
+function toVariableName(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    || 'field';
+}
+
 interface FormBuilderProps {
   onPreview: (items: FormItem[]) => void;
   onExport: (items: FormItem[]) => void;
@@ -52,20 +62,24 @@ export function FormBuilder({ onPreview, onExport, initialItems }: FormBuilderPr
 
   const selectedItem = items.find((f) => f.id === selectedItemId);
 
-  const createField = (type: FieldType): FormField => ({
-    id: uuidv4(),
-    type,
-    label: defaultFieldLabels[type],
-    required: false,
-    width: 'full',
-    options:
-      type === 'dropdown' || type === 'multiselect'
-        ? [
-            { label: 'Option 1', value: 'option_1' },
-            { label: 'Option 2', value: 'option_2' },
-          ]
-        : undefined,
-  });
+  const createField = (type: FieldType): FormField => {
+    const label = defaultFieldLabels[type];
+    return {
+      id: uuidv4(),
+      type,
+      label,
+      variableName: toVariableName(label),
+      required: false,
+      width: 'full',
+      options:
+        type === 'dropdown' || type === 'multiselect'
+          ? [
+              { label: 'Option 1', value: 'option_1' },
+              { label: 'Option 2', value: 'option_2' },
+            ]
+          : undefined,
+    };
+  };
 
   const createLayoutElement = (type: LayoutElementType): LayoutElement => ({
     id: uuidv4(),
