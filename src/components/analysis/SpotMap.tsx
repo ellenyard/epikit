@@ -1,0 +1,357 @@
+import { useState, useMemo, useEffect } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import type { Dataset, CaseRecord } from '../../types/analysis';
+import 'leaflet/dist/leaflet.css';
+
+interface SpotMapProps {
+  dataset: Dataset;
+}
+
+type ColorScheme = 'default' | 'classification' | 'colorblind' | 'sequential';
+
+interface MapCase {
+  record: CaseRecord;
+  lat: number;
+  lng: number;
+  strataValue: string;
+}
+
+// Color palettes
+const colorPalettes: Record<ColorScheme, Record<string, string>> = {
+  default: {
+    _default: '#3B82F6',
+  },
+  classification: {
+    'Confirmed': '#DC2626',
+    'Probable': '#F59E0B',
+    'Suspected': '#3B82F6',
+    'Unknown': '#9CA3AF',
+    _default: '#6B7280',
+  },
+  colorblind: {
+    _colors: '#0077BB,#33BBEE,#009988,#EE7733,#CC3311,#EE3377,#BBBBBB',
+    _default: '#0077BB',
+  },
+  sequential: {
+    _colors: '#fee5d9,#fcbba1,#fc9272,#fb6a4a,#ef3b2c,#cb181d,#99000d',
+    _default: '#fc9272',
+  },
+};
+
+function getMarkerColor(value: string, scheme: ColorScheme, allValues: string[]): string {
+  const palette = colorPalettes[scheme];
+
+  if (scheme === 'classification') {
+    return palette[value] || palette._default;
+  }
+
+  if (scheme === 'colorblind' || scheme === 'sequential') {
+    const colors = palette._colors.split(',');
+    const index = allValues.indexOf(value);
+    return colors[index % colors.length] || palette._default;
+  }
+
+  return palette._default;
+}
+
+// Component to fit map bounds
+function FitBounds({ cases }: { cases: MapCase[] }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (cases.length > 0) {
+      const bounds = cases.map(c => [c.lat, c.lng] as [number, number]);
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }, [cases, map]);
+
+  return null;
+}
+
+export function SpotMap({ dataset }: SpotMapProps) {
+  const [latColumn, setLatColumn] = useState<string>('');
+  const [lngColumn, setLngColumn] = useState<string>('');
+  const [stratifyBy, setStratifyBy] = useState<string>('');
+  const [colorScheme, setColorScheme] = useState<ColorScheme>('default');
+  const [markerSize, setMarkerSize] = useState<number>(8);
+  const [showPopups, setShowPopups] = useState(true);
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>('street');
+
+  // Auto-detect lat/lng columns
+  useEffect(() => {
+    const latCol = dataset.columns.find(c =>
+      c.key.toLowerCase().includes('lat') ||
+      c.label.toLowerCase().includes('latitude')
+    );
+    const lngCol = dataset.columns.find(c =>
+      c.key.toLowerCase().includes('lng') ||
+      c.key.toLowerCase().includes('lon') ||
+      c.label.toLowerCase().includes('longitude')
+    );
+
+    if (latCol && !latColumn) setLatColumn(latCol.key);
+    if (lngCol && !lngColumn) setLngColumn(lngCol.key);
+  }, [dataset.columns, latColumn, lngColumn]);
+
+  // Process cases with coordinates
+  const mapCases: MapCase[] = useMemo(() => {
+    if (!latColumn || !lngColumn) return [];
+
+    return dataset.records
+      .map(record => {
+        const lat = Number(record[latColumn]);
+        const lng = Number(record[lngColumn]);
+
+        if (isNaN(lat) || isNaN(lng)) return null;
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+
+        return {
+          record,
+          lat,
+          lng,
+          strataValue: stratifyBy ? String(record[stratifyBy] ?? 'Unknown') : 'All',
+        };
+      })
+      .filter((c): c is MapCase => c !== null);
+  }, [dataset.records, latColumn, lngColumn, stratifyBy]);
+
+  // Get unique strata values
+  const strataValues = useMemo(() => {
+    const values = new Set(mapCases.map(c => c.strataValue));
+    return Array.from(values).sort();
+  }, [mapCases]);
+
+  // Map tile URLs
+  const tileUrls: Record<string, { url: string; attribution: string }> = {
+    street: {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+    satellite: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attribution: '&copy; Esri',
+    },
+    topo: {
+      url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; OpenTopoMap',
+    },
+  };
+
+  // Default center (US)
+  const defaultCenter: [number, number] = [39.8283, -98.5795];
+  const defaultZoom = 4;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900">Spot Map</h3>
+          <p className="text-sm text-gray-600">
+            Visualize geographic distribution of cases
+          </p>
+        </div>
+        <div className="text-sm text-gray-500">
+          {mapCases.length} of {dataset.records.length} cases mapped
+        </div>
+      </div>
+
+      {/* Configuration */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Latitude Column</label>
+          <select
+            value={latColumn}
+            onChange={(e) => setLatColumn(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">Select column...</option>
+            {dataset.columns.filter(c => c.type === 'number').map(col => (
+              <option key={col.key} value={col.key}>{col.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Longitude Column</label>
+          <select
+            value={lngColumn}
+            onChange={(e) => setLngColumn(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">Select column...</option>
+            {dataset.columns.filter(c => c.type === 'number').map(col => (
+              <option key={col.key} value={col.key}>{col.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Color By</label>
+          <select
+            value={stratifyBy}
+            onChange={(e) => setStratifyBy(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">None (single color)</option>
+            {dataset.columns.map(col => (
+              <option key={col.key} value={col.key}>{col.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
+          <select
+            value={colorScheme}
+            onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="default">Default Blue</option>
+            <option value="classification">Classification</option>
+            <option value="colorblind">Colorblind-Friendly</option>
+            <option value="sequential">Sequential</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
+          <select
+            value={mapStyle}
+            onChange={(e) => setMapStyle(e.target.value as 'street' | 'satellite' | 'topo')}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="street">Street</option>
+            <option value="satellite">Satellite</option>
+            <option value="topo">Topographic</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Marker Size</label>
+          <input
+            type="range"
+            min="4"
+            max="20"
+            value={markerSize}
+            onChange={(e) => setMarkerSize(Number(e.target.value))}
+            className="w-full"
+          />
+        </div>
+      </div>
+
+      {/* Display Options */}
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={showPopups}
+            onChange={(e) => setShowPopups(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          Show popups on click
+        </label>
+      </div>
+
+      {/* Legend */}
+      {stratifyBy && strataValues.length > 0 && (
+        <div className="flex flex-wrap gap-4">
+          {strataValues.map(value => (
+            <div key={value} className="flex items-center gap-2">
+              <div
+                className="w-4 h-4 rounded-full"
+                style={{ backgroundColor: getMarkerColor(value, colorScheme, strataValues) }}
+              />
+              <span className="text-sm text-gray-700">{value}</span>
+              <span className="text-xs text-gray-500">
+                ({mapCases.filter(c => c.strataValue === value).length})
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Map */}
+      {latColumn && lngColumn ? (
+        <div className="border border-gray-200 rounded-lg overflow-hidden" style={{ height: '500px' }}>
+          <MapContainer
+            center={defaultCenter}
+            zoom={defaultZoom}
+            style={{ height: '100%', width: '100%' }}
+          >
+            <TileLayer
+              url={tileUrls[mapStyle].url}
+              attribution={tileUrls[mapStyle].attribution}
+            />
+
+            {mapCases.length > 0 && <FitBounds cases={mapCases} />}
+
+            {mapCases.map((caseData, index) => (
+              <CircleMarker
+                key={caseData.record.id || index}
+                center={[caseData.lat, caseData.lng]}
+                radius={markerSize}
+                pathOptions={{
+                  fillColor: getMarkerColor(caseData.strataValue, colorScheme, strataValues),
+                  fillOpacity: 0.7,
+                  color: '#fff',
+                  weight: 1,
+                }}
+              >
+                {showPopups && (
+                  <Popup>
+                    <div className="text-sm">
+                      <p className="font-semibold mb-2">Case Details</p>
+                      {dataset.columns.slice(0, 6).map(col => {
+                        const value = caseData.record[col.key];
+                        if (value === null || value === undefined) return null;
+                        return (
+                          <p key={col.key} className="text-gray-600">
+                            <span className="font-medium">{col.label}:</span> {String(value)}
+                          </p>
+                        );
+                      })}
+                      <p className="text-gray-500 mt-2 text-xs">
+                        Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
+                      </p>
+                    </div>
+                  </Popup>
+                )}
+              </CircleMarker>
+            ))}
+          </MapContainer>
+        </div>
+      ) : (
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center text-gray-400">
+          <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+          </svg>
+          <p className="text-lg">Select latitude and longitude columns to display the map</p>
+          <p className="text-sm mt-2">
+            Your dataset needs columns with numeric coordinate values
+          </p>
+        </div>
+      )}
+
+      {/* No coordinates warning */}
+      {latColumn && lngColumn && mapCases.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-sm text-yellow-800">
+            No valid coordinates found. Make sure your latitude values are between -90 and 90,
+            and longitude values are between -180 and 180.
+          </p>
+        </div>
+      )}
+
+      {/* Tips */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-gray-900 mb-2">Tips</h4>
+        <ul className="text-sm text-gray-600 space-y-1">
+          <li>• Click on markers to see case details</li>
+          <li>• Use scroll wheel to zoom in/out</li>
+          <li>• Drag to pan the map</li>
+          <li>• For GPS data collected via EpiKit forms, coordinates will be auto-detected</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
