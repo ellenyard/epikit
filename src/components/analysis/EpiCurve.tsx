@@ -822,7 +822,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
 
   return (
     <div
-      className="absolute bottom-0 flex flex-col items-center pointer-events-none"
+      className="absolute top-0 flex flex-col items-center pointer-events-none"
       style={{ left: x, height: chartHeight }}
     >
       <div
