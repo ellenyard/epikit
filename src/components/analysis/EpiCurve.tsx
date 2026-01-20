@@ -404,21 +404,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           {/* Title */}
           <h4 className="text-center text-lg font-semibold text-gray-900 mb-4">{chartTitle}</h4>
 
-          {/* Legend */}
-          {stratifyBy && curveData.strataKeys.length > 0 && (
-            <div className="flex flex-wrap justify-center gap-4 mb-4">
-              {curveData.strataKeys.map((key, index) => (
-                <div key={key} className="flex items-center gap-2">
-                  <div
-                    className="w-4 h-4 rounded"
-                    style={{ backgroundColor: getColorForStrata(key, index, colorScheme, curveData.strataKeys) }}
-                  />
-                  <span className="text-sm text-gray-700">{key}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Chart Area */}
           <div className="flex">
             {/* Y-Axis Label */}
