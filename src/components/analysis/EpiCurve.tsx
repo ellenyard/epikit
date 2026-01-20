@@ -408,7 +408,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           <div className="flex">
             {/* Y-Axis Label */}
             <div className="flex items-center justify-center w-8">
-              <span className="text-xs text-gray-500 transform -rotate-90 whitespace-nowrap">
+              <span className="text-xs font-bold text-gray-500 transform -rotate-90 whitespace-nowrap">
                 {yAxisLabel}
               </span>
             </div>
@@ -504,7 +504,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                 </div>
 
                 {/* X-Axis Labels */}
-                <div className="flex mt-2">
+                <div className="flex mt-2 mb-12">
                   {curveData.bins.map((bin, index) => (
                     <div
                       key={index}
@@ -523,7 +523,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
 
           {/* X-Axis Label */}
           <div className="text-center mt-8">
-            <span className="text-xs text-gray-500">{xAxisLabel}</span>
+            <span className="text-xs font-bold text-gray-500">{xAxisLabel}</span>
           </div>
 
           {/* Summary Stats */}
