@@ -342,7 +342,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 />
                 <span className="text-sm text-gray-700">{value}</span>
                 <span className="text-xs text-gray-500">
-                  ({mapCases.filter(c => c.classification === value).length})
+                  ({filteredCases.filter(c => c.classification === value).length})
                 </span>
               </div>
             ))}
