@@ -1,6 +1,6 @@
 # EpiKit
 
-A modern, web-based epidemiology toolkit designed to replace and improve upon CDC's Epi Info. Built with React, TypeScript, and Tailwind CSS.
+A modern, web-based epidemiology toolkit designed to assist FETP residents analyze data during outbreak responses. Built with React, TypeScript, and Tailwind CSS.
 
 ## Features
 
