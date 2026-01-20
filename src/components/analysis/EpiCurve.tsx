@@ -3,8 +3,6 @@ import type { Dataset } from '../../types/analysis';
 import {
   processEpiCurveData,
   getColorForStrata,
-  findFirstCaseDate,
-  PATHOGEN_INCUBATION,
 } from '../../utils/epiCurve';
 import type { BinSize, ColorScheme, Annotation, EpiCurveData } from '../../utils/epiCurve';
 
@@ -61,7 +59,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   const [yAxisLabel, setYAxisLabel] = useState('Number of Cases');
 
   // Annotations
-  const [showFirstCase, setShowFirstCase] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [showAnnotationForm, setShowAnnotationForm] = useState(false);
   const [newAnnotation, setNewAnnotation] = useState({
@@ -69,7 +66,8 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     date: '',
     endDate: '',
     label: '',
-    pathogen: '',
+    minDays: '',
+    maxDays: '',
   });
 
   // Refresher
@@ -93,11 +91,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     return processEpiCurveData(dataset.records, dateColumn, binSize, stratifyBy || undefined);
   }, [dataset.records, dateColumn, binSize, stratifyBy]);
 
-  const firstCaseDate = useMemo(() => {
-    if (!dateColumn) return null;
-    return findFirstCaseDate(dataset.records, dateColumn);
-  }, [dataset.records, dateColumn]);
-
   const addAnnotation = () => {
     if (!newAnnotation.date) return;
 
@@ -110,20 +103,21 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
              newAnnotation.type === 'intervention' ? '#059669' : '#7C3AED',
     };
 
-    if (newAnnotation.type === 'incubation' && newAnnotation.pathogen) {
-      const pathogen = PATHOGEN_INCUBATION[newAnnotation.pathogen];
-      if (pathogen) {
+    if (newAnnotation.type === 'incubation' && newAnnotation.minDays && newAnnotation.maxDays) {
+      const minDays = parseFloat(newAnnotation.minDays);
+      const maxDays = parseFloat(newAnnotation.maxDays);
+      if (!isNaN(minDays) && !isNaN(maxDays)) {
         const endDate = new Date(newAnnotation.date);
-        endDate.setDate(endDate.getDate() + pathogen.max);
+        endDate.setDate(endDate.getDate() + maxDays);
         annotation.endDate = endDate;
-        annotation.label = `${newAnnotation.pathogen} incubation (${pathogen.min}-${pathogen.max} days)`;
+        annotation.label = newAnnotation.label || `Incubation period (${minDays}-${maxDays} days)`;
       }
     } else if (newAnnotation.endDate) {
       annotation.endDate = new Date(newAnnotation.endDate);
     }
 
     setAnnotations([...annotations, annotation]);
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', pathogen: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', minDays: '', maxDays: '' });
     setShowAnnotationForm(false);
   };
 
@@ -259,15 +253,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           />
           Case Counts
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showFirstCase}
-            onChange={(e) => setShowFirstCase(e.target.checked)}
-            className="rounded border-gray-300"
-          />
-          Mark First Case
-        </label>
         <button
           onClick={() => setShowAnnotationForm(true)}
           className="text-sm text-blue-600 hover:text-blue-700"
@@ -311,7 +296,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
       {showAnnotationForm && (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-medium text-gray-900 mb-3">Add Annotation</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div>
               <label className="block text-xs text-gray-500 mb-1">Type</label>
               <select
@@ -334,21 +319,34 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
               />
             </div>
             {newAnnotation.type === 'incubation' ? (
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Pathogen</label>
-                <select
-                  value={newAnnotation.pathogen}
-                  onChange={(e) => setNewAnnotation({ ...newAnnotation, pathogen: e.target.value })}
-                  className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                >
-                  <option value="">Select pathogen...</option>
-                  {Object.keys(PATHOGEN_INCUBATION).map(p => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Min Days</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={newAnnotation.minDays}
+                    onChange={(e) => setNewAnnotation({ ...newAnnotation, minDays: e.target.value })}
+                    placeholder="e.g., 0.5"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Max Days</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    value={newAnnotation.maxDays}
+                    onChange={(e) => setNewAnnotation({ ...newAnnotation, maxDays: e.target.value })}
+                    placeholder="e.g., 3"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                  />
+                </div>
+              </>
             ) : (
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-xs text-gray-500 mb-1">Label</label>
                 <input
                   type="text"
@@ -436,14 +434,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                 )}
 
                 {/* Annotations */}
-                {showFirstCase && firstCaseDate && (
-                  <FirstCaseMarker
-                    date={firstCaseDate}
-                    bins={curveData.bins}
-                    barWidth={barWidth}
-                    chartHeight={chartHeight}
-                  />
-                )}
                 {annotations.map(ann => (
                   <AnnotationMarker
                     key={ann.id}
@@ -459,7 +449,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                   {curveData.bins.map((bin, binIndex) => (
                     <div
                       key={binIndex}
-                      className="flex flex-col justify-end"
+                      className="flex flex-col justify-end relative"
                       style={{ width: barWidth }}
                     >
                       {stratifyBy && curveData.strataKeys.length > 0 ? (
@@ -495,7 +485,12 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
 
                       {/* Case count label */}
                       {showCaseCounts && bin.total > 0 && (
-                        <div className="text-center text-xs text-gray-600 -mt-5">
+                        <div
+                          className="absolute text-center text-xs font-medium text-gray-700 w-full"
+                          style={{
+                            bottom: `${(bin.total / curveData.maxCount) * chartHeight + 2}px`
+                          }}
+                        >
                           {bin.total}
                         </div>
                       )}
@@ -791,32 +786,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           </Refresher>
         </div>
       )}
-    </div>
-  );
-}
-
-// First case marker component
-function FirstCaseMarker({ date, bins, barWidth, chartHeight }: {
-  date: Date;
-  bins: EpiCurveData['bins'];
-  barWidth: number;
-  chartHeight: number;
-}) {
-  const binIndex = bins.findIndex(b => date >= b.startDate && date < b.endDate);
-  if (binIndex === -1) return null;
-
-  const x = binIndex * barWidth + barWidth / 2;
-
-  return (
-    <div
-      className="absolute bottom-0 flex flex-col items-center pointer-events-none"
-      style={{ left: x, height: chartHeight }}
-    >
-      <div className="text-xs text-red-600 font-medium whitespace-nowrap bg-white px-1 rounded shadow-sm">
-        First Case
-      </div>
-      <div className="flex-1 w-0.5 bg-red-500" />
-      <div className="w-2 h-2 bg-red-500 rounded-full" />
     </div>
   );
 }
