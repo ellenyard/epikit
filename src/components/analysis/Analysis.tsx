@@ -4,9 +4,10 @@ import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
 import { DescriptiveStats } from './DescriptiveStats';
 import { EpiCurve } from './EpiCurve';
 import { SpotMap } from './SpotMap';
+import { AttackRates } from './AttackRates';
 import type { Dataset, DataColumn, CaseRecord } from '../../types/analysis';
 
-type AnalysisTab = 'epicurve' | 'spotmap' | 'descriptive' | '2x2';
+type AnalysisTab = 'epicurve' | 'spotmap' | 'descriptive' | 'attackrates' | '2x2';
 
 interface AnalysisProps {
   datasets: Dataset[];
@@ -38,6 +39,7 @@ export function Analysis({
     { id: 'epicurve', label: 'Epi Curve', icon: '📈' },
     { id: 'spotmap', label: 'Spot Map', icon: '📍' },
     { id: 'descriptive', label: 'Descriptive', icon: '📊' },
+    { id: 'attackrates', label: 'Attack Rates', icon: '🎯' },
     { id: '2x2', label: '2x2 Table', icon: '⊞' },
   ];
 
@@ -295,6 +297,9 @@ export function Analysis({
                 )}
                 {activeTab === 'descriptive' && (
                   <DescriptiveStats dataset={activeDataset} />
+                )}
+                {activeTab === 'attackrates' && (
+                  <AttackRates dataset={activeDataset} />
                 )}
                 {activeTab === '2x2' && (
                   <TwoByTwoAnalysis dataset={activeDataset} />
