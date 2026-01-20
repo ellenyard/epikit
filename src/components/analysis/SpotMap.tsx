@@ -13,12 +13,16 @@ interface MapCase {
   record: CaseRecord;
   lat: number;
   lng: number;
-  strataValue: string;
+  classification: string;
 }
 
-// Color palettes
+// Color palettes - all schemes now use case classification
 const colorPalettes: Record<ColorScheme, Record<string, string>> = {
   default: {
+    'Confirmed': '#3B82F6',
+    'Probable': '#3B82F6',
+    'Suspected': '#3B82F6',
+    'Unknown': '#3B82F6',
     _default: '#3B82F6',
   },
   classification: {
@@ -29,29 +33,24 @@ const colorPalettes: Record<ColorScheme, Record<string, string>> = {
     _default: '#6B7280',
   },
   colorblind: {
-    _colors: '#0077BB,#33BBEE,#009988,#EE7733,#CC3311,#EE3377,#BBBBBB',
-    _default: '#0077BB',
+    'Confirmed': '#CC3311',
+    'Probable': '#EE7733',
+    'Suspected': '#0077BB',
+    'Unknown': '#BBBBBB',
+    _default: '#BBBBBB',
   },
   sequential: {
-    _colors: '#fee5d9,#fcbba1,#fc9272,#fb6a4a,#ef3b2c,#cb181d,#99000d',
-    _default: '#fc9272',
+    'Confirmed': '#99000d',
+    'Probable': '#fc9272',
+    'Suspected': '#fee5d9',
+    'Unknown': '#f0f0f0',
+    _default: '#f0f0f0',
   },
 };
 
-function getMarkerColor(value: string, scheme: ColorScheme, allValues: string[]): string {
+function getMarkerColor(classification: string, scheme: ColorScheme): string {
   const palette = colorPalettes[scheme];
-
-  if (scheme === 'classification') {
-    return palette[value] || palette._default;
-  }
-
-  if (scheme === 'colorblind' || scheme === 'sequential') {
-    const colors = palette._colors.split(',');
-    const index = allValues.indexOf(value);
-    return colors[index % colors.length] || palette._default;
-  }
-
-  return palette._default;
+  return palette[classification] || palette._default;
 }
 
 // Component to fit map bounds
@@ -71,8 +70,9 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
 export function SpotMap({ dataset }: SpotMapProps) {
   const [latColumn, setLatColumn] = useState<string>('');
   const [lngColumn, setLngColumn] = useState<string>('');
-  const [stratifyBy, setStratifyBy] = useState<string>('');
-  const [colorScheme, setColorScheme] = useState<ColorScheme>('default');
+  const [filterBy, setFilterBy] = useState<string>('');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [colorScheme, setColorScheme] = useState<ColorScheme>('classification');
   const [markerSize, setMarkerSize] = useState<number>(8);
   const [showPopups, setShowPopups] = useState(true);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>('street');
@@ -105,21 +105,48 @@ export function SpotMap({ dataset }: SpotMapProps) {
         if (isNaN(lat) || isNaN(lng)) return null;
         if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
+        // Always use classification field for coloring
+        const classification = String(record['classification'] ?? 'Unknown');
+
         return {
           record,
           lat,
           lng,
-          strataValue: stratifyBy ? String(record[stratifyBy] ?? 'Unknown') : 'All',
+          classification,
         };
       })
       .filter((c): c is MapCase => c !== null);
-  }, [dataset.records, latColumn, lngColumn, stratifyBy]);
+  }, [dataset.records, latColumn, lngColumn]);
 
-  // Get unique strata values
-  const strataValues = useMemo(() => {
-    const values = new Set(mapCases.map(c => c.strataValue));
+  // Apply filters if selected
+  const filteredCases = useMemo(() => {
+    if (!filterBy || selectedFilterValues.size === 0) {
+      return mapCases;
+    }
+
+    return mapCases.filter(caseData => {
+      const value = String(caseData.record[filterBy] ?? 'Unknown');
+      return selectedFilterValues.has(value);
+    });
+  }, [mapCases, filterBy, selectedFilterValues]);
+
+  // Get unique classification values for legend
+  const classificationValues = useMemo(() => {
+    const values = new Set(mapCases.map(c => c.classification));
     return Array.from(values).sort();
   }, [mapCases]);
+
+  // Get unique values for the filter dropdown
+  const filterValues = useMemo(() => {
+    if (!filterBy) return [];
+    const values = new Set(dataset.records.map(r => String(r[filterBy] ?? 'Unknown')));
+    return Array.from(values).sort();
+  }, [dataset.records, filterBy]);
+
+  // Reset selected filter values when filter variable changes
+  useEffect(() => {
+    setSelectedFilterValues(new Set());
+  }, [filterBy]);
 
   // Map tile URLs
   const tileUrls: Record<string, { url: string; attribution: string }> = {
@@ -151,12 +178,12 @@ export function SpotMap({ dataset }: SpotMapProps) {
           </p>
         </div>
         <div className="text-sm text-gray-500">
-          {mapCases.length} of {dataset.records.length} cases mapped
+          {filteredCases.length} of {mapCases.length} cases displayed ({dataset.records.length} total)
         </div>
       </div>
 
       {/* Configuration */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Latitude Column</label>
           <select
@@ -186,13 +213,13 @@ export function SpotMap({ dataset }: SpotMapProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Color By</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Filter By</label>
           <select
-            value={stratifyBy}
-            onChange={(e) => setStratifyBy(e.target.value)}
+            value={filterBy}
+            onChange={(e) => setFilterBy(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
           >
-            <option value="">None (single color)</option>
+            <option value="">None (show all)</option>
             {dataset.columns.map(col => (
               <option key={col.key} value={col.key}>{col.label}</option>
             ))}
@@ -207,9 +234,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
           >
             <option value="default">Default Blue</option>
-            <option value="classification">Classification</option>
-            <option value="colorblind">Colorblind-Friendly</option>
-            <option value="sequential">Sequential</option>
+            <option value="classification">Classification (Standard)</option>
+            <option value="colorblind">Classification (Colorblind-Friendly)</option>
+            <option value="sequential">Classification (Sequential)</option>
           </select>
         </div>
 
@@ -239,6 +266,56 @@ export function SpotMap({ dataset }: SpotMapProps) {
         </div>
       </div>
 
+      {/* Filter Options */}
+      {filterBy && filterValues.length > 0 && (
+        <div className="border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-medium text-gray-700">
+              Filter by {dataset.columns.find(c => c.key === filterBy)?.label}
+            </label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setSelectedFilterValues(new Set(filterValues))}
+                className="text-xs text-blue-600 hover:text-blue-700"
+              >
+                Select All
+              </button>
+              <button
+                onClick={() => setSelectedFilterValues(new Set())}
+                className="text-xs text-gray-600 hover:text-gray-700"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {filterValues.map(value => {
+              const count = mapCases.filter(c => String(c.record[filterBy] ?? 'Unknown') === value).length;
+              return (
+                <label key={value} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedFilterValues.has(value)}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedFilterValues);
+                      if (e.target.checked) {
+                        newSet.add(value);
+                      } else {
+                        newSet.delete(value);
+                      }
+                      setSelectedFilterValues(newSet);
+                    }}
+                    className="rounded border-gray-300"
+                  />
+                  <span className="text-gray-700">{value}</span>
+                  <span className="text-gray-500">({count})</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Display Options */}
       <div className="flex items-center gap-4">
         <label className="flex items-center gap-2 text-sm">
@@ -252,21 +329,24 @@ export function SpotMap({ dataset }: SpotMapProps) {
         </label>
       </div>
 
-      {/* Legend */}
-      {stratifyBy && strataValues.length > 0 && (
-        <div className="flex flex-wrap gap-4">
-          {strataValues.map(value => (
-            <div key={value} className="flex items-center gap-2">
-              <div
-                className="w-4 h-4 rounded-full"
-                style={{ backgroundColor: getMarkerColor(value, colorScheme, strataValues) }}
-              />
-              <span className="text-sm text-gray-700">{value}</span>
-              <span className="text-xs text-gray-500">
-                ({mapCases.filter(c => c.strataValue === value).length})
-              </span>
-            </div>
-          ))}
+      {/* Legend - Always show classification values */}
+      {classificationValues.length > 0 && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-medium text-gray-700 mb-3">Classification Legend</h4>
+          <div className="flex flex-wrap gap-4">
+            {classificationValues.map(value => (
+              <div key={value} className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full border border-gray-300"
+                  style={{ backgroundColor: getMarkerColor(value, colorScheme) }}
+                />
+                <span className="text-sm text-gray-700">{value}</span>
+                <span className="text-xs text-gray-500">
+                  ({mapCases.filter(c => c.classification === value).length})
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -283,15 +363,15 @@ export function SpotMap({ dataset }: SpotMapProps) {
               attribution={tileUrls[mapStyle].attribution}
             />
 
-            {mapCases.length > 0 && <FitBounds cases={mapCases} />}
+            {filteredCases.length > 0 && <FitBounds cases={filteredCases} />}
 
-            {mapCases.map((caseData, index) => (
+            {filteredCases.map((caseData, index) => (
               <CircleMarker
                 key={caseData.record.id || index}
                 center={[caseData.lat, caseData.lng]}
                 radius={markerSize}
                 pathOptions={{
-                  fillColor: getMarkerColor(caseData.strataValue, colorScheme, strataValues),
+                  fillColor: getMarkerColor(caseData.classification, colorScheme),
                   fillOpacity: 0.7,
                   color: '#fff',
                   weight: 1,
