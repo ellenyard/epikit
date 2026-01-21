@@ -7,8 +7,16 @@ interface DescriptiveStatsProps {
   dataset: Dataset;
 }
 
+interface HistogramBin {
+  binStart: number;
+  binEnd: number;
+  count: number;
+  label: string;
+}
+
 export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
   const [selectedVar, setSelectedVar] = useState<string>('');
+  const [binWidth, setBinWidth] = useState<number | null>(null);
 
   const selectedColumn = dataset.columns.find(c => c.key === selectedVar);
 
@@ -17,13 +25,71 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
     return dataset.records.map(r => r[selectedVar]);
   }, [dataset.records, selectedVar]);
 
+  const numericValues = useMemo(() => {
+    if (!selectedColumn || selectedColumn.type !== 'number') return [];
+    return values
+      .filter(v => v !== null && v !== undefined && !isNaN(Number(v)))
+      .map(v => Number(v));
+  }, [values, selectedColumn]);
+
   const numericStats: DescStats | null = useMemo(() => {
     if (!selectedColumn || selectedColumn.type !== 'number') return null;
-    const numericValues = values
-      .filter(v => v !== null && v !== undefined)
-      .map(v => Number(v));
     return calculateDescriptiveStats(numericValues);
-  }, [values, selectedColumn]);
+  }, [numericValues, selectedColumn]);
+
+  // Calculate default bin width using Sturges' rule or similar
+  const defaultBinWidth = useMemo(() => {
+    if (!numericStats || numericValues.length === 0) return 1;
+    const range = numericStats.max - numericStats.min;
+    if (range === 0) return 1;
+    // Sturges' rule for number of bins: k = ceil(log2(n) + 1)
+    const numBins = Math.ceil(Math.log2(numericValues.length) + 1);
+    const width = range / numBins;
+    // Round to a nice number
+    const magnitude = Math.pow(10, Math.floor(Math.log10(width)));
+    const normalized = width / magnitude;
+    let niceWidth;
+    if (normalized <= 1) niceWidth = 1;
+    else if (normalized <= 2) niceWidth = 2;
+    else if (normalized <= 5) niceWidth = 5;
+    else niceWidth = 10;
+    return niceWidth * magnitude;
+  }, [numericStats, numericValues]);
+
+  // Use user-defined bin width or default
+  const effectiveBinWidth = binWidth !== null ? binWidth : defaultBinWidth;
+
+  // Calculate histogram bins
+  const histogramBins: HistogramBin[] = useMemo(() => {
+    if (!numericStats || numericValues.length === 0 || effectiveBinWidth <= 0) return [];
+
+    const min = numericStats.min;
+    const max = numericStats.max;
+    const bins: HistogramBin[] = [];
+
+    // Calculate bin start (round down to bin width)
+    const binStart = Math.floor(min / effectiveBinWidth) * effectiveBinWidth;
+    const binEnd = Math.ceil(max / effectiveBinWidth) * effectiveBinWidth;
+
+    for (let start = binStart; start < binEnd; start += effectiveBinWidth) {
+      const end = start + effectiveBinWidth;
+      const count = numericValues.filter(v => v >= start && v < end).length;
+      // Handle last bin to include max value
+      const adjustedCount = end >= max
+        ? numericValues.filter(v => v >= start && v <= end).length
+        : count;
+      bins.push({
+        binStart: start,
+        binEnd: end,
+        count: adjustedCount,
+        label: `${start.toFixed(1)} - ${end.toFixed(1)}`,
+      });
+    }
+
+    return bins;
+  }, [numericStats, numericValues, effectiveBinWidth]);
+
+  const maxBinCount = Math.max(...histogramBins.map(b => b.count), 1);
 
   const frequency: FrequencyItem[] = useMemo(() => {
     if (!selectedVar) return [];
@@ -237,6 +303,63 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                     </>
                   )}
                 </div>
+              </div>
+
+              {/* Histogram */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-semibold text-gray-900">Histogram</h4>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500">Bin width:</label>
+                    <input
+                      type="number"
+                      value={binWidth !== null ? binWidth : defaultBinWidth}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val > 0) {
+                          setBinWidth(val);
+                        }
+                      }}
+                      step="any"
+                      min="0.01"
+                      className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                    />
+                    {binWidth !== null && (
+                      <button
+                        onClick={() => setBinWidth(null)}
+                        className="text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Histogram Chart */}
+                {histogramBins.length > 0 && (
+                  <div className="space-y-1">
+                    {histogramBins.map((bin, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600 w-28 truncate text-right" title={bin.label}>
+                          {bin.label}
+                        </span>
+                        <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 transition-all"
+                            style={{ width: `${(bin.count / maxBinCount) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-700 w-8 text-right font-medium">
+                          {bin.count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {histogramBins.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-4">No data to display</p>
+                )}
               </div>
 
               {/* Count Info */}
