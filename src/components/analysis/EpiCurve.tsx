@@ -648,15 +648,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           <div className="text-center mt-2">
             <span className="text-xs font-bold text-gray-500">{xAxisLabel}</span>
           </div>
-
-          {/* Summary Stats */}
-          <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap justify-center gap-x-8 gap-y-2 text-sm text-gray-600">
-            <span>Cases: <strong>{filteredRecords.length}</strong>{filterBy && selectedFilterValues.size > 0 && ` of ${dataset.records.length}`}</span>
-            <span>Date Range: <strong>
-              {curveData.dateRange.start.toLocaleDateString()} - {curveData.dateRange.end.toLocaleDateString()}
-            </strong></span>
-            <span>Peak: <strong>{curveData.maxCount} cases</strong></span>
-          </div>
         </div>
       ) : dateColumn ? (
         <div className="text-center py-12 text-gray-400">
