@@ -344,7 +344,7 @@ function App() {
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
-                2-way
+                2x2 Tables
               </button>
             </div>
           </div>
