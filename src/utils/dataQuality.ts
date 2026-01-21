@@ -4,6 +4,7 @@ import type {
   DataQualityIssue,
   DataQualityConfig,
   DateOrderRule,
+  NumericRangeRule,
 } from '../types/analysis';
 
 // Generate unique ID for issues
@@ -34,10 +35,8 @@ export function getDefaultConfig(): DataQualityConfig {
     duplicateFields: [],
     dateOrderRules: [],
     checkFutureDates: true,
-    ageField: undefined,
-    ageMin: 0,
-    ageMax: 120,
-    enabledChecks: ['duplicate', 'date_order', 'future_date', 'age_range'],
+    numericRangeRules: [],
+    enabledChecks: ['duplicate', 'date_order', 'future_date', 'numeric_range'],
   };
 }
 
@@ -160,32 +159,30 @@ function checkFutureDates(
   return issues;
 }
 
-// Check age range
-function checkAgeRange(
+// Check numeric ranges
+function checkNumericRanges(
   records: CaseRecord[],
-  ageField: string | undefined,
-  ageMin: number,
-  ageMax: number
+  rules: NumericRangeRule[]
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
-  if (!ageField) return issues;
-
-  for (const record of records) {
-    const ageVal = record[ageField];
-    if (!isEmpty(ageVal)) {
-      const age = Number(ageVal);
-      if (!isNaN(age) && (age < ageMin || age > ageMax)) {
-        issues.push({
-          id: generateId(),
-          checkType: 'age_range',
-          category: 'range',
-          severity: age < 0 ? 'error' : 'warning',
-          recordIds: [record.id],
-          field: ageField,
-          message: `Age out of expected range (${ageMin}-${ageMax})`,
-          details: `Age: ${age}`,
-        });
+  for (const rule of rules) {
+    for (const record of records) {
+      const value = record[rule.field];
+      if (!isEmpty(value)) {
+        const numValue = Number(value);
+        if (!isNaN(numValue) && (numValue < rule.min || numValue > rule.max)) {
+          issues.push({
+            id: generateId(),
+            checkType: 'numeric_range',
+            category: 'range',
+            severity: numValue < 0 ? 'error' : 'warning',
+            recordIds: [record.id],
+            field: rule.field,
+            message: `${rule.fieldLabel} out of expected range (${rule.min}-${rule.max})`,
+            details: `Value: ${numValue}`,
+          });
+        }
       }
     }
   }
@@ -217,9 +214,9 @@ export function runDataQualityChecks(
     issues.push(...checkFutureDates(records, columns));
   }
 
-  // Age range check
-  if (enabledChecks.includes('age_range') && config.ageField) {
-    issues.push(...checkAgeRange(records, config.ageField, config.ageMin, config.ageMax));
+  // Numeric range checks
+  if (enabledChecks.includes('numeric_range') && config.numericRangeRules.length > 0) {
+    issues.push(...checkNumericRanges(records, config.numericRangeRules));
   }
 
   return issues;
@@ -231,7 +228,7 @@ export function getCheckName(checkType: string): string {
     duplicate: 'Duplicates',
     date_order: 'Date Order',
     future_date: 'Future Dates',
-    age_range: 'Age Range',
+    numeric_range: 'Numeric Range',
   };
   return names[checkType] || checkType;
 }

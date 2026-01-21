@@ -4,6 +4,7 @@ import type {
   DataQualityConfig,
   DataColumn,
   DateOrderRule,
+  NumericRangeRule,
 } from '../../types/analysis';
 import {
   getCategoryName,
@@ -41,6 +42,11 @@ export function DataQualityPanel({
   // For adding new date order rule
   const [newRuleFirstDate, setNewRuleFirstDate] = useState('');
   const [newRuleSecondDate, setNewRuleSecondDate] = useState('');
+
+  // For adding new numeric range rule
+  const [newNumericField, setNewNumericField] = useState('');
+  const [newNumericMin, setNewNumericMin] = useState('0');
+  const [newNumericMax, setNewNumericMax] = useState('120');
 
   // Filter out dismissed issues for display
   const activeIssues = useMemo(
@@ -106,6 +112,40 @@ export function DataQualityPanel({
     onConfigChange({
       ...config,
       dateOrderRules: config.dateOrderRules.filter(r => r.id !== ruleId),
+    });
+  };
+
+  const addNumericRangeRule = () => {
+    if (!newNumericField) return;
+
+    const fieldCol = columns.find(c => c.key === newNumericField);
+    const min = Number(newNumericMin);
+    const max = Number(newNumericMax);
+
+    if (isNaN(min) || isNaN(max) || min >= max) return;
+
+    const newRule: NumericRangeRule = {
+      id: Math.random().toString(36).substring(2, 11),
+      field: newNumericField,
+      fieldLabel: fieldCol?.label || newNumericField,
+      min,
+      max,
+    };
+
+    onConfigChange({
+      ...config,
+      numericRangeRules: [...config.numericRangeRules, newRule],
+    });
+
+    setNewNumericField('');
+    setNewNumericMin('0');
+    setNewNumericMax('120');
+  };
+
+  const removeNumericRangeRule = (ruleId: string) => {
+    onConfigChange({
+      ...config,
+      numericRangeRules: config.numericRangeRules.filter(r => r.id !== ruleId),
     });
   };
 
@@ -285,44 +325,94 @@ export function DataQualityPanel({
               </label>
             </div>
 
-            {/* Age Range */}
+            {/* Numeric Range Checks */}
             <div>
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                Age Range Check
+                Numeric Range Checks
               </h4>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-gray-600 w-16">Age field:</label>
-                  <select
-                    value={config.ageField || ''}
-                    onChange={(e) => onConfigChange({ ...config, ageField: e.target.value || undefined })}
-                    className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded"
-                  >
-                    <option value="">-- None --</option>
-                    {numericColumns.map(c => (
-                      <option key={c.key} value={c.key}>{c.label}</option>
-                    ))}
-                  </select>
+              <p className="text-xs text-gray-500 mb-3">
+                Specify expected ranges for numeric/continuous variables (e.g., age, temperature, weight):
+              </p>
+
+              {/* Existing rules */}
+              {config.numericRangeRules.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {config.numericRangeRules.map(rule => (
+                    <div key={rule.id} className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
+                      <span className="text-xs text-gray-700 flex-1">
+                        <span className="font-medium">{rule.fieldLabel}</span>
+                        <span className="text-gray-500 mx-1.5">should be between</span>
+                        <span className="font-medium">{rule.min}</span>
+                        <span className="text-gray-500 mx-1">and</span>
+                        <span className="font-medium">{rule.max}</span>
+                      </span>
+                      <button
+                        onClick={() => removeNumericRangeRule(rule.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                        title="Remove rule"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                {config.ageField && (
+              )}
+
+              {/* Add new rule */}
+              {numericColumns.length > 0 && (
+                <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-600 w-16">Range:</label>
-                    <input
-                      type="number"
-                      value={config.ageMin}
-                      onChange={(e) => onConfigChange({ ...config, ageMin: Number(e.target.value) })}
-                      className="w-16 text-xs px-2 py-1.5 border border-gray-300 rounded"
-                    />
-                    <span className="text-xs text-gray-400">to</span>
-                    <input
-                      type="number"
-                      value={config.ageMax}
-                      onChange={(e) => onConfigChange({ ...config, ageMax: Number(e.target.value) })}
-                      className="w-16 text-xs px-2 py-1.5 border border-gray-300 rounded"
-                    />
+                    <label className="text-xs text-gray-600 w-12">Field:</label>
+                    <select
+                      value={newNumericField}
+                      onChange={(e) => setNewNumericField(e.target.value)}
+                      className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select field...</option>
+                      {numericColumns.map(c => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
                   </div>
-                )}
-              </div>
+                  {newNumericField && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-600 w-12">Range:</label>
+                      <input
+                        type="number"
+                        value={newNumericMin}
+                        onChange={(e) => setNewNumericMin(e.target.value)}
+                        className="w-20 text-xs px-2 py-1.5 border border-gray-300 rounded"
+                        placeholder="Min"
+                      />
+                      <span className="text-xs text-gray-400">to</span>
+                      <input
+                        type="number"
+                        value={newNumericMax}
+                        onChange={(e) => setNewNumericMax(e.target.value)}
+                        className="w-20 text-xs px-2 py-1.5 border border-gray-300 rounded"
+                        placeholder="Max"
+                      />
+                      <button
+                        onClick={addNumericRangeRule}
+                        disabled={!newNumericField || Number(newNumericMin) >= Number(newNumericMax)}
+                        className="p-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        title="Add numeric range rule"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {numericColumns.length === 0 && (
+                <p className="text-xs text-gray-400 italic">
+                  No numeric columns available
+                </p>
+              )}
             </div>
           </div>
         </div>
