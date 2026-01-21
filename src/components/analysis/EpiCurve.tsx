@@ -799,36 +799,82 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
 }) {
   if (bins.length === 0) return null;
 
-  // Find position - handle dates outside the bin range
-  let x: number;
-  const annotationTime = annotation.date.getTime();
-  const firstBinStart = bins[0].startDate.getTime();
-  const lastBinEnd = bins[bins.length - 1].endDate.getTime();
+  // Find position by matching the annotation date to bins
+  // Use date string comparison to avoid timezone issues
+  const getDateStr = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
-  if (annotationTime < firstBinStart) {
-    // Before data range - show at left edge
-    x = 0;
-  } else if (annotationTime >= lastBinEnd) {
-    // After data range - show at right edge
-    x = bins.length * barWidth;
-  } else {
-    // Within range - find the bin
-    const binIndex = bins.findIndex(b => annotationTime >= b.startDate.getTime() && annotationTime < b.endDate.getTime());
-    x = binIndex !== -1 ? binIndex * barWidth + barWidth / 2 : 0;
+  // For the annotation, get both the UTC date and local date strings
+  // and try to match either one to handle timezone edge cases
+  const annDateUTC = annotation.date.toISOString().split('T')[0];
+  const annDateLocal = getDateStr(annotation.date);
+
+  let x: number = 0;
+  let binIndex = -1;
+
+  // Try to find a bin that matches the annotation date
+  for (let i = 0; i < bins.length; i++) {
+    const binDateStr = getDateStr(bins[i].startDate);
+    // Check if either interpretation of the annotation date matches this bin
+    if (binDateStr === annDateUTC || binDateStr === annDateLocal) {
+      binIndex = i;
+      break;
+    }
+  }
+
+  // If no exact match, fall back to timestamp comparison
+  if (binIndex === -1) {
+    const annotationTime = annotation.date.getTime();
+    const firstBinStart = bins[0].startDate.getTime();
+    const lastBinEnd = bins[bins.length - 1].endDate.getTime();
+
+    if (annotationTime < firstBinStart) {
+      x = 0;
+    } else if (annotationTime >= lastBinEnd) {
+      x = bins.length * barWidth;
+    } else {
+      binIndex = bins.findIndex(b => annotationTime >= b.startDate.getTime() && annotationTime < b.endDate.getTime());
+      x = binIndex !== -1 ? binIndex * barWidth + barWidth / 2 : 0;
+    }
+  }
+
+  // Calculate x position - center of the bin
+  if (binIndex !== -1) {
+    x = binIndex * barWidth + barWidth / 2;
   }
 
   // For incubation period ranges, show shaded area
   if (annotation.endDate) {
-    let endX: number;
-    const endTime = annotation.endDate.getTime();
+    // Find end position using same date matching logic
+    const endDateUTC = annotation.endDate.toISOString().split('T')[0];
+    const endDateLocal = getDateStr(annotation.endDate);
+    let endBinIndex = -1;
 
-    if (endTime < firstBinStart) {
-      endX = 0;
-    } else if (endTime >= lastBinEnd) {
-      endX = bins.length * barWidth;
+    for (let i = 0; i < bins.length; i++) {
+      const binDateStr = getDateStr(bins[i].startDate);
+      if (binDateStr === endDateUTC || binDateStr === endDateLocal) {
+        endBinIndex = i;
+        break;
+      }
+    }
+
+    let endX: number;
+    if (endBinIndex !== -1) {
+      endX = (endBinIndex + 1) * barWidth;
     } else {
-      const endIndex = bins.findIndex(b => endTime >= b.startDate.getTime() && endTime < b.endDate.getTime());
-      endX = endIndex !== -1 ? (endIndex + 1) * barWidth : bins.length * barWidth;
+      // Fallback to timestamp comparison
+      const endTime = annotation.endDate.getTime();
+      const lastBinEnd = bins[bins.length - 1].endDate.getTime();
+      if (endTime >= lastBinEnd) {
+        endX = bins.length * barWidth;
+      } else {
+        const foundIndex = bins.findIndex(b => endTime >= b.startDate.getTime() && endTime < b.endDate.getTime());
+        endX = foundIndex !== -1 ? (foundIndex + 1) * barWidth : bins.length * barWidth;
+      }
     }
 
     const width = Math.max(endX - x, barWidth);
