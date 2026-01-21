@@ -172,52 +172,47 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const defaultCenter: [number, number] = [39.8283, -98.5795];
   const defaultZoom = 4;
 
+  // Info icon component with tooltip
+  const InfoTooltip = ({ text, link }: { text: string; link?: string }) => (
+    <span className="relative group inline-flex ml-1">
+      <span className="cursor-help text-gray-400 hover:text-gray-600">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </span>
+      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-normal w-64 z-50 pointer-events-none">
+        {text}
+        {link && (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block mt-1 text-blue-300 hover:text-blue-200 pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Learn more about coordinates
+          </a>
+        )}
+        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+      </span>
+    </span>
+  );
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-start justify-between">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">Spot Map</h3>
-          <p className="text-sm text-gray-600">
-            Visualize geographic distribution of cases
-          </p>
-        </div>
         <div className="text-sm text-gray-500">
-          {filteredCases.length} of {mapCases.length} cases displayed ({dataset.records.length} total)
+          {filteredCases.length} of {mapCases.length} cases mapped ({dataset.records.length} total records)
         </div>
       </div>
 
-      {/* Configuration */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+      {/* Configuration - Row 1: Filter By */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Latitude Column</label>
-          <select
-            value={latColumn}
-            onChange={(e) => setLatColumn(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">Select column...</option>
-            {dataset.columns.filter(c => c.type === 'number').map(col => (
-              <option key={col.key} value={col.key}>{col.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Longitude Column</label>
-          <select
-            value={lngColumn}
-            onChange={(e) => setLngColumn(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">Select column...</option>
-            {dataset.columns.filter(c => c.type === 'number').map(col => (
-              <option key={col.key} value={col.key}>{col.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Filter By</label>
+          <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+            Filter By
+            <InfoTooltip text="Select which records to include on the map. Use this to show only specific groups (e.g., confirmed cases, certain age groups)." />
+          </label>
           <select
             value={filterBy}
             onChange={(e) => setFilterBy(e.target.value)}
@@ -229,7 +224,53 @@ export function SpotMap({ dataset }: SpotMapProps) {
             ))}
           </select>
         </div>
+      </div>
 
+      {/* Configuration - Row 2: Lat/Long */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+            Latitude Variable
+            <InfoTooltip
+              text="Select the variable in your dataset that contains latitude values (north-south position, ranging from -90 to 90)."
+              link="https://gisgeography.com/latitude-longitude-coordinates/"
+            />
+          </label>
+          <select
+            value={latColumn}
+            onChange={(e) => setLatColumn(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">Select variable...</option>
+            {dataset.columns.filter(c => c.type === 'number').map(col => (
+              <option key={col.key} value={col.key}>{col.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+            Longitude Variable
+            <InfoTooltip
+              text="Select the variable in your dataset that contains longitude values (east-west position, ranging from -180 to 180)."
+              link="https://gisgeography.com/latitude-longitude-coordinates/"
+            />
+          </label>
+          <select
+            value={lngColumn}
+            onChange={(e) => setLngColumn(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          >
+            <option value="">Select variable...</option>
+            {dataset.columns.filter(c => c.type === 'number').map(col => (
+              <option key={col.key} value={col.key}>{col.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Configuration - Row 3: Formatting (Color Scheme, Map Style, Marker Size) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
           <select
@@ -265,7 +306,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
             max="20"
             value={markerSize}
             onChange={(e) => setMarkerSize(Number(e.target.value))}
-            className="w-full"
+            className="w-full mt-2"
           />
         </div>
       </div>
