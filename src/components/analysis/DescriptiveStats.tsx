@@ -268,30 +268,7 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                 </div>
               </div>
 
-              {/* Dispersion */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <h4 className="text-sm font-semibold text-gray-900 mb-4">Dispersion</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-gray-500">Standard Deviation</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.stdDev)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Variance</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.variance)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">Range</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.range)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500">IQR (Q3 - Q1)</p>
-                    <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.iqr)}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quartiles & Range */}
+              {/* Distribution */}
               <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <h4 className="text-sm font-semibold text-gray-900 mb-4">Distribution</h4>
 
@@ -349,6 +326,21 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                       />
                     </>
                   )}
+                </div>
+              </div>
+
+              {/* Dispersion */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <h4 className="text-sm font-semibold text-gray-900 mb-4">Dispersion</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-500">Standard Deviation</p>
+                    <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.stdDev)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Variance</p>
+                    <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.variance)}</p>
+                  </div>
                 </div>
               </div>
 
