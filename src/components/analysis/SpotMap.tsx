@@ -172,7 +172,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const defaultCenter: [number, number] = [39.8283, -98.5795];
   const defaultZoom = 4;
 
-  // Info icon component with tooltip
+  // Info icon component with tooltip (appears below to avoid cutoff)
   const InfoTooltip = ({ text, link }: { text: string; link?: string }) => (
     <span className="relative group inline-flex ml-1">
       <span className="cursor-help text-gray-400 hover:text-gray-600">
@@ -180,7 +180,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       </span>
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-normal w-64 z-50 pointer-events-none">
+      <span className="absolute top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-normal w-64 z-50 pointer-events-none">
         {text}
         {link && (
           <a
@@ -193,7 +193,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
             Learn more about coordinates
           </a>
         )}
-        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900" />
+        <span className="absolute bottom-full left-4 border-4 border-transparent border-b-gray-900" />
       </span>
     </span>
   );
@@ -206,7 +206,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
         </div>
       </div>
 
-      {/* Configuration - Row 1: Filter By */}
+      {/* Configuration - Row 1: Filter By, Lat, Long */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
@@ -224,10 +224,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
             ))}
           </select>
         </div>
-      </div>
 
-      {/* Configuration - Row 2: Lat/Long */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
             Latitude Variable
