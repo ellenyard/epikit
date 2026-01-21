@@ -51,6 +51,11 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   const [stratifyBy, setStratifyBy] = useState<string>('');
   const [colorScheme, setColorScheme] = useState<ColorScheme>('default');
 
+  // Filter state
+  const [filterBy, setFilterBy] = useState<string>('');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [showAllFilterValues, setShowAllFilterValues] = useState(false);
+
   // Display options
   const [showGridLines, setShowGridLines] = useState(true);
   const [showCaseCounts, setShowCaseCounts] = useState(true);
@@ -83,13 +88,37 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     }
   }, [dateColumns, dateColumn]);
 
+  // Get unique values for the filter dropdown
+  const filterValues = useMemo(() => {
+    if (!filterBy) return [];
+    const values = new Set(dataset.records.map(r => String(r[filterBy] ?? 'Unknown')));
+    return Array.from(values).sort();
+  }, [dataset.records, filterBy]);
+
+  // Reset selected filter values when filter variable changes
+  useMemo(() => {
+    setSelectedFilterValues(new Set());
+    setShowAllFilterValues(false);
+  }, [filterBy]);
+
+  // Apply filter to records
+  const filteredRecords = useMemo(() => {
+    if (!filterBy || selectedFilterValues.size === 0) {
+      return dataset.records;
+    }
+    return dataset.records.filter(record => {
+      const value = String(record[filterBy] ?? 'Unknown');
+      return selectedFilterValues.has(value);
+    });
+  }, [dataset.records, filterBy, selectedFilterValues]);
+
   // Process data
   const curveData: EpiCurveData = useMemo(() => {
     if (!dateColumn) {
       return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
     }
-    return processEpiCurveData(dataset.records, dateColumn, binSize, stratifyBy || undefined);
-  }, [dataset.records, dateColumn, binSize, stratifyBy]);
+    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined);
+  }, [filteredRecords, dateColumn, binSize, stratifyBy]);
 
   const addAnnotation = () => {
     if (!newAnnotation.date) return;
@@ -152,9 +181,80 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
         <div className="space-y-4">
           {/* Summary */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
-            <span className="font-medium">{dataset.records.length}</span> total cases
+            <span className="font-medium">{filteredRecords.length}</span> of {dataset.records.length} cases
             {curveData.bins.length > 0 && (
               <span className="text-gray-400"> · Peak: {curveData.maxCount}</span>
+            )}
+          </div>
+
+          {/* Filter By */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filter By</label>
+            <select
+              value={filterBy}
+              onChange={(e) => setFilterBy(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="">None (show all)</option>
+              {dataset.columns.map(col => (
+                <option key={col.key} value={col.key}>{col.label}</option>
+              ))}
+            </select>
+
+            {/* Filter value checkboxes */}
+            {filterBy && filterValues.length > 0 && (
+              <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500">Select values:</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedFilterValues(new Set(filterValues))}
+                      className="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setSelectedFilterValues(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  {(showAllFilterValues ? filterValues : filterValues.slice(0, 5)).map(value => {
+                    const count = dataset.records.filter(r => String(r[filterBy] ?? 'Unknown') === value).length;
+                    return (
+                      <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedFilterValues.has(value)}
+                          onChange={(e) => {
+                            const newSet = new Set(selectedFilterValues);
+                            if (e.target.checked) {
+                              newSet.add(value);
+                            } else {
+                              newSet.delete(value);
+                            }
+                            setSelectedFilterValues(newSet);
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-gray-700 truncate flex-1">{value}</span>
+                        <span className="text-gray-400 text-xs">({count})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {filterValues.length > 5 && (
+                  <button
+                    onClick={() => setShowAllFilterValues(!showAllFilterValues)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    {showAllFilterValues ? 'Show less' : `Show ${filterValues.length - 5} more...`}
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -540,8 +640,8 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           </div>
 
           {/* Summary Stats */}
-          <div className="mt-4 pt-4 border-t border-gray-200 flex justify-center gap-8 text-sm text-gray-600">
-            <span>Total Cases: <strong>{dataset.records.length}</strong></span>
+          <div className="mt-4 pt-4 border-t border-gray-200 flex flex-wrap justify-center gap-x-8 gap-y-2 text-sm text-gray-600">
+            <span>Cases: <strong>{filteredRecords.length}</strong>{filterBy && selectedFilterValues.size > 0 && ` of ${dataset.records.length}`}</span>
             <span>Date Range: <strong>
               {curveData.dateRange.start.toLocaleDateString()} - {curveData.dateRange.end.toLocaleDateString()}
             </strong></span>
