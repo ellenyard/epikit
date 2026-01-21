@@ -78,7 +78,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
   const [colorScheme, setColorScheme] = useState<ColorScheme>('classification');
   const [markerSize, setMarkerSize] = useState<number>(8);
-  const [showPopups, setShowPopups] = useState(true);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>('street');
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
@@ -379,17 +378,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
             />
           </div>
 
-          {/* Show Popups */}
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showPopups}
-              onChange={(e) => setShowPopups(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <span className="text-gray-700">Show popups on click</span>
-          </label>
-
           {/* Legend */}
           {classificationValues.length > 0 && colorScheme !== 'default' && (
             <div className="pt-3 border-t border-gray-200">
@@ -440,25 +428,23 @@ export function SpotMap({ dataset }: SpotMapProps) {
                   weight: 1,
                 }}
               >
-                {showPopups && (
-                  <Popup>
-                    <div className="text-sm">
-                      <p className="font-semibold mb-2">Case Details</p>
-                      {dataset.columns.slice(0, 6).map(col => {
-                        const value = caseData.record[col.key];
-                        if (value === null || value === undefined) return null;
-                        return (
-                          <p key={col.key} className="text-gray-600">
-                            <span className="font-medium">{col.label}:</span> {String(value)}
-                          </p>
-                        );
-                      })}
-                      <p className="text-gray-500 mt-2 text-xs">
-                        Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
-                      </p>
-                    </div>
-                  </Popup>
-                )}
+                <Popup>
+                  <div className="text-sm">
+                    <p className="font-semibold mb-2">Case Details</p>
+                    {dataset.columns.slice(0, 6).map(col => {
+                      const value = caseData.record[col.key];
+                      if (value === null || value === undefined) return null;
+                      return (
+                        <p key={col.key} className="text-gray-600">
+                          <span className="font-medium">{col.label}:</span> {String(value)}
+                        </p>
+                      );
+                    })}
+                    <p className="text-gray-500 mt-2 text-xs">
+                      Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
+                    </p>
+                  </div>
+                </Popup>
               </CircleMarker>
             ))}
           </MapContainer>
