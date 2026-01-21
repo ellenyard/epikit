@@ -1,16 +1,27 @@
 import { useState, useMemo } from 'react';
-import type { Dataset, CaseRecord, FilterCondition, SortConfig, DataColumn } from '../../types/analysis';
+import type { Dataset, CaseRecord, FilterCondition, SortConfig, DataColumn, EditLogEntry } from '../../types/analysis';
 import { filterRecords, sortRecords } from '../../hooks/useDataset';
 import { exportToCSV } from '../../utils/csvParser';
+import { EditPromptModal } from '../review/EditPromptModal';
+
+interface PendingEdit {
+  recordId: string;
+  recordIdentifier: string;
+  columnKey: string;
+  columnLabel: string;
+  oldValue: unknown;
+  newValue: unknown;
+}
 
 interface LineListingProps {
   dataset: Dataset;
   onUpdateRecord: (recordId: string, updates: Partial<CaseRecord>) => void;
   onDeleteRecord: (recordId: string) => void;
   onAddRecord: (record: Omit<CaseRecord, 'id'>) => void;
+  onEditComplete?: (entry: EditLogEntry) => void;
 }
 
-export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddRecord }: LineListingProps) {
+export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddRecord, onEditComplete }: LineListingProps) {
   const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [sort, setSort] = useState<SortConfig | null>(null);
   const [editingCell, setEditingCell] = useState<{ recordId: string; column: string } | null>(null);
@@ -19,6 +30,7 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [showAddRow, setShowAddRow] = useState(false);
   const [newRowData, setNewRowData] = useState<Record<string, unknown>>({});
+  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
 
   const processedRecords = useMemo(() => {
     const filtered = filterRecords(dataset.records, filters);
@@ -43,15 +55,39 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
   const saveEdit = () => {
     if (!editingCell) return;
     const col = dataset.columns.find(c => c.key === editingCell.column);
-    let value: unknown = editValue;
+    const record = dataset.records.find(r => r.id === editingCell.recordId);
+    if (!record || !col) return;
 
-    if (col?.type === 'number') {
-      value = editValue === '' ? null : Number(editValue);
-    } else if (col?.type === 'boolean') {
-      value = ['true', 'yes', '1'].includes(editValue.toLowerCase());
+    const oldValue = record[editingCell.column];
+    let newValue: unknown = editValue;
+
+    if (col.type === 'number') {
+      newValue = editValue === '' ? null : Number(editValue);
+    } else if (col.type === 'boolean') {
+      newValue = ['true', 'yes', '1'].includes(editValue.toLowerCase());
     }
 
-    onUpdateRecord(editingCell.recordId, { [editingCell.column]: value });
+    // Only track if value actually changed
+    if (String(oldValue ?? '') !== String(newValue ?? '')) {
+      // Get record identifier (first column value or ID)
+      const firstCol = dataset.columns[0];
+      const recordIdentifier = firstCol ? String(record[firstCol.key] ?? record.id) : record.id;
+
+      onUpdateRecord(editingCell.recordId, { [editingCell.column]: newValue });
+
+      // Show the edit prompt modal if callback is provided
+      if (onEditComplete) {
+        setPendingEdit({
+          recordId: editingCell.recordId,
+          recordIdentifier,
+          columnKey: col.key,
+          columnLabel: col.label,
+          oldValue,
+          newValue,
+        });
+      }
+    }
+
     setEditingCell(null);
     setEditValue('');
   };
@@ -118,6 +154,48 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const handleEditPromptSave = (reason: string, initials: string) => {
+    if (!pendingEdit || !onEditComplete) return;
+
+    const entry: EditLogEntry = {
+      id: crypto.randomUUID(),
+      datasetId: dataset.id,
+      recordId: pendingEdit.recordId,
+      recordIdentifier: pendingEdit.recordIdentifier,
+      columnKey: pendingEdit.columnKey,
+      columnLabel: pendingEdit.columnLabel,
+      oldValue: pendingEdit.oldValue,
+      newValue: pendingEdit.newValue,
+      reason,
+      initials,
+      timestamp: new Date().toISOString(),
+    };
+
+    onEditComplete(entry);
+    setPendingEdit(null);
+  };
+
+  const handleEditPromptSkip = () => {
+    if (!pendingEdit || !onEditComplete) return;
+
+    const entry: EditLogEntry = {
+      id: crypto.randomUUID(),
+      datasetId: dataset.id,
+      recordId: pendingEdit.recordId,
+      recordIdentifier: pendingEdit.recordIdentifier,
+      columnKey: pendingEdit.columnKey,
+      columnLabel: pendingEdit.columnLabel,
+      oldValue: pendingEdit.oldValue,
+      newValue: pendingEdit.newValue,
+      reason: '',
+      initials: '',
+      timestamp: new Date().toISOString(),
+    };
+
+    onEditComplete(entry);
+    setPendingEdit(null);
   };
 
   return (
@@ -353,6 +431,18 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
           </div>
         )}
       </div>
+
+      {/* Edit Prompt Modal */}
+      {pendingEdit && (
+        <EditPromptModal
+          recordIdentifier={pendingEdit.recordIdentifier}
+          columnLabel={pendingEdit.columnLabel}
+          oldValue={pendingEdit.oldValue}
+          newValue={pendingEdit.newValue}
+          onSave={handleEditPromptSave}
+          onSkip={handleEditPromptSkip}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { FormItem, FormDefinition } from './types/form';
-import type { Dataset, DataColumn, CaseRecord } from './types/analysis';
+import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
 import { FormBuilder } from './components/FormBuilder';
 import { FormPreview } from './components/FormPreview';
 import { ExportModal } from './components/ExportModal';
@@ -192,6 +192,55 @@ function App() {
     ));
   }, []);
 
+  // Edit log state and functions
+  const [editLog, setEditLog] = useState<EditLogEntry[]>([]);
+
+  const addEditLogEntry = useCallback((entry: EditLogEntry) => {
+    setEditLog(prev => [...prev, entry]);
+  }, []);
+
+  const updateEditLogEntry = useCallback((id: string, updates: Partial<EditLogEntry>) => {
+    setEditLog(prev => prev.map(entry =>
+      entry.id === id ? { ...entry, ...updates } : entry
+    ));
+  }, []);
+
+  const getEditLogForDataset = useCallback((datasetId: string) => {
+    return editLog.filter(entry => entry.datasetId === datasetId);
+  }, [editLog]);
+
+  const exportEditLog = useCallback((datasetId: string) => {
+    const entries = editLog.filter(e => e.datasetId === datasetId);
+    if (entries.length === 0) return;
+
+    const headers = ['Record ID', 'Variable', 'Old Value', 'New Value', 'Reason', 'Date/Time', 'Initials'];
+    const rows = entries.map(e => [
+      e.recordIdentifier,
+      e.columnLabel,
+      String(e.oldValue ?? ''),
+      String(e.newValue ?? ''),
+      e.reason,
+      new Date(e.timestamp).toLocaleString(),
+      e.initials,
+    ]);
+
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dataset = datasets.find(d => d.id === datasetId);
+    a.download = `${dataset?.name || 'dataset'}_edit_log.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [editLog, datasets]);
+
   // Get submission count for a form
   const getFormSubmissionCount = useCallback((formId: string) => {
     const form = formDefinitions.find(f => f.id === formId);
@@ -298,6 +347,10 @@ function App() {
             addRecord={addRecord}
             updateRecord={updateRecord}
             deleteRecord={deleteRecord}
+            addEditLogEntry={addEditLogEntry}
+            updateEditLogEntry={updateEditLogEntry}
+            getEditLogForDataset={getEditLogForDataset}
+            exportEditLog={exportEditLog}
           />
         ) : (
           <Analysis

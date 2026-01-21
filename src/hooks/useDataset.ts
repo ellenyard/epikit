@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { Dataset, CaseRecord, DataColumn, FilterCondition, SortConfig } from '../types/analysis';
+import type { Dataset, CaseRecord, DataColumn, FilterCondition, SortConfig, EditLogEntry } from '../types/analysis';
 
 interface UseDatasetOptions {
   initialDatasets?: Dataset[];
@@ -9,6 +9,7 @@ interface UseDatasetOptions {
 export function useDataset(options?: UseDatasetOptions) {
   const [datasets, setDatasets] = useState<Dataset[]>(options?.initialDatasets || []);
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(options?.initialActiveId || null);
+  const [editLog, setEditLog] = useState<EditLogEntry[]>([]);
 
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
@@ -70,6 +71,52 @@ export function useDataset(options?: UseDatasetOptions) {
     ));
   }, []);
 
+  const addEditLogEntry = useCallback((entry: EditLogEntry) => {
+    setEditLog(prev => [...prev, entry]);
+  }, []);
+
+  const updateEditLogEntry = useCallback((id: string, updates: Partial<EditLogEntry>) => {
+    setEditLog(prev => prev.map(entry =>
+      entry.id === id ? { ...entry, ...updates } : entry
+    ));
+  }, []);
+
+  const getEditLogForDataset = useCallback((datasetId: string) => {
+    return editLog.filter(entry => entry.datasetId === datasetId);
+  }, [editLog]);
+
+  const exportEditLog = useCallback((datasetId: string) => {
+    const entries = editLog.filter(e => e.datasetId === datasetId);
+    if (entries.length === 0) return;
+
+    const headers = ['Record ID', 'Variable', 'Old Value', 'New Value', 'Reason', 'Date/Time', 'Initials'];
+    const rows = entries.map(e => [
+      e.recordIdentifier,
+      e.columnLabel,
+      String(e.oldValue ?? ''),
+      String(e.newValue ?? ''),
+      e.reason,
+      new Date(e.timestamp).toLocaleString(),
+      e.initials,
+    ]);
+
+    const csv = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dataset = datasets.find(d => d.id === datasetId);
+    a.download = `${dataset?.name || 'dataset'}_edit_log.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [editLog, datasets]);
+
   return {
     datasets,
     activeDataset,
@@ -81,6 +128,11 @@ export function useDataset(options?: UseDatasetOptions) {
     addRecord,
     updateRecord,
     deleteRecord,
+    editLog,
+    addEditLogEntry,
+    updateEditLogEntry,
+    getEditLogForDataset,
+    exportEditLog,
   };
 }
 
