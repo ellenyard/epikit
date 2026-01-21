@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { DataImport } from '../analysis/DataImport';
 import { LineListing } from '../analysis/LineListing';
-import type { Dataset, DataColumn, CaseRecord } from '../../types/analysis';
+import { EditLogPanel } from './EditLogPanel';
+import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from '../../types/analysis';
 
 interface ReviewProps {
   datasets: Dataset[];
@@ -12,6 +13,10 @@ interface ReviewProps {
   addRecord: (datasetId: string, record: Omit<CaseRecord, 'id'>) => CaseRecord;
   updateRecord: (datasetId: string, recordId: string, updates: Partial<CaseRecord>) => void;
   deleteRecord: (datasetId: string, recordId: string) => void;
+  addEditLogEntry: (entry: EditLogEntry) => void;
+  updateEditLogEntry: (id: string, updates: Partial<EditLogEntry>) => void;
+  getEditLogForDataset: (datasetId: string) => EditLogEntry[];
+  exportEditLog: (datasetId: string) => void;
 }
 
 export function Review({
@@ -23,9 +28,16 @@ export function Review({
   addRecord,
   updateRecord,
   deleteRecord,
+  addEditLogEntry,
+  updateEditLogEntry,
+  getEditLogForDataset,
+  exportEditLog,
 }: ReviewProps) {
   const [showImport, setShowImport] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [showEditLog, setShowEditLog] = useState(false);
+
+  const currentEditLog = activeDatasetId ? getEditLogForDataset(activeDatasetId) : [];
 
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
@@ -257,6 +269,7 @@ export function Review({
               onUpdateRecord={(recordId, updates) => updateRecord(activeDataset.id, recordId, updates)}
               onDeleteRecord={(recordId) => deleteRecord(activeDataset.id, recordId)}
               onAddRecord={(record) => addRecord(activeDataset.id, record)}
+              onEditComplete={addEditLogEntry}
             />
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -276,6 +289,17 @@ export function Review({
           )}
         </div>
       </div>
+
+      {/* Edit Log Panel */}
+      {activeDataset && (
+        <EditLogPanel
+          entries={currentEditLog}
+          isOpen={showEditLog}
+          onToggle={() => setShowEditLog(!showEditLog)}
+          onUpdateEntry={updateEditLogEntry}
+          onExport={() => exportEditLog(activeDataset.id)}
+        />
+      )}
 
       {/* Import Modal */}
       {showImport && (

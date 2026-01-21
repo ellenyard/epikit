@@ -29,3 +29,17 @@ export interface SortConfig {
   column: string;
   direction: 'asc' | 'desc';
 }
+
+export interface EditLogEntry {
+  id: string;
+  datasetId: string;
+  recordId: string;
+  recordIdentifier: string;
+  columnKey: string;
+  columnLabel: string;
+  oldValue: unknown;
+  newValue: unknown;
+  reason: string;
+  initials: string;
+  timestamp: string;
+}
