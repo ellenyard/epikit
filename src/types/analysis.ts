@@ -49,7 +49,7 @@ export type DataQualityCheckType =
   | 'duplicate'
   | 'date_order'
   | 'future_date'
-  | 'age_range';
+  | 'numeric_range';
 
 export interface DataQualityIssue {
   id: string;
@@ -72,6 +72,15 @@ export interface DateOrderRule {
   secondDateLabel: string;  // Display label for second date
 }
 
+// Numeric range rule: check if numeric values are within expected bounds
+export interface NumericRangeRule {
+  id: string;
+  field: string;        // Numeric field to check
+  fieldLabel: string;   // Display label for the field
+  min: number;          // Minimum acceptable value
+  max: number;          // Maximum acceptable value
+}
+
 export interface DataQualityConfig {
   // Duplicate detection: which fields to check
   duplicateFields: string[];
@@ -82,10 +91,8 @@ export interface DataQualityConfig {
   // Check for future dates
   checkFutureDates: boolean;
 
-  // Age range check
-  ageField?: string;
-  ageMin: number;
-  ageMax: number;
+  // Numeric range rules
+  numericRangeRules: NumericRangeRule[];
 
   // Which checks are enabled
   enabledChecks: DataQualityCheckType[];
