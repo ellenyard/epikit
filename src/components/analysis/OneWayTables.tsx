@@ -461,10 +461,10 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Variable / Value
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         N
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         %
                       </th>
                     </tr>
@@ -482,10 +482,10 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                             <span className="pl-4 text-gray-700">{row.value}</span>
                           )}
                         </td>
-                        <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium whitespace-nowrap">
                           {row.isValueRow ? row.count : ''}
                         </td>
-                        <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right whitespace-nowrap">
                           {row.isValueRow ? `${row.percent.toFixed(1)}%` : ''}
                         </td>
                       </tr>
