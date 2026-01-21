@@ -502,22 +502,10 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 ) : (
                   <>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cases Exp
+                      Cases (n, %)
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total Cases
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Exp% (Cases)
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Controls Exp
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total Controls
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Exp% (Controls)
+                      Controls (n, %)
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       OR
@@ -563,15 +551,11 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                       </>
                     ) : (
                       <>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.a}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalDisease}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {formatNumber((r.table.a / r.totalDisease) * 100)}%
+                          {r.table.a} ({formatNumber((r.table.a / r.totalDisease) * 100)}%)
                         </td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.b}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalNoDisease}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {formatNumber((r.table.b / r.totalNoDisease) * 100)}%
+                          {r.table.b} ({formatNumber((r.table.b / r.totalNoDisease) * 100)}%)
                         </td>
                         <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-green-700' : 'text-gray-900'}`}>
                           {formatNumber(measure)}
@@ -590,7 +574,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
         <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
           {studyDesign === 'cohort'
             ? 'AR = Attack Rate (Row %), RR = Risk Ratio. Green highlighting indicates p < 0.05.'
-            : 'Exp% = Exposure Rate (Column %), OR = Odds Ratio. Green highlighting indicates p < 0.05.'}
+            : 'Percentages are column percentages. OR = Odds Ratio. Green highlighting indicates p < 0.05.'}
         </div>
       </div>
     );

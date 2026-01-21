@@ -39,7 +39,7 @@ export function Analysis({
     { id: 'epicurve', label: 'Epi Curve', icon: '📈' },
     { id: 'spotmap', label: 'Spot Map', icon: '📍' },
     { id: 'descriptive', label: 'Descriptive', icon: '📊' },
-    { id: '2x2', label: '2x2 Table', icon: '⊞' },
+    { id: '2x2', label: '2-way Analyses', icon: '⊞' },
   ];
 
   const handleSelectDataset = (id: string) => {
