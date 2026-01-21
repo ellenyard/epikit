@@ -286,7 +286,7 @@ function App() {
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
-                Review
+                Review/Clean
               </button>
               <button
                 onClick={() => setActiveModule('analyze')}
