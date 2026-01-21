@@ -75,17 +75,20 @@ function Refresher({ title, children }: { title: string; children: React.ReactNo
 }
 
 export function AttackRates({ dataset }: AttackRatesProps) {
+  const [caseVariable, setCaseVariable] = useState<string>('');
+  const [caseValues, setCaseValues] = useState<Set<string>>(new Set());
   const [stratifyBy, setStratifyBy] = useState<string | null>(null);
   const [populations, setPopulations] = useState<Record<string, number | null>>({});
   const [overallPopulation, setOverallPopulation] = useState<number | null>(null);
   const [showRefresher, setShowRefresher] = useState(false);
 
-  // Get columns suitable for stratification (text columns with reasonable number of unique values)
-  const stratificationColumns = useMemo(() => {
+  // Get columns suitable for case definition (categorical columns)
+  const caseDefinitionColumns = useMemo(() => {
     return dataset.columns.filter(col => {
       if (col.type === 'number' && !col.key.toLowerCase().includes('age')) return false;
       if (col.type === 'date') return false;
-      if (col.key === 'id' || col.key === 'case_id') return false;
+      if (col.key === 'id' || col.key === 'case_id' || col.key === 'participant_id') return false;
+      if (col.key.includes('latitude') || col.key.includes('longitude')) return false;
 
       // Check number of unique values
       const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
@@ -93,45 +96,98 @@ export function AttackRates({ dataset }: AttackRatesProps) {
     });
   }, [dataset]);
 
+  // Get unique values for the selected case definition variable
+  const caseVariableValues = useMemo(() => {
+    if (!caseVariable) return [];
+    const values = new Set(dataset.records.map(r => String(r[caseVariable] ?? '')));
+    return Array.from(values).filter(v => v !== '').sort();
+  }, [dataset, caseVariable]);
+
+  // Auto-detect case variable on mount
+  useMemo(() => {
+    if (!caseVariable && caseDefinitionColumns.length > 0) {
+      // Try to find common case-related columns
+      const commonCaseColumns = ['ill', 'case_status', 'case', 'status', 'outcome'];
+      const found = caseDefinitionColumns.find(col =>
+        commonCaseColumns.some(name => col.key.toLowerCase().includes(name))
+      );
+      if (found) {
+        setCaseVariable(found.key);
+        // Auto-select likely case values
+        const values = new Set(dataset.records.map(r => String(r[found.key] ?? '')));
+        const caseKeywords = ['yes', 'confirmed', 'probable', 'suspected', 'positive', 'case'];
+        const autoSelected = new Set<string>();
+        values.forEach(v => {
+          if (caseKeywords.some(kw => v.toLowerCase().includes(kw))) {
+            autoSelected.add(v);
+          }
+        });
+        if (autoSelected.size > 0) {
+          setCaseValues(autoSelected);
+        }
+      }
+    }
+  }, [caseDefinitionColumns, dataset.records]);
+
+  // Get columns suitable for stratification (text columns with reasonable number of unique values)
+  const stratificationColumns = useMemo(() => {
+    return dataset.columns.filter(col => {
+      if (col.type === 'number' && !col.key.toLowerCase().includes('age')) return false;
+      if (col.type === 'date') return false;
+      if (col.key === 'id' || col.key === 'case_id' || col.key === 'participant_id') return false;
+      if (col.key.includes('latitude') || col.key.includes('longitude')) return false;
+
+      // Check number of unique values
+      const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
+      return uniqueValues >= 2 && uniqueValues <= 20;
+    });
+  }, [dataset]);
+
+  // Function to check if a record is a case
+  const isCase = (record: Record<string, unknown>): boolean => {
+    if (!caseVariable || caseValues.size === 0) return false;
+    const value = String(record[caseVariable] ?? '');
+    return caseValues.has(value);
+  };
+
+  // Count total cases
+  const totalCases = useMemo(() => {
+    return dataset.records.filter(isCase).length;
+  }, [dataset.records, caseVariable, caseValues]);
+
   // Calculate strata data
   const strataData = useMemo((): StratumData[] => {
     if (!stratifyBy) {
-      // Overall only
-      const cases = dataset.records.length;
-      const pop = overallPopulation;
+      // Overall only - use total records as population, cases as defined by case definition
+      const cases = totalCases;
+      const pop = overallPopulation ?? dataset.records.length;
 
-      if (pop && pop > 0) {
-        const rate = cases / pop;
-        const ci = wilsonScoreInterval(cases, pop);
-        return [{
-          stratum: 'Overall',
-          cases,
-          population: pop,
-          attackRate: rate,
-          ciLower: ci.lower,
-          ciUpper: ci.upper,
-        }];
-      }
-
+      const rate = cases / pop;
+      const ci = wilsonScoreInterval(cases, pop);
       return [{
         stratum: 'Overall',
         cases,
-        population: null,
-        attackRate: null,
-        ciLower: null,
-        ciUpper: null,
+        population: pop,
+        attackRate: rate,
+        ciLower: ci.lower,
+        ciUpper: ci.upper,
       }];
     }
 
-    // Get unique values for the selected column
-    const valueCounts = new Map<string, number>();
+    // Get unique values for the selected column and count cases/population per stratum
+    const strataCounts = new Map<string, { cases: number; population: number }>();
     dataset.records.forEach(record => {
-      const value = String(record[stratifyBy] ?? 'Unknown');
-      valueCounts.set(value, (valueCounts.get(value) || 0) + 1);
+      const stratumValue = String(record[stratifyBy] ?? 'Unknown');
+      const current = strataCounts.get(stratumValue) || { cases: 0, population: 0 };
+      current.population += 1;
+      if (isCase(record)) {
+        current.cases += 1;
+      }
+      strataCounts.set(stratumValue, current);
     });
 
     // Sort by value (attempt numeric sort if possible)
-    const sortedValues = Array.from(valueCounts.keys()).sort((a, b) => {
+    const sortedValues = Array.from(strataCounts.keys()).sort((a, b) => {
       const numA = parseFloat(a);
       const numB = parseFloat(b);
       if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
@@ -139,15 +195,15 @@ export function AttackRates({ dataset }: AttackRatesProps) {
     });
 
     return sortedValues.map(stratum => {
-      const cases = valueCounts.get(stratum) || 0;
-      const pop = populations[stratum] ?? null;
+      const counts = strataCounts.get(stratum) || { cases: 0, population: 0 };
+      const pop = populations[stratum] ?? counts.population;
 
-      if (pop && pop > 0) {
-        const rate = cases / pop;
-        const ci = wilsonScoreInterval(cases, pop);
+      if (pop > 0) {
+        const rate = counts.cases / pop;
+        const ci = wilsonScoreInterval(counts.cases, pop);
         return {
           stratum,
-          cases,
+          cases: counts.cases,
           population: pop,
           attackRate: rate,
           ciLower: ci.lower,
@@ -157,14 +213,14 @@ export function AttackRates({ dataset }: AttackRatesProps) {
 
       return {
         stratum,
-        cases,
-        population: null,
+        cases: counts.cases,
+        population: pop,
         attackRate: null,
         ciLower: null,
         ciUpper: null,
       };
     });
-  }, [dataset, stratifyBy, populations, overallPopulation]);
+  }, [dataset, stratifyBy, populations, overallPopulation, totalCases, caseVariable, caseValues]);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -203,6 +259,77 @@ export function AttackRates({ dataset }: AttackRatesProps) {
     <div className="p-6">
       <div className="max-w-4xl mx-auto">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Attack Rate Analysis</h2>
+
+        {/* Case Definition */}
+        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h3 className="text-sm font-semibold text-blue-900 mb-3">Case Definition</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Case variable
+              </label>
+              <select
+                value={caseVariable}
+                onChange={(e) => {
+                  setCaseVariable(e.target.value);
+                  setCaseValues(new Set());
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="">Select variable...</option>
+                {caseDefinitionColumns.map(col => (
+                  <option key={col.key} value={col.key}>{col.label}</option>
+                ))}
+              </select>
+            </div>
+            {caseVariable && caseVariableValues.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Values that count as a case
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {caseVariableValues.map(value => (
+                    <label
+                      key={value}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
+                        caseValues.has(value)
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={caseValues.has(value)}
+                        onChange={(e) => {
+                          const newSet = new Set(caseValues);
+                          if (e.target.checked) {
+                            newSet.add(value);
+                          } else {
+                            newSet.delete(value);
+                          }
+                          setCaseValues(newSet);
+                        }}
+                        className="sr-only"
+                      />
+                      {value}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          {caseVariable && caseValues.size > 0 && (
+            <div className="mt-3 text-sm text-blue-800">
+              <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
+              ({((totalCases / dataset.records.length) * 100).toFixed(1)}%)
+            </div>
+          )}
+          {caseVariable && caseValues.size === 0 && (
+            <div className="mt-3 text-sm text-amber-700">
+              Please select which values count as cases
+            </div>
+          )}
+        </div>
 
         {/* Stratification selector */}
         <div className="mb-6">
