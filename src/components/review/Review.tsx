@@ -3,7 +3,7 @@ import { LineListing } from '../analysis/LineListing';
 import { EditLogPanel } from './EditLogPanel';
 import { DataQualityPanel } from './DataQualityPanel';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig } from '../../types/analysis';
-import { runDataQualityChecks, getDefaultConfig, autoDetectFieldMapping } from '../../utils/dataQuality';
+import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
 
 interface ReviewProps {
   datasets: Dataset[];
@@ -41,19 +41,9 @@ export function Review({
   const currentEditLog = activeDatasetId ? getEditLogForDataset(activeDatasetId) : [];
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
-  // Auto-detect field mappings when dataset changes
+  // Clear issues when dataset changes
   useEffect(() => {
     if (activeDataset) {
-      const detectedMapping = autoDetectFieldMapping(activeDataset.columns);
-      setDataQualityConfig(prev => ({
-        ...prev,
-        fieldMapping: {
-          ...detectedMapping,
-          ...prev.fieldMapping, // Keep any user overrides
-          requiredFields: prev.fieldMapping.requiredFields || [],
-        },
-      }));
-      // Clear issues when dataset changes
       setDataQualityIssues([]);
       setSelectedIssue(null);
     }
