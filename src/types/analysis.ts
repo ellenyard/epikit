@@ -6,7 +6,7 @@ export interface CaseRecord {
 export interface DataColumn {
   key: string;
   label: string;
-  type: 'text' | 'number' | 'date' | 'boolean';
+  type: 'text' | 'number' | 'date' | 'boolean' | 'categorical';
 }
 
 export interface Dataset {
