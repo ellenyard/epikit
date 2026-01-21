@@ -617,9 +617,8 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
         </div>
       </div>
 
-      {/* Case Definition */}
+      {/* Outcome Variable */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="text-sm font-semibold text-blue-900 mb-3">Case Definition</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
