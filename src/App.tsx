@@ -10,11 +10,12 @@ import { EpiCurve } from './components/analysis/EpiCurve';
 import { SpotMap } from './components/analysis/SpotMap';
 import { DescriptiveStats } from './components/analysis/DescriptiveStats';
 import { TwoByTwoAnalysis } from './components/analysis/TwoByTwoAnalysis';
+import { OneWayTables } from './components/analysis/OneWayTables';
 import { DataImport } from './components/analysis/DataImport';
 import { demoFormItems, demoColumns, demoCaseRecords, demoDatasetName } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 
-type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive' | '2way';
+type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive' | '1way' | '2way';
 type FormView = 'builder' | 'preview';
 
 // Create demo dataset
@@ -265,7 +266,7 @@ function App() {
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
   // Check if current module needs dataset selector
-  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '2way'].includes(activeModule);
+  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '1way', '2way'].includes(activeModule);
 
   return (
     <div className="h-screen flex flex-col">
@@ -335,6 +336,16 @@ function App() {
                 }`}
               >
                 Descriptive
+              </button>
+              <button
+                onClick={() => setActiveModule('1way')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === '1way'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                1-Way Tables
               </button>
               <button
                 onClick={() => setActiveModule('2way')}
@@ -443,6 +454,8 @@ function App() {
             <SpotMap dataset={activeDataset} />
           ) : activeModule === 'descriptive' ? (
             <DescriptiveStats dataset={activeDataset} />
+          ) : activeModule === '1way' ? (
+            <OneWayTables dataset={activeDataset} />
           ) : activeModule === '2way' ? (
             <TwoByTwoAnalysis dataset={activeDataset} />
           ) : null
