@@ -201,54 +201,85 @@ export const demoFormItems: FormItem[] = [
   } as FormField,
 ];
 
-// Demo Dataset Columns (matching the form fields)
+// Demo Dataset Columns (retrospective cohort study format)
 export const demoColumns: DataColumn[] = [
-  { key: 'case_id', label: 'Case ID', type: 'text' },
-  { key: 'report_date', label: 'Date Reported', type: 'date' },
-  { key: 'onset_date', label: 'Symptom Onset Date', type: 'date' },
-  { key: 'age', label: 'Age (years)', type: 'number' },
+  { key: 'participant_id', label: 'ID', type: 'text' },
+  { key: 'age', label: 'Age', type: 'number' },
   { key: 'sex', label: 'Sex', type: 'text' },
-  { key: 'occupation', label: 'Occupation', type: 'text' },
+  { key: 'ill', label: 'Ill', type: 'text' },
+  { key: 'onset_date', label: 'Onset Date', type: 'date' },
+  { key: 'onset_time', label: 'Onset Time', type: 'text' },
   { key: 'symptoms', label: 'Symptoms', type: 'text' },
-  { key: 'hospitalized', label: 'Hospitalized', type: 'text' },
-  { key: 'outcome', label: 'Outcome', type: 'text' },
-  { key: 'ate_potato_salad', label: 'Ate Potato Salad', type: 'text' },
-  { key: 'ate_chicken', label: 'Ate Grilled Chicken', type: 'text' },
-  { key: 'ate_coleslaw', label: 'Ate Coleslaw', type: 'text' },
-  { key: 'classification', label: 'Case Classification', type: 'text' },
+  { key: 'ate_potato_salad', label: 'Potato Salad', type: 'text' },
+  { key: 'ate_chicken', label: 'Grilled Chicken', type: 'text' },
+  { key: 'ate_coleslaw', label: 'Coleslaw', type: 'text' },
+  { key: 'ate_cake', label: 'Cake', type: 'text' },
+  { key: 'drank_lemonade', label: 'Lemonade', type: 'text' },
   { key: 'latitude', label: 'Latitude', type: 'number' },
   { key: 'longitude', label: 'Longitude', type: 'number' },
 ];
 
-// Demo Case Records - Simulated foodborne outbreak at a community picnic
-// Exposure event: January 10, 2024 - Community Picnic
-// Suspected vehicle: Potato Salad (Salmonella - typical incubation 12-72 hours)
+// Retrospective Cohort Study - Community Picnic Foodborne Outbreak
+// Exposure event: January 10, 2024 - Community Picnic (lunch served 12:00-2:00 PM)
+// 48 attendees interviewed; suspected vehicle: Potato Salad
+// Attack rates: Potato salad eaters 75% (18/24), Non-eaters 17% (4/24)
+// Location: Toledo, OH area
 export const demoCaseRecords: CaseRecord[] = [
-  // Wave 1: Early cases (12-24 hours post-exposure)
-  { id: '1', case_id: 'FB-001', report_date: '2024-01-11', onset_date: '2024-01-11', age: 34, sex: 'Female', occupation: 'Teacher', symptoms: 'Diarrhea, Cramps, Fever', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', classification: 'Confirmed', latitude: 33.7490, longitude: -84.3880 },
-  { id: '2', case_id: 'FB-002', report_date: '2024-01-11', onset_date: '2024-01-11', age: 28, sex: 'Male', occupation: 'Engineer', symptoms: 'Diarrhea, Vomiting, Fever', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', classification: 'Confirmed', latitude: 33.7550, longitude: -84.3900 },
-  { id: '3', case_id: 'FB-003', report_date: '2024-01-11', onset_date: '2024-01-11', age: 67, sex: 'Male', occupation: 'Retired', symptoms: 'Diarrhea, Cramps, Bloody stool', hospitalized: 'Yes', outcome: 'Hospitalized', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', classification: 'Confirmed', latitude: 33.7620, longitude: -84.3850 },
+  // ILL - Ate Potato Salad (18 cases) - Index case P001 at 3320 Kirkwall, Toledo, OH 43606
+  { id: '1', participant_id: 'P001', age: 34, sex: 'Female', ill: 'Yes', onset_date: '2024-01-10', onset_time: '22:00', symptoms: 'Diarrhea, Cramps, Fever', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6723, longitude: -83.6145 },
+  { id: '2', participant_id: 'P002', age: 28, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '02:00', symptoms: 'Diarrhea, Vomiting, Fever', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6652, longitude: -83.5822 },
+  { id: '3', participant_id: 'P003', age: 67, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '06:00', symptoms: 'Diarrhea, Cramps, Bloody stool', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6534, longitude: -83.5356 },
+  { id: '4', participant_id: 'P004', age: 45, sex: 'Female', ill: 'Yes', onset_date: '2024-01-11', onset_time: '08:00', symptoms: 'Diarrhea, Nausea, Cramps', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6891, longitude: -83.6278 },
+  { id: '5', participant_id: 'P005', age: 52, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '10:00', symptoms: 'Diarrhea, Vomiting, Fever', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6445, longitude: -83.5512 },
+  { id: '6', participant_id: 'P006', age: 8, sex: 'Female', ill: 'Yes', onset_date: '2024-01-11', onset_time: '04:00', symptoms: 'Diarrhea, Vomiting, Cramps', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6778, longitude: -83.6034 },
+  { id: '7', participant_id: 'P007', age: 41, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '12:00', symptoms: 'Diarrhea, Fever', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6312, longitude: -83.5689 },
+  { id: '8', participant_id: 'P008', age: 36, sex: 'Female', ill: 'Yes', onset_date: '2024-01-11', onset_time: '14:00', symptoms: 'Diarrhea, Nausea, Cramps, Fever', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6623, longitude: -83.6189 },
+  { id: '9', participant_id: 'P009', age: 29, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '16:00', symptoms: 'Diarrhea, Cramps', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6956, longitude: -83.5467 },
+  { id: '10', participant_id: 'P010', age: 55, sex: 'Female', ill: 'Yes', onset_date: '2024-01-11', onset_time: '18:00', symptoms: 'Diarrhea, Vomiting, Fever', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6489, longitude: -83.5934 },
+  { id: '11', participant_id: 'P011', age: 72, sex: 'Female', ill: 'Yes', onset_date: '2024-01-11', onset_time: '20:00', symptoms: 'Diarrhea, Cramps, Bloody stool, Fever', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6834, longitude: -83.5623 },
+  { id: '12', participant_id: 'P012', age: 19, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '22:00', symptoms: 'Diarrhea, Nausea', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6567, longitude: -83.6312 },
+  { id: '13', participant_id: 'P013', age: 38, sex: 'Female', ill: 'Yes', onset_date: '2024-01-12', onset_time: '00:00', symptoms: 'Diarrhea, Cramps, Fever', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6401, longitude: -83.5178 },
+  { id: '14', participant_id: 'P014', age: 61, sex: 'Male', ill: 'Yes', onset_date: '2024-01-12', onset_time: '06:00', symptoms: 'Diarrhea, Vomiting', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6712, longitude: -83.5845 },
+  { id: '15', participant_id: 'P015', age: 5, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '03:00', symptoms: 'Diarrhea, Vomiting, Fever', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6678, longitude: -83.6078 },
+  { id: '16', participant_id: 'P016', age: 48, sex: 'Female', ill: 'Yes', onset_date: '2024-01-11', onset_time: '11:00', symptoms: 'Diarrhea, Cramps', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6523, longitude: -83.5589 },
+  { id: '17', participant_id: 'P017', age: 33, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '15:00', symptoms: 'Diarrhea, Nausea, Fever', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6867, longitude: -83.5734 },
+  { id: '18', participant_id: 'P018', age: 59, sex: 'Female', ill: 'Yes', onset_date: '2024-01-12', onset_time: '02:00', symptoms: 'Diarrhea, Cramps, Vomiting', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6345, longitude: -83.6023 },
 
-  // Wave 2: Peak (24-48 hours post-exposure)
-  { id: '4', case_id: 'FB-004', report_date: '2024-01-12', onset_date: '2024-01-12', age: 45, sex: 'Female', occupation: 'Nurse', symptoms: 'Diarrhea, Nausea, Cramps', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', classification: 'Confirmed', latitude: 33.7440, longitude: -84.3950 },
-  { id: '5', case_id: 'FB-005', report_date: '2024-01-12', onset_date: '2024-01-12', age: 52, sex: 'Male', occupation: 'Manager', symptoms: 'Diarrhea, Vomiting, Fever', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', classification: 'Confirmed', latitude: 33.7580, longitude: -84.3780 },
-  { id: '6', case_id: 'FB-006', report_date: '2024-01-12', onset_date: '2024-01-12', age: 8, sex: 'Female', occupation: 'Student', symptoms: 'Diarrhea, Vomiting, Cramps', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', classification: 'Confirmed', latitude: 33.7400, longitude: -84.3820 },
-  { id: '7', case_id: 'FB-007', report_date: '2024-01-12', onset_date: '2024-01-12', age: 41, sex: 'Male', occupation: 'Chef', symptoms: 'Diarrhea, Fever', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', classification: 'Confirmed', latitude: 33.7680, longitude: -84.3920 },
-  { id: '8', case_id: 'FB-008', report_date: '2024-01-12', onset_date: '2024-01-12', age: 36, sex: 'Female', occupation: 'Lawyer', symptoms: 'Diarrhea, Nausea, Cramps, Fever', hospitalized: 'Yes', outcome: 'Hospitalized', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', classification: 'Confirmed', latitude: 33.7520, longitude: -84.3720 },
-  { id: '9', case_id: 'FB-009', report_date: '2024-01-12', onset_date: '2024-01-12', age: 29, sex: 'Male', occupation: 'Sales', symptoms: 'Diarrhea, Cramps', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', classification: 'Probable', latitude: 33.7460, longitude: -84.3860 },
-  { id: '10', case_id: 'FB-010', report_date: '2024-01-12', onset_date: '2024-01-12', age: 55, sex: 'Female', occupation: 'Accountant', symptoms: 'Diarrhea, Vomiting, Fever', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', classification: 'Confirmed', latitude: 33.7590, longitude: -84.3980 },
+  // NOT ILL - Ate Potato Salad (6 people - some resistance/lower dose)
+  { id: '19', participant_id: 'P019', age: 25, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6612, longitude: -83.5456 },
+  { id: '20', participant_id: 'P020', age: 31, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'No', drank_lemonade: 'No', latitude: 41.6789, longitude: -83.5912 },
+  { id: '21', participant_id: 'P021', age: 44, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6456, longitude: -83.6234 },
+  { id: '22', participant_id: 'P022', age: 27, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6934, longitude: -83.5678 },
+  { id: '23', participant_id: 'P023', age: 39, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6378, longitude: -83.5523 },
+  { id: '24', participant_id: 'P024', age: 56, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6701, longitude: -83.6156 },
 
-  // Wave 3: Late cases (48-72 hours post-exposure)
-  { id: '11', case_id: 'FB-011', report_date: '2024-01-13', onset_date: '2024-01-13', age: 72, sex: 'Female', occupation: 'Retired', symptoms: 'Diarrhea, Cramps, Bloody stool, Fever', hospitalized: 'Yes', outcome: 'Hospitalized', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'Yes', classification: 'Confirmed', latitude: 33.7350, longitude: -84.3750 },
-  { id: '12', case_id: 'FB-012', report_date: '2024-01-13', onset_date: '2024-01-13', age: 19, sex: 'Male', occupation: 'Student', symptoms: 'Diarrhea, Nausea', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'Yes', classification: 'Probable', latitude: 33.7700, longitude: -84.3800 },
-  { id: '13', case_id: 'FB-013', report_date: '2024-01-13', onset_date: '2024-01-13', age: 38, sex: 'Female', occupation: 'Doctor', symptoms: 'Diarrhea, Cramps, Fever', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'Yes', ate_coleslaw: 'No', classification: 'Confirmed', latitude: 33.7480, longitude: -84.4000 },
-  { id: '14', case_id: 'FB-014', report_date: '2024-01-13', onset_date: '2024-01-13', age: 61, sex: 'Male', occupation: 'Retired', symptoms: 'Diarrhea, Vomiting', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'Yes', ate_chicken: 'No', ate_coleslaw: 'No', classification: 'Suspected', latitude: 33.7560, longitude: -84.3680 },
+  // ILL - Did NOT Eat Potato Salad (4 cases - background illness or cross-contamination)
+  { id: '25', participant_id: 'P025', age: 42, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '19:00', symptoms: 'Nausea, Cramps', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6534, longitude: -83.5867 },
+  { id: '26', participant_id: 'P026', age: 63, sex: 'Female', ill: 'Yes', onset_date: '2024-01-12', onset_time: '08:00', symptoms: 'Diarrhea', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6845, longitude: -83.5389 },
+  { id: '27', participant_id: 'P027', age: 15, sex: 'Male', ill: 'Yes', onset_date: '2024-01-11', onset_time: '23:00', symptoms: 'Diarrhea, Nausea', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6423, longitude: -83.6089 },
+  { id: '28', participant_id: 'P028', age: 37, sex: 'Female', ill: 'Yes', onset_date: '2024-01-12', onset_time: '04:00', symptoms: 'Cramps, Nausea', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6689, longitude: -83.5534 },
 
-  // Controls (attended picnic but not ill, for 2x2 analysis reference)
-  // Note: In a real investigation, you'd also collect data from non-ill attendees
-  // These are ill people who did NOT eat potato salad (to show association)
-  { id: '15', case_id: 'FB-015', report_date: '2024-01-12', onset_date: '2024-01-12', age: 42, sex: 'Male', occupation: 'Electrician', symptoms: 'Nausea, Cramps', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', classification: 'Suspected', latitude: 33.7420, longitude: -84.3890 },
-  { id: '16', case_id: 'FB-016', report_date: '2024-01-14', onset_date: '2024-01-13', age: 33, sex: 'Female', occupation: 'Designer', symptoms: 'Diarrhea', hospitalized: 'No', outcome: 'Recovered', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', classification: 'Suspected', latitude: 33.7640, longitude: -84.3840 },
+  // NOT ILL - Did NOT Eat Potato Salad (20 people - the healthy unexposed)
+  { id: '29', participant_id: 'P029', age: 50, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6567, longitude: -83.5712 },
+  { id: '30', participant_id: 'P030', age: 22, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6912, longitude: -83.6045 },
+  { id: '31', participant_id: 'P031', age: 35, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6345, longitude: -83.5278 },
+  { id: '32', participant_id: 'P032', age: 68, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6756, longitude: -83.5956 },
+  { id: '33', participant_id: 'P033', age: 12, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6478, longitude: -83.6178 },
+  { id: '34', participant_id: 'P034', age: 46, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6623, longitude: -83.5423 },
+  { id: '35', participant_id: 'P035', age: 30, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6889, longitude: -83.5789 },
+  { id: '36', participant_id: 'P036', age: 58, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6412, longitude: -83.5634 },
+  { id: '37', participant_id: 'P037', age: 24, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6734, longitude: -83.6267 },
+  { id: '38', participant_id: 'P038', age: 71, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6501, longitude: -83.5145 },
+  { id: '39', participant_id: 'P039', age: 40, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6856, longitude: -83.5512 },
+  { id: '40', participant_id: 'P040', age: 17, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6389, longitude: -83.5978 },
+  { id: '41', participant_id: 'P041', age: 53, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6678, longitude: -83.5334 },
+  { id: '42', participant_id: 'P042', age: 26, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6945, longitude: -83.6123 },
+  { id: '43', participant_id: 'P043', age: 64, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'Yes', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6312, longitude: -83.5856 },
+  { id: '44', participant_id: 'P044', age: 32, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6589, longitude: -83.6034 },
+  { id: '45', participant_id: 'P045', age: 47, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'Yes', drank_lemonade: 'No', latitude: 41.6801, longitude: -83.5467 },
+  { id: '46', participant_id: 'P046', age: 20, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'No', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6456, longitude: -83.5723 },
+  { id: '47', participant_id: 'P047', age: 43, sex: 'Male', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'Yes', ate_cake: 'No', drank_lemonade: 'Yes', latitude: 41.6723, longitude: -83.5189 },
+  { id: '48', participant_id: 'P048', age: 75, sex: 'Female', ill: 'No', onset_date: '', onset_time: '', symptoms: '', ate_potato_salad: 'No', ate_chicken: 'Yes', ate_coleslaw: 'No', ate_cake: 'Yes', drank_lemonade: 'Yes', latitude: 41.6634, longitude: -83.5945 },
 ];
 
-export const demoDatasetName = 'Foodborne Outbreak - Community Picnic (Jan 2024)';
+export const demoDatasetName = 'Foodborne Outbreak - Community Picnic';

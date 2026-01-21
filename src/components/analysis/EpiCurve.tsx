@@ -790,48 +790,125 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   );
 }
 
-// Annotation marker component
+// Annotation marker component - displays as a flag
 function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
   annotation: Annotation;
   bins: EpiCurveData['bins'];
   barWidth: number;
   chartHeight: number;
 }) {
-  const startIndex = bins.findIndex(b => annotation.date >= b.startDate && annotation.date < b.endDate);
-  if (startIndex === -1) return null;
+  if (bins.length === 0) return null;
 
-  const x = startIndex * barWidth + barWidth / 2;
+  // Find position - handle dates outside the bin range
+  let x: number;
+  const annotationTime = annotation.date.getTime();
+  const firstBinStart = bins[0].startDate.getTime();
+  const lastBinEnd = bins[bins.length - 1].endDate.getTime();
 
+  if (annotationTime < firstBinStart) {
+    // Before data range - show at left edge
+    x = 0;
+  } else if (annotationTime >= lastBinEnd) {
+    // After data range - show at right edge
+    x = bins.length * barWidth;
+  } else {
+    // Within range - find the bin
+    const binIndex = bins.findIndex(b => annotationTime >= b.startDate.getTime() && annotationTime < b.endDate.getTime());
+    x = binIndex !== -1 ? binIndex * barWidth + barWidth / 2 : 0;
+  }
+
+  // For incubation period ranges, show shaded area
   if (annotation.endDate) {
-    const endIndex = bins.findIndex(b => annotation.endDate! >= b.startDate && annotation.endDate! < b.endDate);
-    const width = endIndex !== -1 ? (endIndex - startIndex + 1) * barWidth : barWidth;
+    let endX: number;
+    const endTime = annotation.endDate.getTime();
+
+    if (endTime < firstBinStart) {
+      endX = 0;
+    } else if (endTime >= lastBinEnd) {
+      endX = bins.length * barWidth;
+    } else {
+      const endIndex = bins.findIndex(b => endTime >= b.startDate.getTime() && endTime < b.endDate.getTime());
+      endX = endIndex !== -1 ? (endIndex + 1) * barWidth : bins.length * barWidth;
+    }
+
+    const width = Math.max(endX - x, barWidth);
 
     return (
       <div
-        className="absolute top-0 opacity-30 pointer-events-none"
+        className="absolute top-0 pointer-events-none"
         style={{
-          left: startIndex * barWidth,
+          left: x,
           width,
           height: chartHeight,
-          backgroundColor: annotation.color,
         }}
         title={annotation.label}
-      />
+      >
+        {/* Shaded region */}
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{ backgroundColor: annotation.color }}
+        />
+        {/* Flag at start - pole centered on start date */}
+        <div className="absolute top-0 left-0">
+          {/* Flag pennant - positioned to the right of the pole */}
+          <div
+            className="absolute px-2 py-1 text-xs font-medium text-white shadow-md"
+            style={{
+              backgroundColor: annotation.color,
+              clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)',
+              paddingRight: '14px',
+              left: 1,
+              top: 0,
+            }}
+          >
+            {annotation.label}
+          </div>
+          {/* Flag pole - centered on the start date */}
+          <div
+            className="absolute w-0.5"
+            style={{
+              backgroundColor: annotation.color,
+              height: chartHeight,
+              left: 0,
+              top: 0,
+              transform: 'translateX(-50%)',
+            }}
+          />
+        </div>
+      </div>
     );
   }
 
+  // Single date annotation - show as flag with pole centered on date
   return (
     <div
-      className="absolute top-0 flex flex-col items-center pointer-events-none"
-      style={{ left: x, height: chartHeight }}
+      className="absolute top-0 pointer-events-none"
+      style={{ left: x }}
     >
+      {/* Flag pennant - positioned to the right of the pole */}
       <div
-        className="text-xs font-medium whitespace-nowrap px-1 rounded shadow-sm"
-        style={{ backgroundColor: `${annotation.color}20`, color: annotation.color }}
+        className="absolute px-2 py-1 text-xs font-medium text-white shadow-md"
+        style={{
+          backgroundColor: annotation.color,
+          clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)',
+          paddingRight: '14px',
+          left: 1,
+          top: 0,
+        }}
       >
         {annotation.label}
       </div>
-      <div className="flex-1 w-0.5" style={{ backgroundColor: annotation.color }} />
+      {/* Flag pole - centered on the date position */}
+      <div
+        className="absolute w-0.5"
+        style={{
+          backgroundColor: annotation.color,
+          height: chartHeight,
+          left: 0,
+          top: 0,
+          transform: 'translateX(-50%)',
+        }}
+      />
     </div>
   );
 }
