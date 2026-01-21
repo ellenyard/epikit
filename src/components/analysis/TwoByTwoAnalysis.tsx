@@ -162,6 +162,17 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
     return n.toFixed(decimals);
   };
 
+  // Format to 2 significant figures (for attack rates)
+  const formatSigFigs = (n: number, sigFigs: number = 2): string => {
+    if (!isFinite(n) || n === 0) return '0';
+    const magnitude = Math.floor(Math.log10(Math.abs(n)));
+    const precision = sigFigs - 1 - magnitude;
+    if (precision < 0) {
+      return Math.round(n / Math.pow(10, -precision)) * Math.pow(10, -precision) + '';
+    }
+    return n.toFixed(Math.max(0, precision));
+  };
+
   const formatCI = (ci: [number, number]): string => {
     if (!isFinite(ci[0]) || !isFinite(ci[1])) return '(Undefined)';
     return `(${ci[0].toFixed(2)} - ${ci[1].toFixed(2)})`;
@@ -252,7 +263,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 <div>
                   <p className="text-xs text-blue-700">Exposed</p>
                   <p className="text-lg font-semibold text-blue-900">
-                    {formatNumber(results.attackRateExposed * 100)}%
+                    {formatSigFigs(results.attackRateExposed * 100)}%
                   </p>
                   <p className="text-xs text-blue-600">
                     ({results.table.a} / {results.totalExposed})
@@ -261,7 +272,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 <div>
                   <p className="text-xs text-blue-700">Unexposed</p>
                   <p className="text-lg font-semibold text-blue-900">
-                    {formatNumber(results.attackRateUnexposed * 100)}%
+                    {formatSigFigs(results.attackRateUnexposed * 100)}%
                   </p>
                   <p className="text-xs text-blue-600">
                     ({results.table.c} / {results.totalUnexposed})
@@ -270,7 +281,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 <div>
                   <p className="text-xs text-blue-700">Overall</p>
                   <p className="text-lg font-semibold text-blue-900">
-                    {formatNumber(results.attackRateTotal * 100)}%
+                    {formatSigFigs(results.attackRateTotal * 100)}%
                   </p>
                   <p className="text-xs text-blue-600">
                     ({results.totalDisease} / {results.total})
@@ -467,16 +478,16 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                       Exp Cases
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Exp Non-Cases
+                      Total Exp
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      AR (Exp)
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Unexp Cases
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Unexp Non-Cases
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      AR (Exp)
+                      Total Unexp
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       AR (Unexp)
@@ -494,16 +505,16 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                       Cases Exp
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cases Unexp
+                      Total Cases
+                    </th>
+                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Exp% (Cases)
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Controls Exp
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Controls Unexp
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Exp% (Cases)
+                      Total Controls
                     </th>
                     <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Exp% (Controls)
@@ -534,14 +545,14 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                     {studyDesign === 'cohort' ? (
                       <>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.a}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.b}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.c}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.d}</td>
+                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalExposed}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {formatNumber(r.attackRateExposed * 100)}%
+                          {formatSigFigs(r.attackRateExposed * 100)}%
                         </td>
+                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.c}</td>
+                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalUnexposed}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {formatNumber(r.attackRateUnexposed * 100)}%
+                          {formatSigFigs(r.attackRateUnexposed * 100)}%
                         </td>
                         <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-green-700' : 'text-gray-900'}`}>
                           {formatNumber(measure)}
@@ -553,12 +564,12 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                     ) : (
                       <>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.a}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.c}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.b}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.d}</td>
+                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalDisease}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
                           {formatNumber((r.table.a / r.totalDisease) * 100)}%
                         </td>
+                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.b}</td>
+                        <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalNoDisease}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
                           {formatNumber((r.table.b / r.totalNoDisease) * 100)}%
                         </td>
