@@ -80,6 +80,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const [markerSize, setMarkerSize] = useState<number>(8);
   const [showPopups, setShowPopups] = useState(true);
   const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>('street');
+  const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
   // Auto-detect lat/lng columns
   useEffect(() => {
@@ -150,6 +151,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // Reset selected filter values when filter variable changes
   useEffect(() => {
     setSelectedFilterValues(new Set());
+    setShowAllFilterValues(false);
   }, [filterBy]);
 
   // Map tile URLs
@@ -180,7 +182,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
       </span>
-      <span className="absolute top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-normal w-64 z-50 pointer-events-none">
+      <span className="absolute top-full left-0 mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-normal w-56 z-50 pointer-events-none">
         {text}
         {link && (
           <a
@@ -198,203 +200,222 @@ export function SpotMap({ dataset }: SpotMapProps) {
     </span>
   );
 
+  // Determine which filter values to show
+  const visibleFilterValues = showAllFilterValues ? filterValues : filterValues.slice(0, 5);
+  const hasMoreFilterValues = filterValues.length > 5;
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="text-sm text-gray-500">
-          {filteredCases.length} of {mapCases.length} cases mapped ({dataset.records.length} total records)
-        </div>
-      </div>
+    <div className="h-full flex flex-col lg:flex-row">
+      {/* Left Panel - Controls */}
+      <div className="w-full lg:w-72 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 lg:border-r border-gray-200 p-4 overflow-y-auto">
+        <div className="space-y-4">
+          {/* Case count summary */}
+          <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
+            <span className="font-medium">{filteredCases.length}</span> of {mapCases.length} cases mapped
+          </div>
 
-      {/* Configuration - Row 1: Filter By, Lat, Long */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-            Filter By
-            <InfoTooltip text="Select which records to include on the map. Use this to show only specific groups (e.g., confirmed cases, certain age groups)." />
-          </label>
-          <select
-            value={filterBy}
-            onChange={(e) => setFilterBy(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">None (show all)</option>
-            {dataset.columns.map(col => (
-              <option key={col.key} value={col.key}>{col.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-            Latitude Variable
-            <InfoTooltip
-              text="Select the variable in your dataset that contains latitude values (north-south position, ranging from -90 to 90)."
-              link="https://gisgeography.com/latitude-longitude-coordinates/"
-            />
-          </label>
-          <select
-            value={latColumn}
-            onChange={(e) => setLatColumn(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">Select variable...</option>
-            {dataset.columns.filter(c => c.type === 'number').map(col => (
-              <option key={col.key} value={col.key}>{col.label}</option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-            Longitude Variable
-            <InfoTooltip
-              text="Select the variable in your dataset that contains longitude values (east-west position, ranging from -180 to 180)."
-              link="https://gisgeography.com/latitude-longitude-coordinates/"
-            />
-          </label>
-          <select
-            value={lngColumn}
-            onChange={(e) => setLngColumn(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="">Select variable...</option>
-            {dataset.columns.filter(c => c.type === 'number').map(col => (
-              <option key={col.key} value={col.key}>{col.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Configuration - Row 3: Formatting (Color Scheme, Map Style, Marker Size) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
-          <select
-            value={colorScheme}
-            onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="default">Default Blue</option>
-            <option value="classification">Classification (Standard)</option>
-            <option value="colorblind">Classification (Colorblind-Friendly)</option>
-            <option value="sequential">Classification (Sequential)</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
-          <select
-            value={mapStyle}
-            onChange={(e) => setMapStyle(e.target.value as 'street' | 'satellite' | 'topo')}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          >
-            <option value="street">Street</option>
-            <option value="satellite">Satellite</option>
-            <option value="topo">Topographic</option>
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Marker Size</label>
-          <input
-            type="range"
-            min="4"
-            max="20"
-            value={markerSize}
-            onChange={(e) => setMarkerSize(Number(e.target.value))}
-            className="w-full mt-2"
-          />
-        </div>
-      </div>
-
-      {/* Filter Options */}
-      {filterBy && filterValues.length > 0 && (
-        <div className="border border-gray-200 rounded-lg p-4">
-          <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-medium text-gray-700">
-              Filter by {dataset.columns.find(c => c.key === filterBy)?.label}
+          {/* Filter By */}
+          <div>
+            <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              Filter By
+              <InfoTooltip text="Select which records to include on the map. Use this to show only specific groups (e.g., confirmed cases, certain age groups)." />
             </label>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setSelectedFilterValues(new Set(filterValues))}
-                className="text-xs text-blue-600 hover:text-blue-700"
-              >
-                Select All
-              </button>
-              <button
-                onClick={() => setSelectedFilterValues(new Set())}
-                className="text-xs text-gray-600 hover:text-gray-700"
-              >
-                Clear
-              </button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            {filterValues.map(value => {
-              const count = mapCases.filter(c => String(c.record[filterBy] ?? 'Unknown') === value).length;
-              return (
-                <label key={value} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={selectedFilterValues.has(value)}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedFilterValues);
-                      if (e.target.checked) {
-                        newSet.add(value);
-                      } else {
-                        newSet.delete(value);
-                      }
-                      setSelectedFilterValues(newSet);
-                    }}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-gray-700">{value}</span>
-                  <span className="text-gray-500">({count})</span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
+            <select
+              value={filterBy}
+              onChange={(e) => setFilterBy(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="">None (show all)</option>
+              {dataset.columns.map(col => (
+                <option key={col.key} value={col.key}>{col.label}</option>
+              ))}
+            </select>
 
-      {/* Display Options */}
-      <div className="flex items-center gap-4">
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showPopups}
-            onChange={(e) => setShowPopups(e.target.checked)}
-            className="rounded border-gray-300"
-          />
-          Show popups on click
-        </label>
+            {/* Filter value checkboxes */}
+            {filterBy && filterValues.length > 0 && (
+              <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500">Select values:</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedFilterValues(new Set(filterValues))}
+                      className="text-xs text-blue-600 hover:text-blue-700"
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setSelectedFilterValues(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  {visibleFilterValues.map(value => {
+                    const count = mapCases.filter(c => String(c.record[filterBy] ?? 'Unknown') === value).length;
+                    return (
+                      <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedFilterValues.has(value)}
+                          onChange={(e) => {
+                            const newSet = new Set(selectedFilterValues);
+                            if (e.target.checked) {
+                              newSet.add(value);
+                            } else {
+                              newSet.delete(value);
+                            }
+                            setSelectedFilterValues(newSet);
+                          }}
+                          className="rounded border-gray-300"
+                        />
+                        <span className="text-gray-700 truncate flex-1">{value}</span>
+                        <span className="text-gray-400 text-xs">({count})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {hasMoreFilterValues && (
+                  <button
+                    onClick={() => setShowAllFilterValues(!showAllFilterValues)}
+                    className="mt-2 text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    {showAllFilterValues ? 'Show less' : `Show ${filterValues.length - 5} more...`}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Latitude */}
+          <div>
+            <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              Latitude
+              <InfoTooltip
+                text="Select the variable that contains latitude values (north-south position, -90 to 90)."
+                link="https://gisgeography.com/latitude-longitude-coordinates/"
+              />
+            </label>
+            <select
+              value={latColumn}
+              onChange={(e) => setLatColumn(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="">Select variable...</option>
+              {dataset.columns.filter(c => c.type === 'number').map(col => (
+                <option key={col.key} value={col.key}>{col.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Longitude */}
+          <div>
+            <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              Longitude
+              <InfoTooltip
+                text="Select the variable that contains longitude values (east-west position, -180 to 180)."
+                link="https://gisgeography.com/latitude-longitude-coordinates/"
+              />
+            </label>
+            <select
+              value={lngColumn}
+              onChange={(e) => setLngColumn(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="">Select variable...</option>
+              {dataset.columns.filter(c => c.type === 'number').map(col => (
+                <option key={col.key} value={col.key}>{col.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-gray-200 pt-4">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Formatting</p>
+          </div>
+
+          {/* Color Scheme */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
+            <select
+              value={colorScheme}
+              onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="default">Default Blue</option>
+              <option value="classification">By Classification</option>
+              <option value="colorblind">Colorblind-Friendly</option>
+              <option value="sequential">Sequential</option>
+            </select>
+          </div>
+
+          {/* Map Style */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
+            <select
+              value={mapStyle}
+              onChange={(e) => setMapStyle(e.target.value as 'street' | 'satellite' | 'topo')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="street">Street</option>
+              <option value="satellite">Satellite</option>
+              <option value="topo">Topographic</option>
+            </select>
+          </div>
+
+          {/* Marker Size */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Marker Size <span className="text-gray-400 font-normal">({markerSize}px)</span>
+            </label>
+            <input
+              type="range"
+              min="4"
+              max="20"
+              value={markerSize}
+              onChange={(e) => setMarkerSize(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+
+          {/* Show Popups */}
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showPopups}
+              onChange={(e) => setShowPopups(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            <span className="text-gray-700">Show popups on click</span>
+          </label>
+
+          {/* Legend */}
+          {classificationValues.length > 0 && colorScheme !== 'default' && (
+            <div className="pt-3 border-t border-gray-200">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Legend</p>
+              <div className="space-y-1">
+                {classificationValues.map(value => (
+                  <div key={value} className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: getMarkerColor(value, colorScheme) }}
+                    />
+                    <span className="text-xs text-gray-700 truncate">{value}</span>
+                    <span className="text-xs text-gray-400">
+                      ({filteredCases.filter(c => c.classification === value).length})
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Legend - Always show classification values */}
-      {classificationValues.length > 0 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-3">Classification Legend</h4>
-          <div className="flex flex-wrap gap-4">
-            {classificationValues.map(value => (
-              <div key={value} className="flex items-center gap-2">
-                <div
-                  className="w-4 h-4 rounded-full border border-gray-300"
-                  style={{ backgroundColor: getMarkerColor(value, colorScheme) }}
-                />
-                <span className="text-sm text-gray-700">{value}</span>
-                <span className="text-xs text-gray-500">
-                  ({filteredCases.filter(c => c.classification === value).length})
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Map */}
-      {latColumn && lngColumn ? (
-        <div className="border border-gray-200 rounded-lg overflow-hidden" style={{ height: '500px' }}>
+      {/* Right Panel - Map */}
+      <div className="flex-1 relative min-h-[400px] lg:min-h-0">
+        {latColumn && lngColumn ? (
           <MapContainer
             center={defaultCenter}
             zoom={defaultZoom}
@@ -441,38 +462,28 @@ export function SpotMap({ dataset }: SpotMapProps) {
               </CircleMarker>
             ))}
           </MapContainer>
-        </div>
-      ) : (
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center text-gray-400">
-          <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-          </svg>
-          <p className="text-lg">Select latitude and longitude columns to display the map</p>
-          <p className="text-sm mt-2">
-            Your dataset needs columns with numeric coordinate values
-          </p>
-        </div>
-      )}
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+            <div className="text-center p-8">
+              <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+              </svg>
+              <p className="text-lg text-gray-500">Select Latitude and Longitude</p>
+              <p className="text-sm text-gray-400 mt-1">
+                Choose the variables containing coordinate data
+              </p>
+            </div>
+          </div>
+        )}
 
-      {/* No coordinates warning */}
-      {latColumn && lngColumn && mapCases.length === 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-sm text-yellow-800">
-            No valid coordinates found. Make sure your latitude values are between -90 and 90,
-            and longitude values are between -180 and 180.
-          </p>
-        </div>
-      )}
-
-      {/* Tips */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-gray-900 mb-2">Tips</h4>
-        <ul className="text-sm text-gray-600 space-y-1">
-          <li>• Click on markers to see case details</li>
-          <li>• Use scroll wheel to zoom in/out</li>
-          <li>• Drag to pan the map</li>
-          <li>• For GPS data collected via EpiKit forms, coordinates will be auto-detected</li>
-        </ul>
+        {/* No coordinates warning overlay */}
+        {latColumn && lngColumn && mapCases.length === 0 && (
+          <div className="absolute bottom-4 left-4 right-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 shadow-lg">
+            <p className="text-sm text-yellow-800">
+              No valid coordinates found. Latitude must be -90 to 90, longitude -180 to 180.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
