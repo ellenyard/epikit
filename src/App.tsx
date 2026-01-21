@@ -22,8 +22,8 @@ type FormView = 'builder' | 'preview';
 const DEMO_DATASET_ID = 'demo-outbreak-2024';
 const createDemoDataset = (): Dataset => ({
   id: DEMO_DATASET_ID,
-  name: demoDatasetName,
-  source: 'import',
+  name: 'Foodborne Outbreak Investigation - Submissions',
+  source: 'form',
   columns: demoColumns,
   records: demoCaseRecords,
   createdAt: new Date().toISOString(),
