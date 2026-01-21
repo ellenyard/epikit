@@ -195,8 +195,8 @@ export function DataQualityPanel({
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
                 Date Order Rules
               </h4>
-              <p className="text-xs text-gray-500 mb-2">
-                Define which date should always come before another:
+              <p className="text-xs text-gray-500 mb-3">
+                Specify which dates should come before others (e.g., symptom onset before hospitalization):
               </p>
 
               {/* Existing rules */}
@@ -206,12 +206,13 @@ export function DataQualityPanel({
                     <div key={rule.id} className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
                       <span className="text-xs text-gray-700 flex-1">
                         <span className="font-medium">{rule.firstDateLabel}</span>
-                        <span className="text-gray-400 mx-1">→</span>
+                        <span className="text-blue-500 mx-1.5 font-medium">must come before</span>
                         <span className="font-medium">{rule.secondDateLabel}</span>
                       </span>
                       <button
                         onClick={() => removeDateOrderRule(rule.id)}
                         className="p-1 text-gray-400 hover:text-red-500"
+                        title="Remove rule"
                       >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -224,37 +225,44 @@ export function DataQualityPanel({
 
               {/* Add new rule */}
               {dateColumns.length >= 2 && (
-                <div className="flex items-center gap-2">
-                  <select
-                    value={newRuleFirstDate}
-                    onChange={(e) => setNewRuleFirstDate(e.target.value)}
-                    className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded"
-                  >
-                    <option value="">First date...</option>
-                    {dateColumns.map(c => (
-                      <option key={c.key} value={c.key}>{c.label}</option>
-                    ))}
-                  </select>
-                  <span className="text-gray-400 text-xs">→</span>
-                  <select
-                    value={newRuleSecondDate}
-                    onChange={(e) => setNewRuleSecondDate(e.target.value)}
-                    className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded"
-                  >
-                    <option value="">Second date...</option>
-                    {dateColumns.map(c => (
-                      <option key={c.key} value={c.key}>{c.label}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={addDateOrderRule}
-                    disabled={!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate}
-                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded disabled:text-gray-300 disabled:hover:bg-transparent"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                  </button>
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <select
+                      value={newRuleFirstDate}
+                      onChange={(e) => setNewRuleFirstDate(e.target.value)}
+                      className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select earlier date...</option>
+                      {dateColumns.map(c => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2 pl-2">
+                    <span className="text-xs text-gray-600 font-medium whitespace-nowrap">must come before</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <select
+                      value={newRuleSecondDate}
+                      onChange={(e) => setNewRuleSecondDate(e.target.value)}
+                      className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select later date...</option>
+                      {dateColumns.map(c => (
+                        <option key={c.key} value={c.key}>{c.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={addDateOrderRule}
+                      disabled={!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate}
+                      className="p-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      title="Add date order rule"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
               {dateColumns.length < 2 && (
