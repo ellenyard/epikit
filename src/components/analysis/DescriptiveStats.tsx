@@ -162,25 +162,38 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                   </div>
                 </div>
 
-                {/* Histogram Chart */}
+                {/* Histogram Chart - Vertical */}
                 {histogramBins.length > 0 && (
-                  <div className="space-y-1">
-                    {histogramBins.map((bin, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <span className="text-xs text-gray-600 w-28 truncate text-right" title={bin.label}>
-                          {bin.label}
-                        </span>
-                        <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
-                          <div
-                            className="h-full bg-blue-500 transition-all"
-                            style={{ width: `${(bin.count / maxBinCount) * 100}%` }}
-                          />
+                  <div className="flex flex-col">
+                    {/* Bars */}
+                    <div className="flex items-end justify-between gap-1 h-48 mb-2">
+                      {histogramBins.map((bin, index) => (
+                        <div key={index} className="flex-1 flex flex-col items-center h-full">
+                          <span className="text-xs text-gray-700 font-medium mb-1">
+                            {bin.count > 0 ? bin.count : ''}
+                          </span>
+                          <div className="flex-1 w-full bg-gray-100 rounded-t overflow-hidden flex items-end">
+                            <div
+                              className="w-full bg-blue-500 transition-all rounded-t"
+                              style={{ height: `${(bin.count / maxBinCount) * 100}%` }}
+                            />
+                          </div>
                         </div>
-                        <span className="text-xs text-gray-700 w-8 text-right font-medium">
-                          {bin.count}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
+                    {/* X-axis labels */}
+                    <div className="flex justify-between gap-1 border-t border-gray-300 pt-2">
+                      {histogramBins.map((bin, index) => (
+                        <div key={index} className="flex-1 text-center">
+                          <span
+                            className="text-xs text-gray-600 block truncate"
+                            title={bin.label}
+                          >
+                            {bin.binStart.toFixed(0)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 
