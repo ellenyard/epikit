@@ -17,7 +17,8 @@ interface TableRow {
   value: string;
   count: number;
   percent: number;
-  isFirstRowForVariable: boolean;
+  isHeaderRow: boolean; // True for variable header rows
+  isValueRow: boolean;  // True for value rows
 }
 
 export function OneWayTables({ dataset }: OneWayTablesProps) {
@@ -108,8 +109,20 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
         valuesToShow = [config.valueOfInterest];
       }
 
-      // Create rows
-      valuesToShow.forEach((value, index) => {
+      // Create header row for the variable
+      rows.push({
+        variable: varKey,
+        variableLabel: column.label,
+        denominatorN,
+        value: '',
+        count: 0,
+        percent: 0,
+        isHeaderRow: true,
+        isValueRow: false,
+      });
+
+      // Create value rows
+      valuesToShow.forEach((value) => {
         const count = value === '(Missing)' ? missingCount : (valueCounts.get(value) || 0);
         const percent = denominatorN > 0 ? (count / denominatorN) * 100 : 0;
 
@@ -120,7 +133,8 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
           value,
           count,
           percent,
-          isFirstRowForVariable: index === 0,
+          isHeaderRow: false,
+          isValueRow: true,
         });
       });
     }
@@ -132,28 +146,22 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
   const exportToCSV = useCallback(() => {
     if (tableRows.length === 0) return;
 
-    // Determine if any variable is expanded (needs Value column)
-    const hasExpandedVariables = selectedVariables.some(v => getConfig(v).expanded);
-
-    let headers: string[];
-    let csvRows: string[][];
-
-    if (hasExpandedVariables) {
-      headers = ['Variable', 'Value', 'N', '%'];
-      csvRows = tableRows.map(row => [
-        row.isFirstRowForVariable ? `${row.variableLabel} (n=${row.denominatorN})` : '',
-        row.value,
-        String(row.count),
-        row.percent.toFixed(1) + '%',
-      ]);
-    } else {
-      headers = ['Variable', 'N', '%'];
-      csvRows = tableRows.map(row => [
-        `${row.variableLabel} (n=${row.denominatorN})`,
-        String(row.count),
-        row.percent.toFixed(1) + '%',
-      ]);
-    }
+    const headers = ['Variable/Value', 'N', '%'];
+    const csvRows = tableRows.map(row => {
+      if (row.isHeaderRow) {
+        return [
+          `${row.variableLabel} (n=${row.denominatorN})`,
+          '',
+          '',
+        ];
+      } else {
+        return [
+          `  ${row.value}`, // Indent values with spaces
+          String(row.count),
+          row.percent.toFixed(1) + '%',
+        ];
+      }
+    });
 
     const csv = [
       headers.join(','),
@@ -169,10 +177,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [tableRows, selectedVariables, getConfig, dataset.name]);
-
-  // Check if any variable is expanded
-  const hasExpandedVariables = selectedVariables.some(v => getConfig(v).expanded);
+  }, [tableRows, dataset.name]);
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
@@ -339,13 +344,8 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Variable
+                        Variable / Value
                       </th>
-                      {hasExpandedVariables && (
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Value
-                        </th>
-                      )}
                       <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         N
                       </th>
@@ -355,32 +355,26 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {tableRows.map((row, index) => {
-                      const config = getConfig(row.variable);
-                      return (
-                        <tr key={index} className="hover:bg-gray-50">
-                          <td className="px-4 py-2 text-sm text-gray-900">
-                            {row.isFirstRowForVariable ? (
-                              <span>
-                                {row.variableLabel}{' '}
-                                <span className="text-gray-500">(n={row.denominatorN})</span>
-                              </span>
-                            ) : ''}
-                          </td>
-                          {hasExpandedVariables && (
-                            <td className="px-4 py-2 text-sm text-gray-700">
-                              {config.expanded ? row.value : ''}
-                            </td>
+                    {tableRows.map((row, index) => (
+                      <tr key={index} className={row.isHeaderRow ? 'bg-gray-50' : 'hover:bg-gray-50'}>
+                        <td className="px-4 py-2 text-sm">
+                          {row.isHeaderRow ? (
+                            <span className="font-medium text-gray-900">
+                              {row.variableLabel}{' '}
+                              <span className="text-gray-500">(n={row.denominatorN})</span>
+                            </span>
+                          ) : (
+                            <span className="pl-4 text-gray-700">{row.value}</span>
                           )}
-                          <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
-                            {row.count}
-                          </td>
-                          <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                            {row.percent.toFixed(1)}%
-                          </td>
-                        </tr>
-                      );
-                    })}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                          {row.isValueRow ? row.count : ''}
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                          {row.isValueRow ? `${row.percent.toFixed(1)}%` : ''}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
