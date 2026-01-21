@@ -36,7 +36,7 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="h-full overflow-auto p-6 space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Descriptive Statistics</h3>
         <p className="text-sm text-gray-600 mb-4">
