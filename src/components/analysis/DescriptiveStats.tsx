@@ -167,34 +167,6 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                 </tfoot>
               </table>
             </div>
-
-            {/* Bar Chart Visualization */}
-            <div className="p-4 border-t border-gray-200">
-              <p className="text-xs font-medium text-gray-500 mb-2">Distribution</p>
-              <div className="space-y-1">
-                {frequency.slice(0, 10).map((item, index) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-600 w-24 truncate" title={item.value}>
-                      {item.value}
-                    </span>
-                    <div className="flex-1 h-4 bg-gray-100 rounded overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500"
-                        style={{ width: `${item.percent}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-gray-500 w-12 text-right">
-                      {formatNumber(item.percent, 1)}%
-                    </span>
-                  </div>
-                ))}
-                {frequency.length > 10 && (
-                  <p className="text-xs text-gray-400 mt-2">
-                    + {frequency.length - 10} more values
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
 
           {/* Summary Statistics (for numeric variables) */}
