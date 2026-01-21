@@ -2,11 +2,10 @@ import { useState, useMemo } from 'react';
 import type {
   DataQualityIssue,
   DataQualityConfig,
-  DataQualityCheckType,
   DataColumn,
+  DateOrderRule,
 } from '../../types/analysis';
 import {
-  getCheckName,
   getCategoryName,
   groupIssuesByCategory,
 } from '../../utils/dataQuality';
@@ -35,9 +34,13 @@ export function DataQualityPanel({
   isRunning,
 }: DataQualityPanelProps) {
   const [expandedCategories, setExpandedCategories] = useState<Set<CategoryKey>>(
-    new Set(['duplicate', 'temporal', 'logic', 'completeness', 'range'])
+    new Set(['duplicate', 'temporal', 'range'])
   );
   const [showConfig, setShowConfig] = useState(false);
+
+  // For adding new date order rule
+  const [newRuleFirstDate, setNewRuleFirstDate] = useState('');
+  const [newRuleSecondDate, setNewRuleSecondDate] = useState('');
 
   // Filter out dismissed issues for display
   const activeIssues = useMemo(
@@ -65,66 +68,46 @@ export function DataQualityPanel({
   const errorCount = activeIssues.filter(i => i.severity === 'error').length;
   const warningCount = activeIssues.filter(i => i.severity === 'warning').length;
 
-  const updateFieldMapping = (field: string, value: string) => {
-    onConfigChange({
-      ...config,
-      fieldMapping: {
-        ...config.fieldMapping,
-        [field]: value || undefined,
-      },
-    });
+  const dateColumns = columns.filter(c => c.type === 'date');
+  const numericColumns = columns.filter(c => c.type === 'number');
+
+  const toggleDuplicateField = (fieldKey: string) => {
+    const current = config.duplicateFields;
+    const updated = current.includes(fieldKey)
+      ? current.filter(f => f !== fieldKey)
+      : [...current, fieldKey];
+    onConfigChange({ ...config, duplicateFields: updated });
   };
 
-  const toggleCheck = (checkType: DataQualityCheckType) => {
-    const enabled = config.enabledChecks.includes(checkType);
+  const addDateOrderRule = () => {
+    if (!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate) return;
+
+    const firstCol = columns.find(c => c.key === newRuleFirstDate);
+    const secondCol = columns.find(c => c.key === newRuleSecondDate);
+
+    const newRule: DateOrderRule = {
+      id: Math.random().toString(36).substring(2, 11),
+      firstDateField: newRuleFirstDate,
+      secondDateField: newRuleSecondDate,
+      firstDateLabel: firstCol?.label || newRuleFirstDate,
+      secondDateLabel: secondCol?.label || newRuleSecondDate,
+    };
+
     onConfigChange({
       ...config,
-      enabledChecks: enabled
-        ? config.enabledChecks.filter(c => c !== checkType)
-        : [...config.enabledChecks, checkType],
+      dateOrderRules: [...config.dateOrderRules, newRule],
     });
+
+    setNewRuleFirstDate('');
+    setNewRuleSecondDate('');
   };
 
-  const updateRequiredFields = (fields: string[]) => {
+  const removeDateOrderRule = (ruleId: string) => {
     onConfigChange({
       ...config,
-      fieldMapping: {
-        ...config.fieldMapping,
-        requiredFields: fields,
-      },
+      dateOrderRules: config.dateOrderRules.filter(r => r.id !== ruleId),
     });
   };
-
-  const allChecks: DataQualityCheckType[] = [
-    'duplicate_exact',
-    'duplicate_key',
-    'temporal_onset_after_exposure',
-    'temporal_onset_before_report',
-    'temporal_death_after_onset',
-    'temporal_future_date',
-    'logic_confirmed_needs_positive',
-    'logic_hospitalized_needs_hospital',
-    'logic_deceased_needs_date',
-    'completeness_required',
-    'range_age',
-  ];
-
-  const fieldMappingFields: { key: string; label: string; type: 'date' | 'text' | 'any' }[] = [
-    { key: 'onsetDate', label: 'Symptom Onset Date', type: 'date' },
-    { key: 'exposureDate', label: 'Exposure Date', type: 'date' },
-    { key: 'reportDate', label: 'Report Date', type: 'date' },
-    { key: 'deathDate', label: 'Death Date', type: 'date' },
-    { key: 'caseId', label: 'Case ID', type: 'text' },
-    { key: 'fullName', label: 'Full Name', type: 'text' },
-    { key: 'firstName', label: 'First Name', type: 'text' },
-    { key: 'lastName', label: 'Last Name', type: 'text' },
-    { key: 'age', label: 'Age', type: 'any' },
-    { key: 'caseStatus', label: 'Case Status', type: 'any' },
-    { key: 'labResult', label: 'Lab Result', type: 'any' },
-    { key: 'hospitalized', label: 'Hospitalized', type: 'any' },
-    { key: 'hospitalName', label: 'Hospital Name', type: 'text' },
-    { key: 'outcome', label: 'Outcome', type: 'any' },
-  ];
 
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200">
@@ -175,47 +158,22 @@ export function DataQualityPanel({
 
       {/* Configuration Panel */}
       {showConfig && (
-        <div className="border-b border-gray-200 bg-gray-50 max-h-96 overflow-auto">
-          <div className="p-4 space-y-4">
-            {/* Field Mapping */}
+        <div className="border-b border-gray-200 bg-gray-50 max-h-[60vh] overflow-auto">
+          <div className="p-4 space-y-5">
+            {/* Duplicate Detection */}
             <div>
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                Field Mapping
+                Duplicate Detection
               </h4>
-              <div className="space-y-2">
-                {fieldMappingFields.map(({ key, label, type }) => (
-                  <div key={key} className="flex items-center gap-2">
-                    <label className="text-xs text-gray-600 w-28 truncate" title={label}>
-                      {label}
-                    </label>
-                    <select
-                      value={(config.fieldMapping as Record<string, string | undefined>)[key] || ''}
-                      onChange={(e) => updateFieldMapping(key, e.target.value)}
-                      className="flex-1 text-xs px-2 py-1 border border-gray-300 rounded"
-                    >
-                      <option value="">-- Not mapped --</option>
-                      {columns
-                        .filter(c => type === 'any' || c.type === type || c.type === 'text')
-                        .map(c => (
-                          <option key={c.key} value={c.key}>{c.label}</option>
-                        ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Required Fields */}
-            <div>
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                Required Fields
-              </h4>
+              <p className="text-xs text-gray-500 mb-2">
+                Select fields to check for duplicates:
+              </p>
               <div className="flex flex-wrap gap-1">
                 {columns.map(col => (
                   <label
                     key={col.key}
                     className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
-                      config.fieldMapping.requiredFields?.includes(col.key)
+                      config.duplicateFields.includes(col.key)
                         ? 'bg-blue-100 text-blue-700'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
@@ -223,15 +181,8 @@ export function DataQualityPanel({
                     <input
                       type="checkbox"
                       className="sr-only"
-                      checked={config.fieldMapping.requiredFields?.includes(col.key) || false}
-                      onChange={(e) => {
-                        const current = config.fieldMapping.requiredFields || [];
-                        if (e.target.checked) {
-                          updateRequiredFields([...current, col.key]);
-                        } else {
-                          updateRequiredFields(current.filter(f => f !== col.key));
-                        }
-                      }}
+                      checked={config.duplicateFields.includes(col.key)}
+                      onChange={() => toggleDuplicateField(col.key)}
                     />
                     {col.label}
                   </label>
@@ -239,26 +190,130 @@ export function DataQualityPanel({
               </div>
             </div>
 
-            {/* Enabled Checks */}
+            {/* Date Order Rules */}
             <div>
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                Enabled Checks
+                Date Order Rules
               </h4>
-              <div className="space-y-1">
-                {allChecks.map(check => (
-                  <label
-                    key={check}
-                    className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer"
+              <p className="text-xs text-gray-500 mb-2">
+                Define which date should always come before another:
+              </p>
+
+              {/* Existing rules */}
+              {config.dateOrderRules.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {config.dateOrderRules.map(rule => (
+                    <div key={rule.id} className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
+                      <span className="text-xs text-gray-700 flex-1">
+                        <span className="font-medium">{rule.firstDateLabel}</span>
+                        <span className="text-gray-400 mx-1">→</span>
+                        <span className="font-medium">{rule.secondDateLabel}</span>
+                      </span>
+                      <button
+                        onClick={() => removeDateOrderRule(rule.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add new rule */}
+              {dateColumns.length >= 2 && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newRuleFirstDate}
+                    onChange={(e) => setNewRuleFirstDate(e.target.value)}
+                    className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded"
                   >
+                    <option value="">First date...</option>
+                    {dateColumns.map(c => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                  </select>
+                  <span className="text-gray-400 text-xs">→</span>
+                  <select
+                    value={newRuleSecondDate}
+                    onChange={(e) => setNewRuleSecondDate(e.target.value)}
+                    className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded"
+                  >
+                    <option value="">Second date...</option>
+                    {dateColumns.map(c => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={addDateOrderRule}
+                    disabled={!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate}
+                    className="p-1.5 text-blue-600 hover:bg-blue-50 rounded disabled:text-gray-300 disabled:hover:bg-transparent"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              {dateColumns.length < 2 && (
+                <p className="text-xs text-gray-400 italic">
+                  Need at least 2 date columns to add rules
+                </p>
+              )}
+            </div>
+
+            {/* Future Dates Check */}
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.checkFutureDates}
+                  onChange={(e) => onConfigChange({ ...config, checkFutureDates: e.target.checked })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-xs text-gray-700">Check for future dates</span>
+              </label>
+            </div>
+
+            {/* Age Range */}
+            <div>
+              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                Age Range Check
+              </h4>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600 w-16">Age field:</label>
+                  <select
+                    value={config.ageField || ''}
+                    onChange={(e) => onConfigChange({ ...config, ageField: e.target.value || undefined })}
+                    className="flex-1 text-xs px-2 py-1.5 border border-gray-300 rounded"
+                  >
+                    <option value="">-- None --</option>
+                    {numericColumns.map(c => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {config.ageField && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-600 w-16">Range:</label>
                     <input
-                      type="checkbox"
-                      checked={config.enabledChecks.includes(check)}
-                      onChange={() => toggleCheck(check)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      type="number"
+                      value={config.ageMin}
+                      onChange={(e) => onConfigChange({ ...config, ageMin: Number(e.target.value) })}
+                      className="w-16 text-xs px-2 py-1.5 border border-gray-300 rounded"
                     />
-                    {getCheckName(check)}
-                  </label>
-                ))}
+                    <span className="text-xs text-gray-400">to</span>
+                    <input
+                      type="number"
+                      value={config.ageMax}
+                      onChange={(e) => onConfigChange({ ...config, ageMax: Number(e.target.value) })}
+                      className="w-16 text-xs px-2 py-1.5 border border-gray-300 rounded"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -293,7 +348,7 @@ export function DataQualityPanel({
 
       {/* Issues List */}
       <div className="flex-1 overflow-auto">
-        {(['duplicate', 'temporal', 'logic', 'completeness', 'range'] as CategoryKey[]).map(category => {
+        {(['duplicate', 'temporal', 'range'] as CategoryKey[]).map(category => {
           const categoryIssues = groupedIssues[category];
           if (categoryIssues.length === 0) return null;
 

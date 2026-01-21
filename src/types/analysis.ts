@@ -46,23 +46,15 @@ export interface EditLogEntry {
 
 // Data Quality Check Types
 export type DataQualityCheckType =
-  | 'duplicate_exact'
-  | 'duplicate_key'
-  | 'temporal_onset_after_exposure'
-  | 'temporal_onset_before_report'
-  | 'temporal_death_after_onset'
-  | 'temporal_future_date'
-  | 'temporal_date_range'
-  | 'logic_confirmed_needs_positive'
-  | 'logic_hospitalized_needs_hospital'
-  | 'logic_deceased_needs_date'
-  | 'completeness_required'
-  | 'range_age';
+  | 'duplicate'
+  | 'date_order'
+  | 'future_date'
+  | 'age_range';
 
 export interface DataQualityIssue {
   id: string;
   checkType: DataQualityCheckType;
-  category: 'duplicate' | 'temporal' | 'logic' | 'completeness' | 'range';
+  category: 'duplicate' | 'temporal' | 'range';
   severity: 'error' | 'warning';
   recordIds: string[];  // Can be multiple for duplicates
   field?: string;
@@ -71,41 +63,30 @@ export interface DataQualityIssue {
   dismissed?: boolean;
 }
 
-export interface DataQualityFieldMapping {
-  // Temporal fields
-  onsetDate?: string;
-  exposureDate?: string;
-  reportDate?: string;
-  deathDate?: string;
-  specimenDate?: string;
-  dateOfBirth?: string;
-
-  // Key identifier fields for duplicate detection
-  caseId?: string;
-  firstName?: string;
-  lastName?: string;
-  fullName?: string;
-
-  // Clinical/logic fields
-  caseStatus?: string;
-  labResult?: string;
-  hospitalized?: string;
-  hospitalName?: string;
-  outcome?: string;
-
-  // Demographic fields
-  age?: string;
-
-  // Required fields for completeness
-  requiredFields?: string[];
+// Date order rule: firstDate should always come before secondDate
+export interface DateOrderRule {
+  id: string;
+  firstDateField: string;   // Field that should come first (earlier)
+  secondDateField: string;  // Field that should come second (later)
+  firstDateLabel: string;   // Display label for first date
+  secondDateLabel: string;  // Display label for second date
 }
 
 export interface DataQualityConfig {
-  fieldMapping: DataQualityFieldMapping;
-  enabledChecks: DataQualityCheckType[];
-  dateRangeMonths: number;  // For temporal_date_range check
+  // Duplicate detection: which fields to check
+  duplicateFields: string[];
+
+  // Date order rules
+  dateOrderRules: DateOrderRule[];
+
+  // Check for future dates
+  checkFutureDates: boolean;
+
+  // Age range check
+  ageField?: string;
   ageMin: number;
   ageMax: number;
-  positiveLabValues: string[];  // Values that count as "positive" lab result
-  confirmedStatusValues: string[];  // Values that count as "confirmed" case
+
+  // Which checks are enabled
+  enabledChecks: DataQualityCheckType[];
 }
