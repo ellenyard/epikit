@@ -2,6 +2,10 @@
 
 A modern, web-based epidemiology toolkit designed to assist FETP residents analyze data during outbreak responses. Built with React, TypeScript, and Tailwind CSS.
 
+## Purpose
+
+EpiKit is designed to assist FETP (Field Epidemiology Training Program) residents—junior field epidemiologists—with reviewing, cleaning, and analyzing data from their field investigations. Beyond providing analytical tools, EpiKit aims to reinforce best practices in field epidemiology and provide guidance and tips throughout the investigation process, helping trainees build strong foundational skills.
+
 ## Features
 
 ### Form Builder
