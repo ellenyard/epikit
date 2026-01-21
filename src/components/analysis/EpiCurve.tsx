@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import type { Dataset } from '../../types/analysis';
 import {
   processEpiCurveData,
@@ -44,6 +44,34 @@ function Refresher({ title, children }: { title: string; children: React.ReactNo
 
 export function EpiCurve({ dataset }: EpiCurveProps) {
   const chartRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Resizable panel
+  const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
+  const [isResizing, setIsResizing] = useState(false);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing || !containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newWidth = e.clientX - containerRect.left;
+      setPanelWidth(Math.max(200, Math.min(500, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Configuration state
   const [dateColumn, setDateColumn] = useState<string>('');
@@ -177,9 +205,12 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   const yAxisMax = Math.max(curveData.maxCount + 1, Math.ceil((curveData.maxCount + 1) / 5) * 5);
 
   return (
-    <div className="h-full flex flex-col lg:flex-row">
+    <div ref={containerRef} className={`h-full flex flex-col lg:flex-row ${isResizing ? 'select-none' : ''}`}>
       {/* Left Panel - Controls */}
-      <div className="w-full lg:w-72 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 lg:border-r border-gray-200 p-4 overflow-y-auto">
+      <div
+        className="w-full flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 p-4 overflow-y-auto"
+        style={{ width: window.innerWidth >= 1024 ? panelWidth : '100%' }}
+      >
         <div className="space-y-4">
           {/* Summary */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
@@ -512,6 +543,14 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Resize Handle */}
+      <div
+        className="hidden lg:flex w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 items-center justify-center group transition-colors"
+        onMouseDown={() => setIsResizing(true)}
+      >
+        <div className="w-0.5 h-8 bg-gray-400 group-hover:bg-blue-600 rounded-full transition-colors" />
       </div>
 
       {/* Right Panel - Chart */}
