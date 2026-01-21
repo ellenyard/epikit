@@ -158,38 +158,6 @@ export function Review({
               </div>
             )}
           </div>
-
-          {/* Sample Data Button */}
-          <div className="p-4 border-t border-gray-200">
-            <button
-              onClick={() => {
-                const sampleColumns: DataColumn[] = [
-                  { key: 'case_id', label: 'Case ID', type: 'text' },
-                  { key: 'onset_date', label: 'Onset Date', type: 'date' },
-                  { key: 'age', label: 'Age', type: 'number' },
-                  { key: 'sex', label: 'Sex', type: 'text' },
-                  { key: 'exposure', label: 'Exposure', type: 'text' },
-                  { key: 'outcome', label: 'Outcome', type: 'text' },
-                  { key: 'latitude', label: 'Latitude', type: 'number' },
-                  { key: 'longitude', label: 'Longitude', type: 'number' },
-                ];
-                const sampleRecords: CaseRecord[] = [
-                  { id: '1', case_id: 'C001', onset_date: '2024-01-15', age: 34, sex: 'Female', exposure: 'Food', outcome: 'Recovered', latitude: 33.749, longitude: -84.388 },
-                  { id: '2', case_id: 'C002', onset_date: '2024-01-16', age: 28, sex: 'Male', exposure: 'Food', outcome: 'Recovered', latitude: 33.755, longitude: -84.390 },
-                  { id: '3', case_id: 'C003', onset_date: '2024-01-16', age: 45, sex: 'Female', exposure: 'Water', outcome: 'Hospitalized', latitude: 33.762, longitude: -84.385 },
-                  { id: '4', case_id: 'C004', onset_date: '2024-01-17', age: 52, sex: 'Male', exposure: 'Food', outcome: 'Recovered', latitude: 33.744, longitude: -84.395 },
-                  { id: '5', case_id: 'C005', onset_date: '2024-01-17', age: 31, sex: 'Female', exposure: 'Unknown', outcome: 'Recovered', latitude: 33.758, longitude: -84.378 },
-                  { id: '6', case_id: 'C006', onset_date: '2024-01-18', age: 67, sex: 'Male', exposure: 'Food', outcome: 'Hospitalized', latitude: 33.740, longitude: -84.382 },
-                  { id: '7', case_id: 'C007', onset_date: '2024-01-18', age: 23, sex: 'Female', exposure: 'Food', outcome: 'Recovered', latitude: 33.768, longitude: -84.392 },
-                  { id: '8', case_id: 'C008', onset_date: '2024-01-19', age: 41, sex: 'Male', exposure: 'Water', outcome: 'Recovered', latitude: 33.752, longitude: -84.372 },
-                ];
-                createDataset('Sample Outbreak Data', sampleColumns, sampleRecords, 'import');
-              }}
-              className="w-full px-3 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Load Sample Data
-            </button>
-          </div>
         </div>
 
         {/* Mobile Sidebar Overlay */}
