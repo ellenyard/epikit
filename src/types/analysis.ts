@@ -43,3 +43,69 @@ export interface EditLogEntry {
   initials: string;
   timestamp: string;
 }
+
+// Data Quality Check Types
+export type DataQualityCheckType =
+  | 'duplicate_exact'
+  | 'duplicate_key'
+  | 'temporal_onset_after_exposure'
+  | 'temporal_onset_before_report'
+  | 'temporal_death_after_onset'
+  | 'temporal_future_date'
+  | 'temporal_date_range'
+  | 'logic_confirmed_needs_positive'
+  | 'logic_hospitalized_needs_hospital'
+  | 'logic_deceased_needs_date'
+  | 'completeness_required'
+  | 'range_age';
+
+export interface DataQualityIssue {
+  id: string;
+  checkType: DataQualityCheckType;
+  category: 'duplicate' | 'temporal' | 'logic' | 'completeness' | 'range';
+  severity: 'error' | 'warning';
+  recordIds: string[];  // Can be multiple for duplicates
+  field?: string;
+  message: string;
+  details?: string;
+  dismissed?: boolean;
+}
+
+export interface DataQualityFieldMapping {
+  // Temporal fields
+  onsetDate?: string;
+  exposureDate?: string;
+  reportDate?: string;
+  deathDate?: string;
+  specimenDate?: string;
+  dateOfBirth?: string;
+
+  // Key identifier fields for duplicate detection
+  caseId?: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+
+  // Clinical/logic fields
+  caseStatus?: string;
+  labResult?: string;
+  hospitalized?: string;
+  hospitalName?: string;
+  outcome?: string;
+
+  // Demographic fields
+  age?: string;
+
+  // Required fields for completeness
+  requiredFields?: string[];
+}
+
+export interface DataQualityConfig {
+  fieldMapping: DataQualityFieldMapping;
+  enabledChecks: DataQualityCheckType[];
+  dateRangeMonths: number;  // For temporal_date_range check
+  ageMin: number;
+  ageMax: number;
+  positiveLabValues: string[];  // Values that count as "positive" lab result
+  confirmedStatusValues: string[];  // Values that count as "confirmed" case
+}
