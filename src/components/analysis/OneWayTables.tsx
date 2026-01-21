@@ -1,8 +1,119 @@
 import { useState, useMemo, useCallback } from 'react';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Dataset } from '../../types/analysis';
 
 interface OneWayTablesProps {
   dataset: Dataset;
+}
+
+interface SortableVariableItemProps {
+  varKey: string;
+  column: { key: string; label: string } | undefined;
+  config: VariableConfig;
+  uniqueValues: string[];
+  updateConfig: (varKey: string, updates: Partial<VariableConfig>) => void;
+}
+
+function SortableVariableItem({
+  varKey,
+  column,
+  config,
+  uniqueValues,
+  updateConfig,
+}: SortableVariableItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: varKey });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+    >
+      <div className="flex items-start gap-2">
+        <div
+          {...attributes}
+          {...listeners}
+          className="mt-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600"
+        >
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 8h16M4 16h16"
+            />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-800 mb-2">{column?.label}</p>
+          <div className="flex items-center gap-3 mb-2">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name={`mode-${varKey}`}
+                checked={config.expanded}
+                onChange={() => updateConfig(varKey, { expanded: true })}
+                className="text-blue-600"
+              />
+              <span className="text-xs text-gray-600">Expanded</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name={`mode-${varKey}`}
+                checked={!config.expanded}
+                onChange={() => updateConfig(varKey, { expanded: false })}
+                className="text-blue-600"
+              />
+              <span className="text-xs text-gray-600">Condensed</span>
+            </label>
+          </div>
+          {!config.expanded && (
+            <select
+              value={config.valueOfInterest}
+              onChange={(e) => updateConfig(varKey, { valueOfInterest: e.target.value })}
+              className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+            >
+              {uniqueValues.map(val => (
+                <option key={val} value={val}>{val}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface VariableConfig {
@@ -44,6 +155,15 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
   const [percentMode, setPercentMode] = useState<'total' | 'non-missing'>('total');
   const [showPercentHelp, setShowPercentHelp] = useState(false);
 
+  // Setup drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
   // Get unique values for a variable
   const getUniqueValues = useCallback((varKey: string): string[] => {
     const values = new Set<string>();
@@ -83,6 +203,23 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
       } else {
         return [...prev, varKey];
       }
+    });
+  }, []);
+
+  // Handle drag end for reordering variables
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    setSelectedVariables((items) => {
+      const oldIndex = items.findIndex((item) => item === active.id);
+      const newIndex = items.findIndex((item) => item === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        return arrayMove(items, oldIndex, newIndex);
+      }
+      return items;
     });
   }, []);
 
@@ -197,15 +334,16 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
   }, [tableRows, dataset.name]);
 
   return (
-    <div className="h-full overflow-auto p-6 space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">1-Way Tables</h3>
-        <p className="text-sm text-gray-600">
-          Create frequency tables for multiple variables. Select variables below, then configure each as expanded (all values) or condensed (single value).
-        </p>
-      </div>
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div className="h-full overflow-auto p-6 space-y-6">
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">1-Way Tables</h3>
+          <p className="text-sm text-gray-600">
+            Create frequency tables for multiple variables. Select variables below, then configure each as expanded (all values) or condensed (single value).
+          </p>
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Panel - Configuration */}
         <div className="lg:col-span-1 space-y-4">
           {/* Percentage Mode */}
@@ -279,53 +417,30 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
           {/* Variable Configurations */}
           {selectedVariables.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-gray-900 mb-3">Variable Settings</h4>
-              <div className="space-y-4">
-                {selectedVariables.map(varKey => {
-                  const column = dataset.columns.find(c => c.key === varKey);
-                  const config = getConfig(varKey);
-                  const uniqueValues = getUniqueValues(varKey);
-
-                  return (
-                    <div key={varKey} className="border-b border-gray-100 pb-3 last:border-0 last:pb-0">
-                      <p className="text-sm font-medium text-gray-800 mb-2">{column?.label}</p>
-                      <div className="flex items-center gap-3 mb-2">
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={`mode-${varKey}`}
-                            checked={config.expanded}
-                            onChange={() => updateConfig(varKey, { expanded: true })}
-                            className="text-blue-600"
-                          />
-                          <span className="text-xs text-gray-600">Expanded</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="radio"
-                            name={`mode-${varKey}`}
-                            checked={!config.expanded}
-                            onChange={() => updateConfig(varKey, { expanded: false })}
-                            className="text-blue-600"
-                          />
-                          <span className="text-xs text-gray-600">Condensed</span>
-                        </label>
-                      </div>
-                      {!config.expanded && (
-                        <select
-                          value={config.valueOfInterest}
-                          onChange={(e) => updateConfig(varKey, { valueOfInterest: e.target.value })}
-                          className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                        >
-                          {uniqueValues.map(val => (
-                            <option key={val} value={val}>{val}</option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-                  );
-                })}
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-gray-900">Variable Settings</h4>
+                <span className="text-xs text-gray-500">Drag to reorder</span>
               </div>
+              <SortableContext items={selectedVariables} strategy={verticalListSortingStrategy}>
+                <div className="space-y-4">
+                  {selectedVariables.map(varKey => {
+                    const column = dataset.columns.find(c => c.key === varKey);
+                    const config = getConfig(varKey);
+                    const uniqueValues = getUniqueValues(varKey);
+
+                    return (
+                      <SortableVariableItem
+                        key={varKey}
+                        varKey={varKey}
+                        column={column}
+                        config={config}
+                        uniqueValues={uniqueValues}
+                        updateConfig={updateConfig}
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
             </div>
           )}
         </div>
@@ -363,10 +478,10 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Variable / Value
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         N
                       </th>
-                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
                         %
                       </th>
                     </tr>
@@ -384,11 +499,13 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                             <span className="pl-4 text-gray-700">{row.value}</span>
                           )}
                         </td>
-                        <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium whitespace-nowrap">
                           {row.isValueRow ? row.count : ''}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-900 text-right">
                           {row.isValueRow ? `${formatPercent(row.percent, row.denominatorN)}%` : ''}
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right whitespace-nowrap">
+                          {row.isValueRow ? `${row.percent.toFixed(1)}%` : ''}
                         </td>
                       </tr>
                     ))}
@@ -406,6 +523,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </DndContext>
   );
 }
