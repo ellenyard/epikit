@@ -129,47 +129,109 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
 
       {selectedVar && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Frequency Distribution */}
-          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-            <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-              <h4 className="text-sm font-semibold text-gray-900">Frequency Distribution</h4>
-              <p className="text-xs text-gray-500">{selectedColumn?.label}</p>
-            </div>
-            <div className="max-h-96 overflow-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Count</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">%</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Cum %</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {frequency.map((item, index) => (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-sm text-gray-900">{item.value}</td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">{item.count}</td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatNumber(item.percent, 1)}%</td>
-                      <td className="px-4 py-2 text-sm text-gray-500 text-right">{formatNumber(item.cumPercent, 1)}%</td>
+          {/* Left Column */}
+          <div className="space-y-6">
+            {/* Histogram (for numeric variables) - Top Left */}
+            {numericStats && (
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-semibold text-gray-900">Histogram</h4>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-500">Bin width:</label>
+                    <input
+                      type="number"
+                      value={binWidth !== null ? binWidth : defaultBinWidth}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val > 0) {
+                          setBinWidth(val);
+                        }
+                      }}
+                      step="any"
+                      min="0.01"
+                      className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                    />
+                    {binWidth !== null && (
+                      <button
+                        onClick={() => setBinWidth(null)}
+                        className="text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Histogram Chart */}
+                {histogramBins.length > 0 && (
+                  <div className="space-y-1">
+                    {histogramBins.map((bin, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600 w-28 truncate text-right" title={bin.label}>
+                          {bin.label}
+                        </span>
+                        <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 transition-all"
+                            style={{ width: `${(bin.count / maxBinCount) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-700 w-8 text-right font-medium">
+                          {bin.count}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {histogramBins.length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-4">No data to display</p>
+                )}
+              </div>
+            )}
+
+            {/* Frequency Distribution - Bottom Left */}
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-900">Frequency Distribution</h4>
+                <p className="text-xs text-gray-500">{selectedColumn?.label}</p>
+              </div>
+              <div className="max-h-96 overflow-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Count</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">%</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Cum %</th>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-gray-50">
-                  <tr>
-                    <td className="px-4 py-2 text-sm font-medium text-gray-900">Total</td>
-                    <td className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
-                      {frequency.reduce((sum, item) => sum + item.count, 0)}
-                    </td>
-                    <td className="px-4 py-2 text-sm font-medium text-gray-900 text-right">100%</td>
-                    <td className="px-4 py-2 text-sm text-gray-500 text-right">-</td>
-                  </tr>
-                </tfoot>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {frequency.map((item, index) => (
+                      <tr key={index} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm text-gray-900">{item.value}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right">{item.count}</td>
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatNumber(item.percent, 1)}%</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 text-right">{formatNumber(item.cumPercent, 1)}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50">
+                    <tr>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900">Total</td>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900 text-right">
+                        {frequency.reduce((sum, item) => sum + item.count, 0)}
+                      </td>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900 text-right">100%</td>
+                      <td className="px-4 py-2 text-sm text-gray-500 text-right">-</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
           </div>
 
-          {/* Summary Statistics (for numeric variables) */}
+          {/* Right Column - Summary Statistics (for numeric variables) */}
           {numericStats && (
             <div className="space-y-4">
               {/* Central Tendency */}
@@ -275,63 +337,6 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                     </>
                   )}
                 </div>
-              </div>
-
-              {/* Histogram */}
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-sm font-semibold text-gray-900">Histogram</h4>
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs text-gray-500">Bin width:</label>
-                    <input
-                      type="number"
-                      value={binWidth !== null ? binWidth : defaultBinWidth}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        if (!isNaN(val) && val > 0) {
-                          setBinWidth(val);
-                        }
-                      }}
-                      step="any"
-                      min="0.01"
-                      className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
-                    />
-                    {binWidth !== null && (
-                      <button
-                        onClick={() => setBinWidth(null)}
-                        className="text-xs text-blue-600 hover:text-blue-700"
-                      >
-                        Reset
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Histogram Chart */}
-                {histogramBins.length > 0 && (
-                  <div className="space-y-1">
-                    {histogramBins.map((bin, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <span className="text-xs text-gray-600 w-28 truncate text-right" title={bin.label}>
-                          {bin.label}
-                        </span>
-                        <div className="flex-1 h-5 bg-gray-100 rounded overflow-hidden">
-                          <div
-                            className="h-full bg-blue-500 transition-all"
-                            style={{ width: `${(bin.count / maxBinCount) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-gray-700 w-8 text-right font-medium">
-                          {bin.count}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {histogramBins.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-4">No data to display</p>
-                )}
               </div>
 
               {/* Count Info */}
