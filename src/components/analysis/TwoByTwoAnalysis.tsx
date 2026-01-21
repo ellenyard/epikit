@@ -587,7 +587,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="h-full overflow-auto p-6 space-y-6">
       {/* Study Design Selector */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <label className="block text-sm font-medium text-gray-700 mb-3">Study Design</label>
