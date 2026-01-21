@@ -4,13 +4,17 @@ import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/anal
 import { FormBuilder } from './components/FormBuilder';
 import { FormPreview } from './components/FormPreview';
 import { ExportModal } from './components/ExportModal';
-import { Analysis } from './components/analysis/Analysis';
 import { Review } from './components/review/Review';
 import { Collect } from './components/collect/Collect';
+import { EpiCurve } from './components/analysis/EpiCurve';
+import { SpotMap } from './components/analysis/SpotMap';
+import { DescriptiveStats } from './components/analysis/DescriptiveStats';
+import { TwoByTwoAnalysis } from './components/analysis/TwoByTwoAnalysis';
+import { DataImport } from './components/analysis/DataImport';
 import { demoFormItems, demoColumns, demoCaseRecords, demoDatasetName } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 
-type Module = 'forms' | 'collect' | 'review' | 'analyze';
+type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive' | '2way';
 type FormView = 'builder' | 'preview';
 
 // Create demo dataset
@@ -41,6 +45,7 @@ function App() {
   const [formView, setFormView] = useState<FormView>('builder');
   const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
   const [exportItems, setExportItems] = useState<FormItem[] | null>(null);
+  const [showImport, setShowImport] = useState(false);
 
   // Form definitions state (saved forms available for data collection)
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => [createDemoFormDefinition()]);
@@ -250,17 +255,29 @@ function App() {
     return dataset?.records.length || 0;
   }, [formDefinitions, datasets]);
 
+  // Handle data import
+  const handleImport = useCallback((name: string, columns: DataColumn[], records: CaseRecord[]) => {
+    createDataset(name, columns, records, 'import');
+    setShowImport(false);
+  }, [createDataset]);
+
+  // Get active dataset
+  const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
+
+  // Check if current module needs dataset selector
+  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '2way'].includes(activeModule);
+
   return (
     <div className="h-screen flex flex-col">
       {/* Top Navigation */}
       <nav className="bg-slate-800 text-white px-3 sm:px-6 py-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 sm:gap-6">
+          <div className="flex items-center gap-3 sm:gap-4">
             <span className="text-lg sm:text-xl font-bold text-blue-400">EpiKit</span>
-            <div className="flex gap-1">
+            <div className="flex gap-0.5 overflow-x-auto">
               <button
                 onClick={() => { setActiveModule('forms'); setFormView('builder'); }}
-                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'forms'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -270,7 +287,7 @@ function App() {
               </button>
               <button
                 onClick={() => setActiveModule('collect')}
-                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'collect'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -280,7 +297,7 @@ function App() {
               </button>
               <button
                 onClick={() => setActiveModule('review')}
-                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'review'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
@@ -288,23 +305,89 @@ function App() {
               >
                 Review/Clean
               </button>
+              <span className="hidden sm:block w-px bg-slate-600 mx-1" />
               <button
-                onClick={() => setActiveModule('analyze')}
-                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  activeModule === 'analyze'
+                onClick={() => setActiveModule('epicurve')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === 'epicurve'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
-                Analyze
+                Epi Curve
+              </button>
+              <button
+                onClick={() => setActiveModule('spotmap')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === 'spotmap'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Spot Map
+              </button>
+              <button
+                onClick={() => setActiveModule('descriptive')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === 'descriptive'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Descriptive
+              </button>
+              <button
+                onClick={() => setActiveModule('2way')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === '2way'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                2x2 Tables
               </button>
             </div>
           </div>
-          <div className="text-sm text-slate-400 hidden sm:block">
+          <div className="text-sm text-slate-400 hidden lg:block">
             Epidemiology Toolkit
           </div>
         </div>
       </nav>
+
+      {/* Dataset selector bar */}
+      {showDatasetSelector && (
+        <div className="bg-gray-100 border-b border-gray-200 px-4 py-2 flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Dataset:</label>
+            <select
+              value={activeDatasetId || ''}
+              onChange={(e) => setActiveDatasetId(e.target.value || null)}
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white min-w-[200px]"
+            >
+              <option value="">Select a dataset...</option>
+              {datasets.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.records.length} records)
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => setShowImport(true)}
+            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg flex items-center gap-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Import Data
+          </button>
+          {activeDataset && (
+            <span className="text-sm text-gray-500 ml-auto">
+              {activeDataset.columns.length} columns
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
@@ -337,29 +420,48 @@ function App() {
               setActiveModule('review');
             }}
           />
-        ) : activeModule === 'review' ? (
-          <Review
-            datasets={datasets}
-            activeDatasetId={activeDatasetId}
-            setActiveDatasetId={setActiveDatasetId}
-            createDataset={createDataset}
-            deleteDataset={deleteDataset}
-            addRecord={addRecord}
-            updateRecord={updateRecord}
-            deleteRecord={deleteRecord}
-            addEditLogEntry={addEditLogEntry}
-            updateEditLogEntry={updateEditLogEntry}
-            getEditLogForDataset={getEditLogForDataset}
-            exportEditLog={exportEditLog}
-          />
+        ) : activeDataset ? (
+          // Modules that require a dataset
+          activeModule === 'review' ? (
+            <Review
+              datasets={datasets}
+              activeDatasetId={activeDatasetId}
+              setActiveDatasetId={setActiveDatasetId}
+              createDataset={createDataset}
+              deleteDataset={deleteDataset}
+              addRecord={addRecord}
+              updateRecord={updateRecord}
+              deleteRecord={deleteRecord}
+              addEditLogEntry={addEditLogEntry}
+              updateEditLogEntry={updateEditLogEntry}
+              getEditLogForDataset={getEditLogForDataset}
+              exportEditLog={exportEditLog}
+            />
+          ) : activeModule === 'epicurve' ? (
+            <EpiCurve dataset={activeDataset} />
+          ) : activeModule === 'spotmap' ? (
+            <SpotMap dataset={activeDataset} />
+          ) : activeModule === 'descriptive' ? (
+            <DescriptiveStats dataset={activeDataset} />
+          ) : activeModule === '2way' ? (
+            <TwoByTwoAnalysis dataset={activeDataset} />
+          ) : null
         ) : (
-          <Analysis
-            datasets={datasets}
-            activeDatasetId={activeDatasetId}
-            setActiveDatasetId={setActiveDatasetId}
-            createDataset={createDataset}
-            deleteDataset={deleteDataset}
-          />
+          // No dataset selected - show prompt
+          <div className="flex-1 flex items-center justify-center bg-white">
+            <div className="text-center p-8">
+              <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-lg text-gray-500">Select a dataset to begin</p>
+              <button
+                onClick={() => setShowImport(true)}
+                className="mt-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                Import Data
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
@@ -369,6 +471,14 @@ function App() {
           items={exportItems}
           formName={currentFormName}
           onClose={() => setExportItems(null)}
+        />
+      )}
+
+      {/* Import Modal */}
+      {showImport && (
+        <DataImport
+          onImport={handleImport}
+          onCancel={() => setShowImport(false)}
         />
       )}
     </div>
