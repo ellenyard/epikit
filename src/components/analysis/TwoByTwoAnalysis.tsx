@@ -598,13 +598,6 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">2x2 Table Analysis</h3>
-        <p className="text-sm text-gray-600 mb-4">
-          Analyze the association between exposures and outcomes using 2x2 contingency tables.
-        </p>
-      </div>
-
       {/* Study Design Selector */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <label className="block text-sm font-medium text-gray-700 mb-3">Study Design</label>
@@ -618,8 +611,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
               onChange={() => setStudyDesign('cohort')}
               className="w-4 h-4 text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-900">Cohort Study</span>
-            <span className="text-xs text-gray-500">(Shows RR, Row %)</span>
+            <span className="text-sm text-gray-900">Retrospective Cohort Investigation</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -630,8 +622,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
               onChange={() => setStudyDesign('case-control')}
               className="w-4 h-4 text-blue-600 focus:ring-blue-500"
             />
-            <span className="text-sm text-gray-900">Case-Control Study</span>
-            <span className="text-xs text-gray-500">(Shows OR, Column %)</span>
+            <span className="text-sm text-gray-900">Case-Control Investigation</span>
           </label>
         </div>
       </div>
