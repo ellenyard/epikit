@@ -173,6 +173,8 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
 
   const barWidth = Math.max(20, Math.min(60, 800 / (curveData.bins.length || 1)));
   const chartHeight = 300;
+  // Y-axis max should be at least 1 above the highest bar, rounded up to a nice number
+  const yAxisMax = Math.max(curveData.maxCount + 1, Math.ceil((curveData.maxCount + 1) / 5) * 5);
 
   return (
     <div className="h-full flex flex-col lg:flex-row">
@@ -532,7 +534,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
             {/* Y-Axis */}
             <div className="flex flex-col justify-between h-[300px] pr-2 text-right">
               {[...Array(6)].map((_, i) => {
-                const value = Math.round((curveData.maxCount * (5 - i)) / 5);
+                const value = Math.round((yAxisMax * (5 - i)) / 5);
                 return (
                   <span key={i} className="text-xs text-gray-500">{value}</span>
                 );
@@ -576,7 +578,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                           {curveData.strataKeys.map((strataKey, strataIndex) => {
                             const count = bin.strata.get(strataKey)?.length || 0;
                             if (count === 0) return null;
-                            const height = (count / curveData.maxCount) * chartHeight;
+                            const height = (count / yAxisMax) * chartHeight;
                             return (
                               <div
                                 key={strataKey}
@@ -595,7 +597,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                         <div
                           className="mx-0.5 bg-blue-500 hover:bg-blue-600 transition-colors"
                           style={{
-                            height: (bin.total / curveData.maxCount) * chartHeight,
+                            height: (bin.total / yAxisMax) * chartHeight,
                           }}
                           title={`${bin.label}: ${bin.total} cases`}
                         />
@@ -606,7 +608,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                         <div
                           className="absolute text-center text-xs font-medium text-gray-700 w-full"
                           style={{
-                            bottom: `${(bin.total / curveData.maxCount) * chartHeight + 2}px`
+                            bottom: `${(bin.total / yAxisMax) * chartHeight + 2}px`
                           }}
                         >
                           {bin.total}
@@ -617,14 +619,22 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                 </div>
 
                 {/* X-Axis Labels */}
-                <div className="flex mt-2 mb-12">
+                <div className="flex">
                   {curveData.bins.map((bin, index) => (
                     <div
                       key={index}
-                      className="text-center"
-                      style={{ width: barWidth }}
+                      className="relative"
+                      style={{ width: barWidth, height: 60 }}
                     >
-                      <span className="text-xs text-gray-500 transform -rotate-45 inline-block origin-top-left whitespace-nowrap">
+                      <span
+                        className="text-xs text-gray-500 absolute whitespace-nowrap"
+                        style={{
+                          transform: 'rotate(-45deg)',
+                          transformOrigin: 'top left',
+                          left: barWidth / 2,
+                          top: 4
+                        }}
+                      >
                         {bin.label}
                       </span>
                     </div>
@@ -635,7 +645,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           </div>
 
           {/* X-Axis Label */}
-          <div className="text-center mt-8">
+          <div className="text-center mt-2">
             <span className="text-xs font-bold text-gray-500">{xAxisLabel}</span>
           </div>
 
