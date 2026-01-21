@@ -21,6 +21,23 @@ interface TableRow {
   isValueRow: boolean;  // True for value rows
 }
 
+// Format number to specified significant figures
+const formatSigFigs = (n: number, sigFigs: number = 2): string => {
+  if (!isFinite(n) || n === 0) return '0';
+  const magnitude = Math.floor(Math.log10(Math.abs(n)));
+  const precision = sigFigs - 1 - magnitude;
+  if (precision < 0) {
+    return Math.round(n / Math.pow(10, -precision)) * Math.pow(10, -precision) + '';
+  }
+  return n.toFixed(Math.max(0, precision));
+};
+
+// Format percentage based on sample size: 2 sig figs if n < 1000, 3 sig figs if n >= 1000
+const formatPercent = (value: number, sampleSize: number): string => {
+  const sigFigs = sampleSize >= 1000 ? 3 : 2;
+  return formatSigFigs(value, sigFigs);
+};
+
 export function OneWayTables({ dataset }: OneWayTablesProps) {
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
   const [variableConfigs, setVariableConfigs] = useState<Record<string, VariableConfig>>({});
@@ -158,7 +175,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
         return [
           `  ${row.value}`, // Indent values with spaces
           String(row.count),
-          row.percent.toFixed(1) + '%',
+          formatPercent(row.percent, row.denominatorN) + '%',
         ];
       }
     });
@@ -371,7 +388,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                           {row.isValueRow ? row.count : ''}
                         </td>
                         <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                          {row.isValueRow ? `${row.percent.toFixed(1)}%` : ''}
+                          {row.isValueRow ? `${formatPercent(row.percent, row.denominatorN)}%` : ''}
                         </td>
                       </tr>
                     ))}
