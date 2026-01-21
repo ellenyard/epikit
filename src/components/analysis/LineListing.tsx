@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Dataset, CaseRecord, FilterCondition, SortConfig, DataColumn, EditLogEntry } from '../../types/analysis';
 import { filterRecords, sortRecords } from '../../hooks/useDataset';
 import { exportToCSV } from '../../utils/csvParser';
@@ -19,9 +19,21 @@ interface LineListingProps {
   onDeleteRecord: (recordId: string) => void;
   onAddRecord: (record: Omit<CaseRecord, 'id'>) => void;
   onEditComplete?: (entry: EditLogEntry) => void;
+  highlightedRecordIds?: Set<string>;
+  scrollToRecordId?: string | null;
+  highlightField?: string;
 }
 
-export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddRecord, onEditComplete }: LineListingProps) {
+export function LineListing({
+  dataset,
+  onUpdateRecord,
+  onDeleteRecord,
+  onAddRecord,
+  onEditComplete,
+  highlightedRecordIds,
+  scrollToRecordId,
+  highlightField,
+}: LineListingProps) {
   const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [sort, setSort] = useState<SortConfig | null>(null);
   const [editingCell, setEditingCell] = useState<{ recordId: string; column: string } | null>(null);
@@ -31,6 +43,18 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
   const [showAddRow, setShowAddRow] = useState(false);
   const [newRowData, setNewRowData] = useState<Record<string, unknown>>({});
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to record when scrollToRecordId changes
+  useEffect(() => {
+    if (scrollToRecordId) {
+      const rowElement = rowRefs.current.get(scrollToRecordId);
+      if (rowElement && tableContainerRef.current) {
+        rowElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [scrollToRecordId]);
 
   const processedRecords = useMemo(() => {
     const filtered = filterRecords(dataset.records, filters);
@@ -302,7 +326,7 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
+      <div ref={tableContainerRef} className="flex-1 overflow-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50 sticky top-0">
             <tr>
@@ -371,8 +395,23 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
                 </td>
               </tr>
             )}
-            {processedRecords.map((record, index) => (
-              <tr key={record.id} className={selectedRows.has(record.id) ? 'bg-blue-50' : 'hover:bg-gray-50'}>
+            {processedRecords.map((record, index) => {
+              const isHighlighted = highlightedRecordIds?.has(record.id);
+              const isScrollTarget = scrollToRecordId === record.id;
+              return (
+              <tr
+                key={record.id}
+                ref={(el) => {
+                  if (el) rowRefs.current.set(record.id, el);
+                  else rowRefs.current.delete(record.id);
+                }}
+                className={`
+                  ${selectedRows.has(record.id) ? 'bg-blue-50' : ''}
+                  ${isHighlighted && !selectedRows.has(record.id) ? 'bg-amber-50' : ''}
+                  ${isScrollTarget ? 'ring-2 ring-inset ring-amber-400' : ''}
+                  ${!selectedRows.has(record.id) && !isHighlighted ? 'hover:bg-gray-50' : ''}
+                `}
+              >
                 <td className="px-3 py-2">
                   <input
                     type="checkbox"
@@ -382,10 +421,12 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
                   />
                 </td>
                 <td className="px-3 py-2 text-sm text-gray-500">{index + 1}</td>
-                {dataset.columns.map(col => (
+                {dataset.columns.map(col => {
+                  const isHighlightedField = isHighlighted && highlightField === col.key;
+                  return (
                   <td
                     key={col.key}
-                    className="px-4 py-2 text-sm text-gray-900"
+                    className={`px-4 py-2 text-sm text-gray-900 ${isHighlightedField ? 'bg-amber-200' : ''}`}
                     onDoubleClick={() => startEdit(record.id, col.key, record[col.key])}
                   >
                     {editingCell?.recordId === record.id && editingCell?.column === col.key ? (
@@ -407,7 +448,8 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
                       </span>
                     )}
                   </td>
-                ))}
+                  );
+                })}
                 <td className="px-3 py-2">
                   <button
                     onClick={() => {
@@ -421,7 +463,8 @@ export function LineListing({ dataset, onUpdateRecord, onDeleteRecord, onAddReco
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
 
