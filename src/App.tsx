@@ -264,8 +264,8 @@ function App() {
   // Get active dataset
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
-  // Check if current module is an analysis module
-  const isAnalysisModule = ['epicurve', 'spotmap', 'descriptive', '2way'].includes(activeModule);
+  // Check if current module needs dataset selector
+  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '2way'].includes(activeModule);
 
   return (
     <div className="h-screen flex flex-col">
@@ -354,8 +354,8 @@ function App() {
         </div>
       </nav>
 
-      {/* Dataset selector bar for analysis modules */}
-      {isAnalysisModule && (
+      {/* Dataset selector bar */}
+      {showDatasetSelector && (
         <div className="bg-gray-100 border-b border-gray-200 px-4 py-2 flex items-center gap-4">
           <div className="flex items-center gap-2">
             <label className="text-sm font-medium text-gray-700">Dataset:</label>
@@ -420,24 +420,24 @@ function App() {
               setActiveModule('review');
             }}
           />
-        ) : activeModule === 'review' ? (
-          <Review
-            datasets={datasets}
-            activeDatasetId={activeDatasetId}
-            setActiveDatasetId={setActiveDatasetId}
-            createDataset={createDataset}
-            deleteDataset={deleteDataset}
-            addRecord={addRecord}
-            updateRecord={updateRecord}
-            deleteRecord={deleteRecord}
-            addEditLogEntry={addEditLogEntry}
-            updateEditLogEntry={updateEditLogEntry}
-            getEditLogForDataset={getEditLogForDataset}
-            exportEditLog={exportEditLog}
-          />
         ) : activeDataset ? (
-          // Analysis modules - requires a dataset
-          activeModule === 'epicurve' ? (
+          // Modules that require a dataset
+          activeModule === 'review' ? (
+            <Review
+              datasets={datasets}
+              activeDatasetId={activeDatasetId}
+              setActiveDatasetId={setActiveDatasetId}
+              createDataset={createDataset}
+              deleteDataset={deleteDataset}
+              addRecord={addRecord}
+              updateRecord={updateRecord}
+              deleteRecord={deleteRecord}
+              addEditLogEntry={addEditLogEntry}
+              updateEditLogEntry={updateEditLogEntry}
+              getEditLogForDataset={getEditLogForDataset}
+              exportEditLog={exportEditLog}
+            />
+          ) : activeModule === 'epicurve' ? (
             <EpiCurve dataset={activeDataset} />
           ) : activeModule === 'spotmap' ? (
             <SpotMap dataset={activeDataset} />
@@ -453,7 +453,7 @@ function App() {
               <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="text-lg text-gray-500">Select a dataset to begin analysis</p>
+              <p className="text-lg text-gray-500">Select a dataset to begin</p>
               <button
                 onClick={() => setShowImport(true)}
                 className="mt-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
