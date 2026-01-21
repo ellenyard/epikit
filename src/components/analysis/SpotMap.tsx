@@ -22,6 +22,7 @@ const colorPalettes: Record<ColorScheme, Record<string, string>> = {
     'Confirmed': '#3B82F6',
     'Probable': '#3B82F6',
     'Suspected': '#3B82F6',
+    'Not a case': '#3B82F6',
     'Unknown': '#3B82F6',
     _default: '#3B82F6',
   },
@@ -29,6 +30,7 @@ const colorPalettes: Record<ColorScheme, Record<string, string>> = {
     'Confirmed': '#DC2626',
     'Probable': '#F59E0B',
     'Suspected': '#3B82F6',
+    'Not a case': '#22C55E',
     'Unknown': '#9CA3AF',
     _default: '#6B7280',
   },
@@ -36,6 +38,7 @@ const colorPalettes: Record<ColorScheme, Record<string, string>> = {
     'Confirmed': '#CC3311',
     'Probable': '#EE7733',
     'Suspected': '#0077BB',
+    'Not a case': '#009988',
     'Unknown': '#BBBBBB',
     _default: '#BBBBBB',
   },
@@ -43,6 +46,7 @@ const colorPalettes: Record<ColorScheme, Record<string, string>> = {
     'Confirmed': '#99000d',
     'Probable': '#fc9272',
     'Suspected': '#fee5d9',
+    'Not a case': '#f0f0f0',
     'Unknown': '#f0f0f0',
     _default: '#f0f0f0',
   },
@@ -105,8 +109,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
         if (isNaN(lat) || isNaN(lng)) return null;
         if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
-        // Always use classification field for coloring
-        const classification = String(record['classification'] ?? 'Unknown');
+        // Use case_status or classification field for coloring
+        const classification = String(record['case_status'] ?? record['classification'] ?? 'Unknown');
 
         return {
           record,
