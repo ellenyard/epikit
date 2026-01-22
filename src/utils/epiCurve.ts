@@ -80,8 +80,17 @@ export function processEpiCurveData(
   const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
 
   // Adjust to bin boundaries
-  const startDate = getBinStart(minDate, binSize);
-  const endDate = getBinEnd(maxDate, binSize);
+  let startDate = getBinStart(minDate, binSize);
+  let endDate = getBinEnd(maxDate, binSize);
+
+  // Add padding bins (2 on each side) for visual spacing with 0 cases
+  const paddingBins = 2;
+  for (let i = 0; i < paddingBins; i++) {
+    startDate = getPreviousBinStart(startDate, binSize);
+  }
+  for (let i = 0; i < paddingBins; i++) {
+    endDate = getNextBinStart(endDate, binSize);
+  }
 
   // Generate bins
   const bins: EpiCurveBin[] = [];
@@ -191,6 +200,31 @@ function getNextBinStart(date: Date, binSize: BinSize): Date {
     case 'weekly-cdc':
     case 'weekly-iso':
       d.setDate(d.getDate() + 7);
+      break;
+  }
+
+  return d;
+}
+
+function getPreviousBinStart(date: Date, binSize: BinSize): Date {
+  const d = new Date(date);
+
+  switch (binSize) {
+    case 'hourly':
+      d.setHours(d.getHours() - 1);
+      break;
+    case '6hour':
+      d.setHours(d.getHours() - 6);
+      break;
+    case '12hour':
+      d.setHours(d.getHours() - 12);
+      break;
+    case 'daily':
+      d.setDate(d.getDate() - 1);
+      break;
+    case 'weekly-cdc':
+    case 'weekly-iso':
+      d.setDate(d.getDate() - 7);
       break;
   }
 
