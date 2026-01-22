@@ -6,6 +6,7 @@ import {
 } from '../../utils/epiCurve';
 import type { BinSize, ColorScheme, Annotation, EpiCurveData } from '../../utils/epiCurve';
 import { EpiCurveTutorial } from '../tutorials/EpiCurveTutorial';
+import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
 
 interface EpiCurveProps {
   dataset: Dataset;
@@ -219,8 +220,11 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
         style={{ width: window.innerWidth >= 1024 ? panelWidth : '100%' }}
       >
         <div className="space-y-4">
-          {/* Tutorial Component */}
-          <EpiCurveTutorial />
+          {/* Header */}
+          <TabHeader
+            title="Epidemic Curve"
+            description="Visualize the progression of cases over time with customizable binning and stratification options."
+          />
 
           {/* Summary */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
@@ -230,6 +234,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
             )}
           </div>
 
+          {/* Primary Controls */}
           {/* Filter By */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Filter By</label>
@@ -252,7 +257,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => setSelectedFilterValues(new Set(filterValues))}
-                      className="text-xs text-blue-600 hover:text-blue-700"
+                      className="text-xs text-gray-600 hover:text-gray-900"
                     >
                       All
                     </button>
@@ -292,7 +297,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                 {filterValues.length > 5 && (
                   <button
                     onClick={() => setShowAllFilterValues(!showAllFilterValues)}
-                    className="mt-2 text-xs text-blue-600 hover:text-blue-700"
+                    className="mt-2 text-xs text-gray-600 hover:text-gray-900"
                   >
                     {showAllFilterValues ? 'Show less' : `Show ${filterValues.length - 5} more...`}
                   </button>
@@ -348,383 +353,381 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
             </select>
           </div>
 
-          {/* Formatting Section */}
-          <div className="border-t border-gray-200 pt-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Formatting</p>
-          </div>
-
-          {/* Color Scheme */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
-            <select
-              value={colorScheme}
-              onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="default">Default</option>
-              <option value="classification">Classification</option>
-              <option value="colorblind">Colorblind-Friendly</option>
-              <option value="grayscale">Grayscale</option>
-            </select>
-          </div>
-
-          {/* Display Options */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showGridLines}
-                onChange={(e) => setShowGridLines(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <span className="text-gray-700">Grid Lines</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showCaseCounts}
-                onChange={(e) => setShowCaseCounts(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <span className="text-gray-700">Case Counts</span>
-            </label>
-          </div>
-
-          {/* Labels Section */}
-          <div className="border-t border-gray-200 pt-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Labels</p>
-          </div>
-
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Chart Title</label>
-            <input
-              type="text"
-              value={chartTitle}
-              onChange={(e) => setChartTitle(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">X-Axis Label</label>
-            <input
-              type="text"
-              value={xAxisLabel}
-              onChange={(e) => setXAxisLabel(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Y-Axis Label</label>
-            <input
-              type="text"
-              value={yAxisLabel}
-              onChange={(e) => setYAxisLabel(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-            />
-          </div>
-
-          {/* Annotations Section */}
-          <div className="border-t border-gray-200 pt-4">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annotations</p>
-              <button
-                onClick={() => setShowAnnotationForm(!showAnnotationForm)}
-                className="text-xs text-blue-600 hover:text-blue-700"
+          {/* Advanced Options */}
+          <AdvancedOptions>
+            {/* Color Scheme */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
+              <select
+                value={colorScheme}
+                onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
-                {showAnnotationForm ? 'Cancel' : '+ Add'}
-              </button>
+                <option value="default">Default</option>
+                <option value="classification">Classification</option>
+                <option value="colorblind">Colorblind-Friendly</option>
+                <option value="grayscale">Grayscale</option>
+              </select>
             </div>
 
-            {/* Annotation Form */}
-            {showAnnotationForm && (
-              <div className="space-y-2 mb-3 p-3 bg-white border border-gray-200 rounded-lg">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Type</label>
-                  <select
-                    value={newAnnotation.type}
-                    onChange={(e) => setNewAnnotation({ ...newAnnotation, type: e.target.value as Annotation['type'] })}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                  >
-                    <option value="exposure">Exposure Event</option>
-                    <option value="intervention">Intervention</option>
-                    <option value="incubation">Incubation Period</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={newAnnotation.date}
-                    onChange={(e) => setNewAnnotation({ ...newAnnotation, date: e.target.value })}
-                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                  />
-                </div>
-                {newAnnotation.type === 'incubation' ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Min Days</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={newAnnotation.minDays}
-                        onChange={(e) => setNewAnnotation({ ...newAnnotation, minDays: e.target.value })}
-                        placeholder="0.5"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Max Days</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={newAnnotation.maxDays}
-                        onChange={(e) => setNewAnnotation({ ...newAnnotation, maxDays: e.target.value })}
-                        placeholder="3"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      />
-                    </div>
-                  </div>
-                ) : (
+            {/* Display Options */}
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Display Options</p>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showGridLines}
+                  onChange={(e) => setShowGridLines(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-gray-700">Grid Lines</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showCaseCounts}
+                  onChange={(e) => setShowCaseCounts(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-gray-700">Case Counts</span>
+              </label>
+            </div>
+
+            {/* Labels */}
+            <div className="space-y-3 pt-3 border-t border-gray-200">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart Labels</p>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Chart Title</label>
+                <input
+                  type="text"
+                  value={chartTitle}
+                  onChange={(e) => setChartTitle(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">X-Axis Label</label>
+                <input
+                  type="text"
+                  value={xAxisLabel}
+                  onChange={(e) => setXAxisLabel(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Y-Axis Label</label>
+                <input
+                  type="text"
+                  value={yAxisLabel}
+                  onChange={(e) => setYAxisLabel(e.target.value)}
+                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Annotations */}
+            <div className="pt-3 border-t border-gray-200">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annotations</p>
+                <button
+                  onClick={() => setShowAnnotationForm(!showAnnotationForm)}
+                  className="text-xs text-gray-600 hover:text-gray-900"
+                >
+                  {showAnnotationForm ? 'Cancel' : '+ Add'}
+                </button>
+              </div>
+
+              {/* Annotation Form */}
+              {showAnnotationForm && (
+                <div className="space-y-2 mb-3 p-3 bg-white border border-gray-200 rounded-lg">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Label</label>
+                    <label className="block text-xs text-gray-500 mb-1">Type</label>
+                    <select
+                      value={newAnnotation.type}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, type: e.target.value as Annotation['type'] })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    >
+                      <option value="exposure">Exposure Event</option>
+                      <option value="intervention">Intervention</option>
+                      <option value="incubation">Incubation Period</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Date</label>
                     <input
-                      type="text"
-                      value={newAnnotation.label}
-                      onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
-                      placeholder="Optional label"
+                      type="date"
+                      value={newAnnotation.date}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, date: e.target.value })}
                       className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                     />
                   </div>
-                )}
-                <button
-                  onClick={addAnnotation}
-                  className="w-full px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
-                >
-                  Add Annotation
-                </button>
-              </div>
-            )}
-
-            {/* Active Annotations */}
-            {annotations.length > 0 && (
-              <div className="space-y-1">
-                {annotations.map(ann => (
-                  <div
-                    key={ann.id}
-                    className="flex items-center justify-between px-2 py-1 text-xs rounded"
-                    style={{ backgroundColor: `${ann.color}15` }}
+                  {newAnnotation.type === 'incubation' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Min Days</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={newAnnotation.minDays}
+                          onChange={(e) => setNewAnnotation({ ...newAnnotation, minDays: e.target.value })}
+                          placeholder="0.5"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Max Days</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={newAnnotation.maxDays}
+                          onChange={(e) => setNewAnnotation({ ...newAnnotation, maxDays: e.target.value })}
+                          placeholder="3"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Label</label>
+                      <input
+                        type="text"
+                        value={newAnnotation.label}
+                        onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
+                        placeholder="Optional label"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      />
+                    </div>
+                  )}
+                  <button
+                    onClick={addAnnotation}
+                    className="w-full px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
                   >
-                    <span style={{ color: ann.color }}>{ann.label}</span>
-                    <button
-                      onClick={() => removeAnnotation(ann.id)}
-                      className="text-gray-400 hover:text-gray-600"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                    Add Annotation
+                  </button>
+                </div>
+              )}
 
-          {/* Export Section */}
-          <div className="border-t border-gray-200 pt-4 space-y-2">
-            <button
-              onClick={() => exportChart('png')}
-              disabled={curveData.bins.length === 0}
-              className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export PNG
-            </button>
-            <button
-              onClick={() => exportChart('svg')}
-              disabled={curveData.bins.length === 0}
-              className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Export SVG
-            </button>
-          </div>
+              {/* Active Annotations */}
+              {annotations.length > 0 && (
+                <div className="space-y-1">
+                  {annotations.map(ann => (
+                    <div
+                      key={ann.id}
+                      className="flex items-center justify-between px-2 py-1 text-xs rounded"
+                      style={{ backgroundColor: `${ann.color}15` }}
+                    >
+                      <span style={{ color: ann.color }}>{ann.label}</span>
+                      <button
+                        onClick={() => removeAnnotation(ann.id)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </AdvancedOptions>
+
+          {/* Help Panel */}
+          <HelpPanel title="How to use Epidemic Curves">
+            <EpiCurveTutorial />
+          </HelpPanel>
         </div>
       </div>
 
       {/* Resize Handle */}
       <div
-        className="hidden lg:flex w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 items-center justify-center group transition-colors"
+        className="hidden lg:flex w-1 bg-gray-200 hover:bg-gray-400 cursor-col-resize flex-shrink-0 items-center justify-center group transition-colors"
         onMouseDown={() => setIsResizing(true)}
       >
-        <div className="w-0.5 h-8 bg-gray-400 group-hover:bg-blue-600 rounded-full transition-colors" />
+        <div className="w-0.5 h-8 bg-gray-400 group-hover:bg-gray-600 rounded-full transition-colors" />
       </div>
 
       {/* Right Panel - Chart */}
       <div className="flex-1 overflow-auto p-4 lg:p-6">
         {/* Chart */}
-      {curveData.bins.length > 0 ? (
-        <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-4">
-          {/* Title */}
-          <h4 className="text-center text-lg font-semibold text-gray-900 mb-4">{chartTitle}</h4>
+        {curveData.bins.length > 0 ? (
+          <div>
+            <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-4">
+              {/* Title */}
+              <h4 className="text-center text-lg font-semibold text-gray-900 mb-4">{chartTitle}</h4>
 
-          {/* Legend for Stratified Charts */}
-          {stratifyBy && curveData.strataKeys.length > 0 && (
-            <div className="flex flex-wrap justify-center gap-4 mb-4 pb-3 border-b border-gray-200">
-              {curveData.strataKeys.map((strataKey, strataIndex) => (
-                <div key={strataKey} className="flex items-center gap-2">
-                  <div
-                    className="w-4 h-4 rounded"
-                    style={{
-                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
-                    }}
-                  />
-                  <span className="text-sm text-gray-700 font-medium">{strataKey}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Chart Area */}
-          <div className="flex">
-            {/* Y-Axis Label */}
-            <div className="flex items-center justify-center w-8">
-              <span className="text-sm font-bold text-gray-500 transform -rotate-90 whitespace-nowrap">
-                {yAxisLabel}
-              </span>
-            </div>
-
-            {/* Y-Axis */}
-            <div className="flex flex-col justify-between h-[300px] pr-2 text-right">
-              {[...Array(6)].map((_, i) => {
-                const value = Math.round((yAxisMax * (5 - i)) / 5);
-                return (
-                  <span key={i} className="text-sm text-gray-500">{value}</span>
-                );
-              })}
-            </div>
-
-            {/* Chart Body */}
-            <div ref={chartBodyRef} className="flex-1 overflow-x-auto">
-              <div className="relative" style={{ width: curveData.bins.length * barWidth }}>
-                {/* Grid Lines */}
-                {showGridLines && (
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
-                    {[...Array(6)].map((_, i) => (
-                      <div key={i} className="border-b border-gray-100 w-full" />
-                    ))}
-                  </div>
-                )}
-
-                {/* Annotations */}
-                {annotations.map(ann => (
-                  <AnnotationMarker
-                    key={ann.id}
-                    annotation={ann}
-                    bins={curveData.bins}
-                    barWidth={barWidth}
-                    chartHeight={chartHeight}
-                  />
-                ))}
-
-                {/* Bars */}
-                <div className="flex items-end" style={{ height: chartHeight }}>
-                  {curveData.bins.map((bin, binIndex) => (
-                    <div
-                      key={binIndex}
-                      className="flex flex-col justify-end relative"
-                      style={{ width: barWidth }}
-                    >
-                      {stratifyBy && curveData.strataKeys.length > 0 ? (
-                        // Stacked bars
-                        <div className="flex flex-col-reverse">
-                          {curveData.strataKeys.map((strataKey, strataIndex) => {
-                            const count = bin.strata.get(strataKey)?.length || 0;
-                            if (count === 0) return null;
-                            const height = (count / yAxisMax) * chartHeight;
-                            return (
-                              <div
-                                key={strataKey}
-                                className="mx-0.5 hover:opacity-80 transition-opacity"
-                                style={{
-                                  height,
-                                  backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
-                                }}
-                                title={`${bin.label}: ${strataKey} (${count})`}
-                              />
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        // Single bar
-                        <div
-                          className="mx-0.5 bg-blue-500 hover:bg-blue-600 transition-colors"
-                          style={{
-                            height: (bin.total / yAxisMax) * chartHeight,
-                          }}
-                          title={`${bin.label}: ${bin.total} cases`}
-                        />
-                      )}
-
-                      {/* Case count label */}
-                      {showCaseCounts && bin.total > 0 && (
-                        <div
-                          className="absolute text-center text-xs font-medium text-gray-700 w-full"
-                          style={{
-                            bottom: `${(bin.total / yAxisMax) * chartHeight + 2}px`
-                          }}
-                        >
-                          {bin.total}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {/* X-Axis Labels */}
-                <div className="flex">
-                  {curveData.bins.map((bin, index) => (
-                    <div
-                      key={index}
-                      className="relative"
-                      style={{ width: barWidth, height: 60 }}
-                    >
-                      <span
-                        className="text-sm text-gray-500 absolute whitespace-nowrap"
+              {/* Legend for Stratified Charts */}
+              {stratifyBy && curveData.strataKeys.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-4 mb-4 pb-3 border-b border-gray-200">
+                  {curveData.strataKeys.map((strataKey, strataIndex) => (
+                    <div key={strataKey} className="flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded"
                         style={{
-                          transform: 'rotate(-45deg)',
-                          transformOrigin: '0 0',
-                          left: barWidth / 2,
-                          top: 5
+                          backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
                         }}
-                      >
-                        {bin.label}
-                      </span>
+                      />
+                      <span className="text-sm text-gray-700 font-medium">{strataKey}</span>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Chart Area */}
+              <div className="flex">
+                {/* Y-Axis Label */}
+                <div className="flex items-center justify-center w-8">
+                  <span className="text-sm font-bold text-gray-500 transform -rotate-90 whitespace-nowrap">
+                    {yAxisLabel}
+                  </span>
+                </div>
+
+                {/* Y-Axis */}
+                <div className="flex flex-col justify-between h-[300px] pr-2 text-right">
+                  {[...Array(6)].map((_, i) => {
+                    const value = Math.round((yAxisMax * (5 - i)) / 5);
+                    return (
+                      <span key={i} className="text-sm text-gray-500">{value}</span>
+                    );
+                  })}
+                </div>
+
+                {/* Chart Body */}
+                <div ref={chartBodyRef} className="flex-1 overflow-x-auto">
+                  <div className="relative" style={{ width: curveData.bins.length * barWidth }}>
+                    {/* Grid Lines */}
+                    {showGridLines && (
+                      <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                        {[...Array(6)].map((_, i) => (
+                          <div key={i} className="border-b border-gray-100 w-full" />
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Annotations */}
+                    {annotations.map(ann => (
+                      <AnnotationMarker
+                        key={ann.id}
+                        annotation={ann}
+                        bins={curveData.bins}
+                        barWidth={barWidth}
+                        chartHeight={chartHeight}
+                      />
+                    ))}
+
+                    {/* Bars */}
+                    <div className="flex items-end" style={{ height: chartHeight }}>
+                      {curveData.bins.map((bin, binIndex) => (
+                        <div
+                          key={binIndex}
+                          className="flex flex-col justify-end relative"
+                          style={{ width: barWidth }}
+                        >
+                          {stratifyBy && curveData.strataKeys.length > 0 ? (
+                            // Stacked bars
+                            <div className="flex flex-col-reverse">
+                              {curveData.strataKeys.map((strataKey, strataIndex) => {
+                                const count = bin.strata.get(strataKey)?.length || 0;
+                                if (count === 0) return null;
+                                const height = (count / yAxisMax) * chartHeight;
+                                return (
+                                  <div
+                                    key={strataKey}
+                                    className="mx-0.5 hover:opacity-80 transition-opacity"
+                                    style={{
+                                      height,
+                                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
+                                    }}
+                                    title={`${bin.label}: ${strataKey} (${count})`}
+                                  />
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            // Single bar
+                            <div
+                              className="mx-0.5 bg-blue-500 hover:bg-blue-600 transition-colors"
+                              style={{
+                                height: (bin.total / yAxisMax) * chartHeight,
+                              }}
+                              title={`${bin.label}: ${bin.total} cases`}
+                            />
+                          )}
+
+                          {/* Case count label */}
+                          {showCaseCounts && bin.total > 0 && (
+                            <div
+                              className="absolute text-center text-xs font-medium text-gray-700 w-full"
+                              style={{
+                                bottom: `${(bin.total / yAxisMax) * chartHeight + 2}px`
+                              }}
+                            >
+                              {bin.total}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* X-Axis Labels */}
+                    <div className="flex">
+                      {curveData.bins.map((bin, index) => (
+                        <div
+                          key={index}
+                          className="relative"
+                          style={{ width: barWidth, height: 60 }}
+                        >
+                          <span
+                            className="text-sm text-gray-500 absolute whitespace-nowrap"
+                            style={{
+                              transform: 'rotate(-45deg)',
+                              transformOrigin: '0 0',
+                              left: barWidth / 2,
+                              top: 5
+                            }}
+                          >
+                            {bin.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
+
+              {/* X-Axis Label */}
+              <div className="text-center mt-2">
+                <span className="text-sm font-bold text-gray-500">{xAxisLabel}</span>
+              </div>
             </div>
-          </div>
 
-          {/* X-Axis Label */}
-          <div className="text-center mt-2">
-            <span className="text-sm font-bold text-gray-500">{xAxisLabel}</span>
+            {/* Results Actions */}
+            <ResultsActions
+              actions={[
+                {
+                  label: 'Export PNG',
+                  onClick: () => exportChart('png'),
+                  icon: ExportIcons.download,
+                  variant: 'primary',
+                },
+                {
+                  label: 'Export SVG',
+                  onClick: () => exportChart('svg'),
+                  icon: ExportIcons.download,
+                  variant: 'secondary',
+                },
+              ]}
+            />
           </div>
-        </div>
-      ) : dateColumn ? (
-        <div className="text-center py-12 text-gray-400">
-          No valid date data found in the selected column
-        </div>
-      ) : (
-        <div className="text-center py-12 text-gray-400">
-          Select a date column to generate the epidemic curve
-        </div>
-      )}
-
+        ) : dateColumn ? (
+          <div className="text-center py-12 text-gray-400">
+            No valid date data found in the selected column
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-400">
+            Select a date column to generate the epidemic curve
+          </div>
+        )}
       </div>
     </div>
   );
