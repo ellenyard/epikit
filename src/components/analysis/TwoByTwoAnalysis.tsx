@@ -403,10 +403,14 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
 
       {/* Outcome Variable */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <h4 className="text-sm font-semibold text-gray-900 mb-3">Outcome Variable</h4>
+        <p className="text-xs text-gray-600 mb-3">
+          <strong>Select the variable that defines your outcome of interest</strong> (e.g., illness status, case status). Then choose which values represent a "case" (e.g., "Yes", "Confirmed", "Probable"). The remaining values will be treated as non-cases or controls.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Outcome Variable
+              Variable
             </label>
             <select
               value={outcomeVar}
