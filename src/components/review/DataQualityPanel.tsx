@@ -498,17 +498,6 @@ export function DataQualityPanel({
             </div>
           );
         })}
-
-        {activeIssues.length === 0 && !isRunning && (
-          <div className="p-8 text-center text-gray-400">
-            <svg className="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-sm">
-              {issues.length > 0 ? 'All issues have been reviewed' : 'Click "Run Checks" to analyze data'}
-            </p>
-          </div>
-        )}
       </div>
     </div>
   );
