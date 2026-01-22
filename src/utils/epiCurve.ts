@@ -56,6 +56,19 @@ export const PATHOGEN_INCUBATION: Record<string, { min: number; max: number; typ
   'Mumps': { min: 12, max: 25, typical: 17 },
 };
 
+// Helper to parse dates consistently as local time
+function parseDate(dateValue: string | Date): Date {
+  if (dateValue instanceof Date) {
+    return dateValue;
+  }
+  const dateStr = String(dateValue);
+  // If date is in YYYY-MM-DD format without time, append time to parse as local
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    return new Date(dateStr + 'T00:00:00');
+  }
+  return new Date(dateStr);
+}
+
 export function processEpiCurveData(
   records: CaseRecord[],
   dateColumn: string,
@@ -66,7 +79,7 @@ export function processEpiCurveData(
   const validRecords = records.filter(r => {
     const dateVal = r[dateColumn];
     if (!dateVal) return false;
-    const date = new Date(String(dateVal));
+    const date = parseDate(String(dateVal));
     return !isNaN(date.getTime());
   });
 
@@ -75,7 +88,7 @@ export function processEpiCurveData(
   }
 
   // Get date range
-  const dates = validRecords.map(r => new Date(String(r[dateColumn])));
+  const dates = validRecords.map(r => parseDate(String(r[dateColumn])));
   const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
   const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
 
@@ -100,7 +113,7 @@ export function processEpiCurveData(
     const currentEnd = getNextBinStart(currentStart, binSize);
 
     const binCases = validRecords.filter(r => {
-      const caseDate = new Date(String(r[dateColumn]));
+      const caseDate = parseDate(String(r[dateColumn]));
       return caseDate >= currentStart && caseDate < currentEnd;
     });
 
@@ -292,12 +305,12 @@ export function findFirstCaseDate(records: CaseRecord[], dateColumn: string): Da
   const validRecords = records.filter(r => {
     const dateVal = r[dateColumn];
     if (!dateVal) return false;
-    const date = new Date(String(dateVal));
+    const date = parseDate(String(dateVal));
     return !isNaN(date.getTime());
   });
 
   if (validRecords.length === 0) return null;
 
-  const dates = validRecords.map(r => new Date(String(r[dateColumn])));
+  const dates = validRecords.map(r => parseDate(String(r[dateColumn])));
   return new Date(Math.min(...dates.map(d => d.getTime())));
 }

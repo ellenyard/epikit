@@ -170,10 +170,17 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   const addAnnotation = () => {
     if (!newAnnotation.date) return;
 
+    // Parse date as local time (not UTC) by appending time component
+    const parseLocalDate = (dateStr: string) => {
+      // HTML date input returns YYYY-MM-DD format
+      // Append time to ensure it's parsed as local time, not UTC
+      return new Date(dateStr + 'T00:00:00');
+    };
+
     const annotation: Annotation = {
       id: crypto.randomUUID(),
       type: newAnnotation.type,
-      date: new Date(newAnnotation.date),
+      date: parseLocalDate(newAnnotation.date),
       label: newAnnotation.label || newAnnotation.type,
       color: newAnnotation.type === 'exposure' ? '#DC2626' :
              newAnnotation.type === 'intervention' ? '#059669' : '#7C3AED',
@@ -183,13 +190,13 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
       const minDays = parseFloat(newAnnotation.minDays);
       const maxDays = parseFloat(newAnnotation.maxDays);
       if (!isNaN(minDays) && !isNaN(maxDays)) {
-        const endDate = new Date(newAnnotation.date);
+        const endDate = parseLocalDate(newAnnotation.date);
         endDate.setDate(endDate.getDate() + maxDays);
         annotation.endDate = endDate;
         annotation.label = newAnnotation.label || `Incubation period (${minDays}-${maxDays} days)`;
       }
     } else if (newAnnotation.endDate) {
-      annotation.endDate = new Date(newAnnotation.endDate);
+      annotation.endDate = parseLocalDate(newAnnotation.endDate);
     }
 
     setAnnotations([...annotations, annotation]);
@@ -690,9 +697,9 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                         className="text-sm text-gray-500 absolute whitespace-nowrap"
                         style={{
                           transform: 'rotate(-45deg)',
-                          transformOrigin: 'top left',
+                          transformOrigin: '0 0',
                           left: barWidth / 2,
-                          top: 10
+                          top: 5
                         }}
                       >
                         {bin.label}
