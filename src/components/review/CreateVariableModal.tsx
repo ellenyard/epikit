@@ -26,6 +26,7 @@ export function CreateVariableModal({
   const [formula, setFormula] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(true);
 
   // Auto-generate variable name from label
   useEffect(() => {
@@ -136,6 +137,92 @@ export function CreateVariableModal({
     }
   };
 
+  const applyTemplate = (template: {
+    label: string;
+    name: string;
+    type: DataColumn['type'];
+    method: VariableConfig['method'];
+    sourceColumn?: string;
+    categories?: CategoryRule[];
+    formula?: string;
+    description: string;
+  }) => {
+    setLabel(template.label);
+    setName(template.name);
+    setType(template.type);
+    setMethod(template.method);
+
+    // Find appropriate source column if template specifies a type
+    if (template.method === 'categorize') {
+      const ageCol = existingColumns.find(col =>
+        col.key.toLowerCase().includes('age') || col.label.toLowerCase().includes('age')
+      );
+      setSourceColumn(ageCol?.key || '');
+    } else if (template.sourceColumn) {
+      setSourceColumn(template.sourceColumn);
+    }
+
+    if (template.categories) {
+      setCategories(template.categories);
+    }
+    if (template.formula) {
+      setFormula(template.formula);
+    }
+    setShowTemplates(false);
+    setNameManuallyEdited(true);
+  };
+
+  // Define common templates
+  const templates = [
+    {
+      label: 'Age Group',
+      name: 'age_group',
+      type: 'categorical' as const,
+      method: 'categorize' as const,
+      description: 'Categorize ages into standard groups (0-4, 5-17, 18-49, 50+)',
+      categories: [
+        { id: '1', label: '0-4 years', min: 0, max: 4 },
+        { id: '2', label: '5-17 years', min: 5, max: 17 },
+        { id: '3', label: '18-49 years', min: 18, max: 49 },
+        { id: '4', label: '50+ years', min: 50, max: 999 },
+      ],
+    },
+    {
+      label: 'Age Decade',
+      name: 'age_decade',
+      type: 'number' as const,
+      method: 'formula' as const,
+      description: 'Calculate age rounded to nearest decade (0, 10, 20, etc.)',
+      formula: 'Math.floor(age / 10) * 10',
+    },
+    {
+      label: 'Is Adult',
+      name: 'is_adult',
+      type: 'boolean' as const,
+      method: 'formula' as const,
+      description: 'True if age is 18 or older, false otherwise',
+      formula: 'age >= 18',
+    },
+    {
+      label: 'Fever Status',
+      name: 'fever_status',
+      type: 'categorical' as const,
+      method: 'categorize' as const,
+      description: 'Categorize temperature as Normal (<37.5°C) or Fever (≥37.5°C)',
+      categories: [
+        { id: '1', label: 'Normal', min: 0, max: 37.4 },
+        { id: '2', label: 'Fever', min: 37.5, max: 50 },
+      ],
+    },
+    {
+      label: 'Case Classification',
+      name: 'case_class',
+      type: 'categorical' as const,
+      method: 'copy' as const,
+      description: 'Copy of case status field for analysis',
+    },
+  ];
+
   if (!isOpen) {
     return null;
   }
@@ -170,6 +257,60 @@ export function CreateVariableModal({
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
               {error}
             </div>
+          )}
+
+          {/* Template Gallery */}
+          {showTemplates && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h4 className="font-semibold text-blue-900">Quick Start Templates</h4>
+                  <p className="text-xs text-blue-700 mt-1">
+                    Select a template to get started, or dismiss to create from scratch
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowTemplates(false)}
+                  className="text-blue-600 hover:text-blue-800 text-xs font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {templates.map((template, index) => (
+                  <button
+                    key={index}
+                    onClick={() => applyTemplate(template)}
+                    className="text-left p-3 bg-white border border-blue-200 rounded-lg hover:border-blue-400 hover:shadow-md transition-all"
+                  >
+                    <div className="font-semibold text-gray-900 text-sm mb-1">
+                      {template.label}
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      {template.description}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                        {template.method}
+                      </span>
+                      <span className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">
+                        {template.type}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {!showTemplates && (
+            <button
+              onClick={() => setShowTemplates(true)}
+              className="w-full py-2 px-3 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg border border-blue-200 border-dashed transition-colors"
+            >
+              Show template gallery
+            </button>
           )}
 
           {/* Basic Info */}

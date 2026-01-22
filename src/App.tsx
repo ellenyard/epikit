@@ -15,6 +15,7 @@ import { DataImport } from './components/analysis/DataImport';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { HelpCenter } from './components/HelpCenter';
 import { HelpIcon } from './components/HelpIcon';
+import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
@@ -53,6 +54,7 @@ function App() {
   const [showImport, setShowImport] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showHelpCenter, setShowHelpCenter] = useState(false);
+  const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
 
   // Form definitions state (saved forms available for data collection)
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => [createDemoFormDefinition()]);
@@ -409,6 +411,16 @@ function App() {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setShowAccessibilitySettings(true)}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label="Accessibility Settings"
+              title="Accessibility Settings"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            <button
               onClick={() => setShowHelpCenter(true)}
               className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
               aria-label="Help & Tutorials"
@@ -584,6 +596,12 @@ function App() {
           setShowHelpCenter(false);
           setShowOnboarding(true);
         }}
+      />
+
+      {/* Accessibility Settings */}
+      <AccessibilitySettings
+        isOpen={showAccessibilitySettings}
+        onClose={() => setShowAccessibilitySettings(false)}
       />
     </div>
   );
