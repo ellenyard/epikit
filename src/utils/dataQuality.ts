@@ -34,13 +34,13 @@ export function getDefaultConfig(): DataQualityConfig {
   return {
     duplicateFields: [],
     dateOrderRules: [],
-    checkFutureDates: true,
+    checkFutureDates: false,
     numericRangeRules: [],
-    enabledChecks: ['duplicate', 'date_order', 'future_date', 'numeric_range'],
+    enabledChecks: ['duplicate', 'date_order', 'numeric_range'],
   };
 }
 
-// Check for duplicates based on selected fields
+// Check for exact duplicates across all fields
 function checkDuplicates(
   records: CaseRecord[],
   fields: string[],
@@ -48,13 +48,19 @@ function checkDuplicates(
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
-  if (fields.length === 0) return issues;
+  // Get all data fields (excluding 'id')
+  const allFields = columns.map(c => c.key);
+
+  // Use selected fields if provided, otherwise check all fields
+  const fieldsToCheck = fields.length > 0 ? fields : allFields;
+
+  if (fieldsToCheck.length === 0) return issues;
 
   const seen = new Map<string, string[]>();
 
   for (const record of records) {
-    // Create a key from selected fields
-    const keyParts = fields.map(fieldKey => {
+    // Create a key from all checked fields
+    const keyParts = fieldsToCheck.map(fieldKey => {
       const val = record[fieldKey];
       return val === null || val === undefined ? '' : String(val).trim().toLowerCase();
     });
@@ -74,19 +80,14 @@ function checkDuplicates(
 
   for (const [, ids] of seen) {
     if (ids.length > 1) {
-      const fieldLabels = fields.map(f => {
-        const col = columns.find(c => c.key === f);
-        return col?.label || f;
-      }).join(', ');
-
       issues.push({
         id: generateId(),
         checkType: 'duplicate',
         category: 'duplicate',
         severity: 'error',
         recordIds: ids,
-        message: `${ids.length} duplicate records`,
-        details: `Same values in: ${fieldLabels}`,
+        message: `${ids.length} duplicate records found`,
+        details: undefined,
       });
     }
   }
@@ -117,40 +118,6 @@ function checkDateOrder(
           field: rule.secondDateField,
           message: `${rule.secondDateLabel} before ${rule.firstDateLabel}`,
           details: `${rule.firstDateLabel}: ${firstDate.toLocaleDateString()}, ${rule.secondDateLabel}: ${secondDate.toLocaleDateString()}`,
-        });
-      }
-    }
-  }
-
-  return issues;
-}
-
-// Check for future dates
-function checkFutureDates(
-  records: CaseRecord[],
-  columns: DataColumn[]
-): DataQualityIssue[] {
-  const issues: DataQualityIssue[] = [];
-  const today = new Date();
-  today.setHours(23, 59, 59, 999);
-
-  // Get all date columns
-  const dateColumns = columns.filter(c => c.type === 'date').map(c => c.key);
-
-  for (const record of records) {
-    for (const colKey of dateColumns) {
-      const date = parseDate(record[colKey]);
-      if (date && date > today) {
-        const col = columns.find(c => c.key === colKey);
-        issues.push({
-          id: generateId(),
-          checkType: 'future_date',
-          category: 'temporal',
-          severity: 'error',
-          recordIds: [record.id],
-          field: colKey,
-          message: `Future date in ${col?.label || colKey}`,
-          details: `Date: ${date.toLocaleDateString()}`,
         });
       }
     }
@@ -207,11 +174,6 @@ export function runDataQualityChecks(
   // Date order checks
   if (enabledChecks.includes('date_order') && config.dateOrderRules.length > 0) {
     issues.push(...checkDateOrder(records, config.dateOrderRules));
-  }
-
-  // Future date check
-  if (enabledChecks.includes('future_date') && config.checkFutureDates) {
-    issues.push(...checkFutureDates(records, columns));
   }
 
   // Numeric range checks
