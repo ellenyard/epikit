@@ -36,7 +36,6 @@ export function Review({
   exportEditLog,
 }: ReviewProps) {
   const [showEditLog, setShowEditLog] = useState(false);
-  const [showDataQuality, setShowDataQuality] = useState(true);
   const [dataQualityIssues, setDataQualityIssues] = useState<DataQualityIssue[]>([]);
   const [dataQualityConfig, setDataQualityConfig] = useState<DataQualityConfig>(getDefaultConfig());
   const [isRunningChecks, setIsRunningChecks] = useState(false);
@@ -151,39 +150,7 @@ export function Review({
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
-        <div className="flex items-center gap-4">
-          <div className="text-sm text-gray-600">
-            <span className="font-medium">{activeDataset.records.length}</span> records
-          </div>
-          <button
-            onClick={() => setShowCreateVariable(true)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Create Variable
-          </button>
-          <button
-            onClick={() => setShowDataQuality(!showDataQuality)}
-            className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-              showDataQuality
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Data Quality
-            {dataQualityIssues.filter(i => !i.dismissed).length > 0 && (
-              <span className="px-1.5 py-0.5 text-xs bg-amber-500 text-white rounded-full">
-                {dataQualityIssues.filter(i => !i.dismissed).length}
-              </span>
-            )}
-          </button>
-        </div>
+      <div className="flex items-center justify-end px-4 py-2 bg-gray-50 border-b border-gray-200">
         <button
           onClick={() => setShowEditLog(!showEditLog)}
           className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -207,113 +174,124 @@ export function Review({
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Controls and Data Quality */}
-        {showDataQuality && (
-          <div className="hidden lg:block w-72 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
-            {/* Controls Section */}
-            <div className="border-b border-gray-200 bg-white">
-              <div className="p-4 space-y-3">
-                {/* Filter Button */}
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
-                    filters.length > 0
-                      ? 'bg-blue-50 text-blue-700 border-blue-200'
-                      : 'text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                    </svg>
-                    Filters {filters.length > 0 && `(${filters.length})`}
-                  </div>
-                </button>
+        <div className="hidden lg:block w-72 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
+          {/* Controls Section */}
+          <div className="border-b border-gray-200 bg-white">
+            <div className="p-4 space-y-3">
+              {/* Filter Button */}
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                  filters.length > 0
+                    ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                  </svg>
+                  Filters {filters.length > 0 && `(${filters.length})`}
+                </div>
+              </button>
 
-                {/* Filter Panel */}
-                {showFilters && (
-                  <div className="p-3 bg-gray-50 rounded-lg">
-                    <div className="space-y-2">
-                      {filters.map((filter, index) => (
-                        <div key={index} className="space-y-2">
-                          <select
-                            value={filter.column}
-                            onChange={(e) => updateFilter(index, { column: e.target.value })}
+              {/* Filter Panel */}
+              {showFilters && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <div className="space-y-2">
+                    {filters.map((filter, index) => (
+                      <div key={index} className="space-y-2">
+                        <select
+                          value={filter.column}
+                          onChange={(e) => updateFilter(index, { column: e.target.value })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        >
+                          {activeDataset.columns.map(col => (
+                            <option key={col.key} value={col.key}>{col.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={filter.operator}
+                          onChange={(e) => updateFilter(index, { operator: e.target.value as FilterCondition['operator'] })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                        >
+                          <option value="contains">contains</option>
+                          <option value="equals">equals</option>
+                          <option value="not_equals">not equals</option>
+                          <option value="greater_than">greater than</option>
+                          <option value="less_than">less than</option>
+                          <option value="is_empty">is empty</option>
+                          <option value="is_not_empty">is not empty</option>
+                        </select>
+                        {!['is_empty', 'is_not_empty'].includes(filter.operator) && (
+                          <input
+                            type="text"
+                            value={String(filter.value)}
+                            onChange={(e) => updateFilter(index, { value: e.target.value })}
+                            placeholder="Value"
                             className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          >
-                            {activeDataset.columns.map(col => (
-                              <option key={col.key} value={col.key}>{col.label}</option>
-                            ))}
-                          </select>
-                          <select
-                            value={filter.operator}
-                            onChange={(e) => updateFilter(index, { operator: e.target.value as FilterCondition['operator'] })}
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          >
-                            <option value="contains">contains</option>
-                            <option value="equals">equals</option>
-                            <option value="not_equals">not equals</option>
-                            <option value="greater_than">greater than</option>
-                            <option value="less_than">less than</option>
-                            <option value="is_empty">is empty</option>
-                            <option value="is_not_empty">is not empty</option>
-                          </select>
-                          {!['is_empty', 'is_not_empty'].includes(filter.operator) && (
-                            <input
-                              type="text"
-                              value={String(filter.value)}
-                              onChange={(e) => updateFilter(index, { value: e.target.value })}
-                              placeholder="Value"
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          )}
-                          <button
-                            onClick={() => removeFilter(index)}
-                            className="w-full px-2 py-1 text-xs text-red-600 hover:text-red-700"
-                          >
-                            Remove filter
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        onClick={addFilter}
-                        className="w-full text-sm text-blue-600 hover:text-blue-700 py-1"
-                      >
-                        + Add filter
-                      </button>
-                    </div>
+                          />
+                        )}
+                        <button
+                          onClick={() => removeFilter(index)}
+                          className="w-full px-2 py-1 text-xs text-red-600 hover:text-red-700"
+                        >
+                          Remove filter
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      onClick={addFilter}
+                      className="w-full text-sm text-blue-600 hover:text-blue-700 py-1"
+                    >
+                      + Add filter
+                    </button>
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Add Record Button */}
-                <button
-                  onClick={() => setShowAddRow(true)}
-                  className="w-full px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                    Add Record
-                  </div>
-                </button>
-              </div>
-            </div>
+              {/* Create Variable Button */}
+              <button
+                onClick={() => setShowCreateVariable(true)}
+                className="w-full px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create Variable
+                </div>
+              </button>
 
-            {/* Data Quality Panel */}
-            <div className="flex-1 overflow-hidden">
-              <DataQualityPanel
-                issues={dataQualityIssues}
-                config={dataQualityConfig}
-                columns={activeDataset.columns}
-                onConfigChange={setDataQualityConfig}
-                onRunChecks={runChecks}
-                onSelectIssue={handleSelectIssue}
-                onDismissIssue={handleDismissIssue}
-                isRunning={isRunningChecks}
-              />
+              {/* Add Record Button */}
+              <button
+                onClick={() => setShowAddRow(true)}
+                className="w-full px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Record
+                </div>
+              </button>
             </div>
           </div>
-        )}
+
+          {/* Data Quality Panel */}
+          <div className="flex-1 overflow-hidden">
+            <DataQualityPanel
+              issues={dataQualityIssues}
+              config={dataQualityConfig}
+              columns={activeDataset.columns}
+              onConfigChange={setDataQualityConfig}
+              onRunChecks={runChecks}
+              onSelectIssue={handleSelectIssue}
+              onDismissIssue={handleDismissIssue}
+              isRunning={isRunningChecks}
+            />
+          </div>
+        </div>
 
         {/* Line Listing */}
         <div className={`flex-1 overflow-hidden ${showEditLog ? 'lg:mr-80' : ''}`}>
@@ -345,40 +323,6 @@ export function Review({
           </div>
         )}
       </div>
-
-      {/* Mobile Data Quality Panel */}
-      {showDataQuality && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setShowDataQuality(false)}>
-          <div
-            className="absolute left-0 top-0 bottom-0 w-full max-w-sm bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Data Quality</h2>
-              <button onClick={() => setShowDataQuality(false)} className="p-1 text-gray-400 hover:text-gray-600">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="overflow-y-auto h-full pb-20">
-              <DataQualityPanel
-                issues={dataQualityIssues}
-                config={dataQualityConfig}
-                columns={activeDataset.columns}
-                onConfigChange={setDataQualityConfig}
-                onRunChecks={runChecks}
-                onSelectIssue={(issue) => {
-                  handleSelectIssue(issue);
-                  setShowDataQuality(false);
-                }}
-                onDismissIssue={handleDismissIssue}
-                isRunning={isRunningChecks}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Mobile Edit Log */}
       {showEditLog && (
