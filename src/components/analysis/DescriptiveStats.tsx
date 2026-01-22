@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../types/analysis';
 import { calculateDescriptiveStats, calculateFrequency } from '../../utils/statistics';
 import type { DescriptiveStats as DescStats, FrequencyItem } from '../../utils/statistics';
+import { DescriptiveStatsTutorial } from '../tutorials/DescriptiveStatsTutorial';
 
 interface DescriptiveStatsProps {
   dataset: Dataset;
@@ -131,6 +132,9 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
           Select a variable to see frequency distributions and summary statistics.
         </p>
       </div>
+
+      {/* Tutorial Component */}
+      <DescriptiveStatsTutorial />
 
       {/* Variable Selection */}
       <div className="max-w-md">

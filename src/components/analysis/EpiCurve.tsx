@@ -5,6 +5,7 @@ import {
   getColorForStrata,
 } from '../../utils/epiCurve';
 import type { BinSize, ColorScheme, Annotation, EpiCurveData } from '../../utils/epiCurve';
+import { EpiCurveTutorial } from '../tutorials/EpiCurveTutorial';
 
 interface EpiCurveProps {
   dataset: Dataset;
@@ -240,6 +241,9 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
         style={{ width: window.innerWidth >= 1024 ? panelWidth : '100%' }}
       >
         <div className="space-y-4">
+          {/* Tutorial Component */}
+          <EpiCurveTutorial />
+
           {/* Summary */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
             <span className="font-medium">{filteredRecords.length}</span> of {dataset.records.length} cases

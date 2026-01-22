@@ -6,7 +6,7 @@ interface HelpCenterProps {
   onOpenOnboarding: () => void;
 }
 
-type HelpSection = 'quick-start' | 'tools' | 'glossary' | 'faq' | 'privacy';
+type HelpSection = 'quick-start' | 'faq' | 'privacy' | 'about' | 'saving-sharing';
 
 export const HelpCenter: React.FC<HelpCenterProps> = ({
   isOpen,
@@ -56,32 +56,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               Quick Start Guide
             </button>
             <button
-              onClick={() => setActiveSection('tools')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
-                activeSection === 'tools'
-                  ? 'bg-blue-100 text-blue-700 font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-              Tool Tutorials
-            </button>
-            <button
-              onClick={() => setActiveSection('glossary')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
-                activeSection === 'glossary'
-                  ? 'bg-blue-100 text-blue-700 font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              Glossary
-            </button>
-            <button
               onClick={() => setActiveSection('faq')}
               className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
                 activeSection === 'faq'
@@ -107,6 +81,32 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               </svg>
               Privacy & Data
             </button>
+            <button
+              onClick={() => setActiveSection('saving-sharing')}
+              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+                activeSection === 'saving-sharing'
+                  ? 'bg-blue-100 text-blue-700 font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              Saving & Sharing
+            </button>
+            <button
+              onClick={() => setActiveSection('about')}
+              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+                activeSection === 'about'
+                  ? 'bg-blue-100 text-blue-700 font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              About
+            </button>
           </nav>
 
           <div className="p-4 border-t border-gray-200">
@@ -125,10 +125,10 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
           <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-800">
               {activeSection === 'quick-start' && 'Quick Start Guide'}
-              {activeSection === 'tools' && 'Tool Tutorials'}
-              {activeSection === 'glossary' && 'Epidemiology Glossary'}
               {activeSection === 'faq' && 'Frequently Asked Questions'}
               {activeSection === 'privacy' && 'Privacy & Data Handling'}
+              {activeSection === 'saving-sharing' && 'Saving & Sharing'}
+              {activeSection === 'about' && 'About EpiKit'}
             </h3>
             <button
               onClick={onClose}
@@ -235,15 +235,248 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               </div>
             )}
 
-            {activeSection === 'tools' && (
+            {activeSection === 'saving-sharing' && (
               <div className="space-y-6 max-w-4xl">
-                <div className="bg-green-50 border-l-4 border-green-500 p-4">
-                  <p className="text-green-800">
-                    Detailed guides for each analysis tool in EpiKit
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
+                  <p className="text-blue-800">
+                    Guidelines for saving, exporting, and sharing your outbreak analysis work
                   </p>
                 </div>
 
-                {/* Epi Curve Tutorial */}
+                <section className="border border-gray-200 rounded-lg p-5 bg-white">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Exporting Your Analysis</h4>
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2 flex items-center">
+                        <svg className="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Datasets
+                      </h5>
+                      <p className="mb-2">Export your cleaned dataset as CSV from the dataset selector bar.</p>
+                      <ul className="list-disc ml-5 space-y-1 text-gray-600">
+                        <li>Includes all edits and derived variables</li>
+                        <li>Can be re-imported later to continue work</li>
+                        <li>Useful for creating audit trails</li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2 flex items-center">
+                        <svg className="w-5 h-5 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        Charts and Visualizations
+                      </h5>
+                      <p className="mb-2">Save charts using your browser's built-in tools:</p>
+                      <ul className="list-disc ml-5 space-y-1 text-gray-600">
+                        <li><strong>Right-click:</strong> Use "Save image as..." on most charts</li>
+                        <li><strong>Screenshot:</strong> Capture specific sections with screenshot tools</li>
+                        <li><strong>Print to PDF:</strong> Use browser print function (Ctrl/Cmd + P) to save as PDF</li>
+                      </ul>
+                    </div>
+
+                    <div>
+                      <h5 className="font-medium text-gray-800 mb-2 flex items-center">
+                        <svg className="w-5 h-5 text-orange-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Tables and Statistics
+                      </h5>
+                      <p className="mb-2">Copy statistical tables into reports:</p>
+                      <ul className="list-disc ml-5 space-y-1 text-gray-600">
+                        <li>Select table cells and copy (Ctrl/Cmd + C)</li>
+                        <li>Paste into spreadsheets or word processors</li>
+                        <li>Use screenshots for formatted tables</li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="border border-gray-200 rounded-lg p-5 bg-white">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Reproducibility Best Practices</h4>
+                  <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 mb-4">
+                    <div className="flex items-start">
+                      <svg className="w-5 h-5 text-amber-600 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                      <p className="text-sm text-amber-800">
+                        <strong>Important:</strong> EpiKit processes data client-side only. To reproduce your analysis, you must document settings and export files manually.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <div className="flex items-start">
+                      <span className="font-bold text-blue-600 mr-2 mt-0.5">1.</span>
+                      <div>
+                        <strong>Export Your Cleaned Dataset:</strong> After data quality checks and edits, export the final CSV. This becomes your analytical dataset.
+                      </div>
+                    </div>
+
+                    <div className="flex items-start">
+                      <span className="font-bold text-blue-600 mr-2 mt-0.5">2.</span>
+                      <div>
+                        <strong>Document Analysis Settings:</strong> Record key parameters in your report:
+                        <ul className="list-disc ml-5 mt-1 space-y-1 text-gray-600">
+                          <li>Epi curves: Date variable used, time unit (daily/weekly), stratification variable</li>
+                          <li>Spot maps: Coordinate variables, color-by variable, any aggregation applied</li>
+                          <li>2×2 tables: Exposure and outcome variables tested, study design (cohort/case-control)</li>
+                        </ul>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start">
+                      <span className="font-bold text-blue-600 mr-2 mt-0.5">3.</span>
+                      <div>
+                        <strong>Save the Edit Log:</strong> The Edit Log documents all data modifications. Screenshot or note key changes for your methods section.
+                      </div>
+                    </div>
+
+                    <div className="flex items-start">
+                      <span className="font-bold text-blue-600 mr-2 mt-0.5">4.</span>
+                      <div>
+                        <strong>Archive All Materials:</strong> Keep together:
+                        <ul className="list-disc ml-5 mt-1 space-y-1 text-gray-600">
+                          <li>Original raw data file (if allowed by your data policy)</li>
+                          <li>Cleaned/de-identified dataset exported from EpiKit</li>
+                          <li>Screenshots of all charts and tables</li>
+                          <li>Documentation of analysis settings</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="border border-gray-200 rounded-lg p-5 bg-white">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Sharing Your Work Safely</h4>
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <div className="bg-green-50 border border-green-200 rounded p-4">
+                      <h5 className="font-medium text-green-900 mb-2">✓ Safe to Share</h5>
+                      <ul className="space-y-1 text-green-800">
+                        <li>• Aggregate statistics and summary tables</li>
+                        <li>• Charts without PHI (de-identified epi curves, spot maps with jittered coordinates)</li>
+                        <li>• Exported datasets that have been properly de-identified</li>
+                        <li>• Analysis methods and settings documentation</li>
+                      </ul>
+                    </div>
+
+                    <div className="bg-red-50 border border-red-200 rounded p-4">
+                      <h5 className="font-medium text-red-900 mb-2">✗ Do Not Share</h5>
+                      <ul className="space-y-1 text-red-800">
+                        <li>• Spot maps showing exact home addresses or precise coordinates</li>
+                        <li>• Tables with cells containing fewer than 5 cases (risk of re-identification)</li>
+                        <li>• Line listings with identifiable information</li>
+                        <li>• Any file containing PHI before de-identification</li>
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {activeSection === 'about' && (
+              <div className="space-y-6 max-w-4xl">
+                <div className="bg-gray-50 border-l-4 border-gray-500 p-4">
+                  <p className="text-gray-800">
+                    Information about EpiKit and how to get support
+                  </p>
+                </div>
+
+                <section className="border border-gray-200 rounded-lg p-5 bg-white">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">About EpiKit</h4>
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <p>
+                      EpiKit is a free, open-source web application designed for outbreak investigation and epidemiological analysis.
+                      Built for junior epidemiologists and public health professionals, it provides essential tools for data collection,
+                      quality assurance, and statistical analysis—all without requiring coding skills.
+                    </p>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h5 className="font-medium text-blue-900 mb-2">Key Features</h5>
+                      <ul className="space-y-1 text-blue-800">
+                        <li>• <strong>Client-side processing:</strong> Your data never leaves your computer</li>
+                        <li>• <strong>No installation required:</strong> Works directly in your web browser</li>
+                        <li>• <strong>Zero cost:</strong> Free to use for all public health professionals</li>
+                        <li>• <strong>Privacy-first design:</strong> No server uploads, no cloud storage</li>
+                      </ul>
+                    </div>
+
+                    <div className="grid md:grid-cols-2 gap-4 mt-4">
+                      <div className="border border-gray-200 rounded-lg p-4">
+                        <h5 className="font-medium text-gray-800 mb-1">Version</h5>
+                        <p className="text-gray-600">1.0.0</p>
+                      </div>
+                      <div className="border border-gray-200 rounded-lg p-4">
+                        <h5 className="font-medium text-gray-800 mb-1">Release Date</h5>
+                        <p className="text-gray-600">January 2026</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="border border-gray-200 rounded-lg p-5 bg-white">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Getting Help</h4>
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <p>
+                      Need assistance or have questions? Here's how to get support:
+                    </p>
+
+                    <div className="space-y-3">
+                      <div className="flex items-start">
+                        <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                        </svg>
+                        <div>
+                          <strong>In-App Tutorials:</strong> Each analysis tool includes a built-in tutorial with step-by-step instructions. Look for the "How to Use This Tool" panel.
+                        </div>
+                      </div>
+
+                      <div className="flex items-start">
+                        <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                        <div>
+                          <strong>FAQ Section:</strong> Check the Frequently Asked Questions for answers to common questions.
+                        </div>
+                      </div>
+
+                      <div className="flex items-start">
+                        <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <div>
+                          <strong>Restart Onboarding:</strong> Click the "Restart Onboarding" button at the bottom of this help center to see the introductory wizard again.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 mt-4">
+                      <h5 className="font-medium text-gray-800 mb-2">Technical Support</h5>
+                      <p className="text-gray-700">
+                        For technical issues, bug reports, or feature requests, please contact your system administrator
+                        or the development team through your organization's support channels.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="border border-gray-200 rounded-lg p-5 bg-white">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Citing EpiKit</h4>
+                  <div className="space-y-3 text-sm text-gray-700">
+                    <p>
+                      If you use EpiKit in your outbreak investigations or research, please acknowledge it in your reports:
+                    </p>
+
+                    <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 font-mono text-xs">
+                      Data analysis was conducted using EpiKit (version 1.0.0), a web-based epidemiological analysis tool designed for outbreak investigation.
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* OBSOLETE TOOL TUTORIALS SECTION REMOVED - tutorials now embedded on tool pages */}
                 <section className="border border-gray-200 rounded-lg p-5">
                   <div className="flex items-start mb-4">
                     <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
@@ -433,105 +666,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               </div>
             )}
 
-            {activeSection === 'glossary' && (
-              <div className="space-y-4 max-w-4xl">
-                <div className="bg-purple-50 border-l-4 border-purple-500 p-4">
-                  <p className="text-purple-800">
-                    Common epidemiological terms and concepts used in outbreak investigations
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Attack Rate</h4>
-                    <p className="text-sm text-gray-600">
-                      The proportion of people who develop illness among those exposed to a specific risk factor
-                      (e.g., ate a particular food). Calculated as: (number of exposed who became ill) ÷ (total number exposed).
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Case Definition</h4>
-                    <p className="text-sm text-gray-600">
-                      A set of standard criteria for classifying individuals as cases. Usually includes clinical criteria
-                      (symptoms), person (who), place (where), and time (when). May be classified as confirmed, probable, or suspected.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Confidence Interval (CI)</h4>
-                    <p className="text-sm text-gray-600">
-                      A range of values that likely contains the true population parameter. A 95% CI means if we repeated
-                      the study 100 times, 95 of those intervals would contain the true value.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Epidemic Curve (Epi Curve)</h4>
-                    <p className="text-sm text-gray-600">
-                      A histogram showing the distribution of cases over time. The shape can provide clues about
-                      the mode of transmission (point source, continuous, propagated).
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Incubation Period</h4>
-                    <p className="text-sm text-gray-600">
-                      The time between exposure to an infectious agent and the onset of symptoms. Different pathogens
-                      have characteristic incubation periods that can help identify the likely causative agent.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Odds Ratio (OR)</h4>
-                    <p className="text-sm text-gray-600">
-                      The odds of exposure among cases divided by the odds of exposure among controls.
-                      Used in case-control studies. OR &gt; 1 suggests positive association; OR &lt; 1 suggests protective effect.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Outbreak</h4>
-                    <p className="text-sm text-gray-600">
-                      The occurrence of more cases of disease than expected in a given area or among a specific
-                      group of people over a particular period of time.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">P-value</h4>
-                    <p className="text-sm text-gray-600">
-                      The probability of observing results at least as extreme as those observed, assuming there is
-                      no true association. Conventionally, p &lt; 0.05 is considered statistically significant.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Risk Ratio (RR) / Relative Risk</h4>
-                    <p className="text-sm text-gray-600">
-                      The attack rate in the exposed group divided by the attack rate in the unexposed group.
-                      RR &gt; 1 indicates increased risk with exposure; RR &lt; 1 indicates decreased risk.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Spot Map</h4>
-                    <p className="text-sm text-gray-600">
-                      A map showing the geographic distribution of cases. Used to identify spatial clustering
-                      and potential environmental sources of exposure.
-                    </p>
-                  </div>
-
-                  <div className="border-b border-gray-200 pb-4">
-                    <h4 className="font-semibold text-gray-800 mb-1">Statistical Significance</h4>
-                    <p className="text-sm text-gray-600">
-                      The likelihood that an observed association occurred by chance alone. Typically assessed
-                      using p-values or confidence intervals. Does not necessarily indicate clinical or public health importance.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* OBSOLETE GLOSSARY SECTION REMOVED - definitions now integrated into tool tutorials */}
 
             {activeSection === 'faq' && (
               <div className="space-y-3 max-w-4xl">
@@ -799,6 +934,88 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <li>• Any data that could re-identify individuals</li>
                       </ul>
                     </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">Safe Mapping Practices</h4>
+                  <div className="bg-amber-50 border-2 border-amber-300 rounded-lg p-5">
+                    <div className="flex items-start mb-4">
+                      <svg className="w-6 h-6 text-amber-600 mr-3 flex-shrink-0 mt-1" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <div>
+                        <h5 className="font-bold text-amber-900 text-lg mb-2">Important Privacy Considerations for Mapping</h5>
+                        <p className="text-amber-800 text-sm mb-3">
+                          Spot maps that show precise locations can compromise privacy even when names are removed.
+                          Follow these guidelines when creating maps for public sharing or reports.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 text-sm">
+                      <div>
+                        <h6 className="font-semibold text-amber-900 mb-2">1. Apply Coordinate Jittering</h6>
+                        <p className="text-amber-800 mb-2">
+                          Add small random offsets to latitude and longitude values (e.g., ±0.001° to ±0.01°) before
+                          importing into EpiKit. This obscures exact locations while preserving spatial patterns useful
+                          for outbreak investigation.
+                        </p>
+                        <div className="bg-white border border-amber-200 rounded p-3 font-mono text-xs">
+                          Example: 41.6639, -83.5552 → 41.667, -83.558 (jittered)
+                        </div>
+                      </div>
+
+                      <div>
+                        <h6 className="font-semibold text-amber-900 mb-2">2. Use Area-Level Aggregation</h6>
+                        <p className="text-amber-800">
+                          Instead of plotting individual points, map cases aggregated by:
+                        </p>
+                        <ul className="list-disc ml-5 mt-1 space-y-1 text-amber-800">
+                          <li>ZIP code or postal code</li>
+                          <li>Census tract or block group</li>
+                          <li>Neighborhood or district</li>
+                          <li>Grid cells (e.g., 1km × 1km squares)</li>
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h6 className="font-semibold text-amber-900 mb-2">3. Suppress Small Cells</h6>
+                        <p className="text-amber-800 mb-2">
+                          <strong>Do not display</strong> individual points if fewer than 5 cases exist in an area.
+                          Small numbers combined with geographic precision can enable re-identification, especially in
+                          rural areas or small communities.
+                        </p>
+                        <p className="text-amber-800">
+                          Rule of thumb: If showing an area with &lt; 5 cases, aggregate to a larger geographic unit
+                          or note "Cases: &lt;5" without showing precise locations.
+                        </p>
+                      </div>
+
+                      <div>
+                        <h6 className="font-semibold text-amber-900 mb-2">4. Be Cautious When Sharing Maps</h6>
+                        <p className="text-amber-800">
+                          Even with de-identification, screenshots of maps showing precise coordinates can compromise
+                          privacy if combined with other information. Consider who will see the map and whether
+                          additional privacy protections are needed before sharing outside your response team.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">About the Demo Dataset</h4>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+                    <p className="text-blue-800 text-sm mb-3">
+                      The foodborne outbreak demo dataset included with EpiKit is <strong>entirely synthetic</strong>
+                      and created for training purposes only. It does not represent any real outbreak or actual patient data.
+                    </p>
+                    <p className="text-blue-800 text-sm">
+                      The demo includes 48 fictional case records designed to illustrate common outbreak investigation
+                      scenarios and analysis techniques. You can safely explore all EpiKit features with this dataset
+                      without any privacy concerns.
+                    </p>
                   </div>
                 </section>
 
