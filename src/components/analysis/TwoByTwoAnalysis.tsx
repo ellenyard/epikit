@@ -210,7 +210,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
     return (
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="divide-y divide-gray-200">
             <thead className="bg-gray-50">
               {studyDesign === 'cohort' ? (
                 <>
