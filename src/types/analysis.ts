@@ -49,12 +49,13 @@ export type DataQualityCheckType =
   | 'duplicate'
   | 'date_order'
   | 'future_date'
-  | 'numeric_range';
+  | 'numeric_range'
+  | 'missing_values';
 
 export interface DataQualityIssue {
   id: string;
   checkType: DataQualityCheckType;
-  category: 'duplicate' | 'temporal' | 'range';
+  category: 'duplicate' | 'temporal' | 'range' | 'completeness';
   severity: 'error' | 'warning';
   recordIds: string[];  // Can be multiple for duplicates
   field?: string;
@@ -93,6 +94,9 @@ export interface DataQualityConfig {
 
   // Numeric range rules
   numericRangeRules: NumericRangeRule[];
+
+  // Missing value check: which fields to check for missing/empty values
+  missingValueFields: string[];
 
   // Which checks are enabled
   enabledChecks: DataQualityCheckType[];

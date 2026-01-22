@@ -36,7 +36,8 @@ export function getDefaultConfig(): DataQualityConfig {
     dateOrderRules: [],
     checkFutureDates: false,
     numericRangeRules: [],
-    enabledChecks: ['duplicate', 'date_order', 'numeric_range'],
+    missingValueFields: [],
+    enabledChecks: ['duplicate', 'date_order', 'numeric_range', 'missing_values'],
   };
 }
 
@@ -157,6 +158,54 @@ function checkNumericRanges(
   return issues;
 }
 
+// Check for missing values
+function checkMissingValues(
+  records: CaseRecord[],
+  fields: string[],
+  columns: DataColumn[]
+): DataQualityIssue[] {
+  const issues: DataQualityIssue[] = [];
+
+  if (fields.length === 0) return issues;
+
+  // Group records by field that has missing values
+  const missingByField = new Map<string, string[]>();
+
+  for (const field of fields) {
+    const recordsWithMissing: string[] = [];
+
+    for (const record of records) {
+      const value = record[field];
+      if (isEmpty(value)) {
+        recordsWithMissing.push(record.id);
+      }
+    }
+
+    if (recordsWithMissing.length > 0) {
+      missingByField.set(field, recordsWithMissing);
+    }
+  }
+
+  // Create an issue for each field with missing values
+  for (const [field, recordIds] of missingByField) {
+    const column = columns.find(c => c.key === field);
+    const fieldLabel = column?.label || field;
+
+    issues.push({
+      id: generateId(),
+      checkType: 'missing_values',
+      category: 'completeness',
+      severity: 'warning',
+      recordIds,
+      field,
+      message: `${recordIds.length} record${recordIds.length !== 1 ? 's' : ''} missing ${fieldLabel}`,
+      details: `${Math.round((recordIds.length / records.length) * 100)}% of records affected`,
+    });
+  }
+
+  return issues;
+}
+
 // Main function to run all enabled checks
 export function runDataQualityChecks(
   records: CaseRecord[],
@@ -181,6 +230,11 @@ export function runDataQualityChecks(
     issues.push(...checkNumericRanges(records, config.numericRangeRules));
   }
 
+  // Missing value checks
+  if (enabledChecks.includes('missing_values') && config.missingValueFields.length > 0) {
+    issues.push(...checkMissingValues(records, config.missingValueFields, columns));
+  }
+
   return issues;
 }
 
@@ -191,6 +245,7 @@ export function getCheckName(checkType: string): string {
     date_order: 'Date Order',
     future_date: 'Future Dates',
     numeric_range: 'Numeric Range',
+    missing_values: 'Missing Values',
   };
   return names[checkType] || checkType;
 }
@@ -201,6 +256,7 @@ export function getCategoryName(category: DataQualityIssue['category']): string 
     duplicate: 'Duplicates',
     temporal: 'Date Issues',
     range: 'Out of Range',
+    completeness: 'Missing Values',
   };
   return names[category] || category;
 }
@@ -213,6 +269,7 @@ export function groupIssuesByCategory(
     duplicate: [],
     temporal: [],
     range: [],
+    completeness: [],
   };
 
   for (const issue of issues) {
