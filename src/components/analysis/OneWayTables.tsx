@@ -505,9 +505,6 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                         <td className="px-4 py-2 text-sm text-gray-900 text-right">
                           {row.isValueRow ? `${formatPercent(row.percent, row.denominatorN)}%` : ''}
                         </td>
-                        <td className="px-4 py-2 text-sm text-gray-900 text-right whitespace-nowrap">
-                          {row.isValueRow ? `${row.percent.toFixed(1)}%` : ''}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
