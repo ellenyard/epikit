@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaf
 import html2canvas from 'html2canvas';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import 'leaflet/dist/leaflet.css';
+import { SpotMapTutorial } from '../tutorials/SpotMapTutorial';
 
 interface SpotMapProps {
   dataset: Dataset;
@@ -265,6 +266,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
         style={{ width: window.innerWidth >= 1024 ? panelWidth : '100%' }}
       >
         <div className="space-y-4">
+          {/* Tutorial Component */}
+          <SpotMapTutorial />
+
           {/* Case count summary */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
             <span className="font-medium">{filteredCases.length}</span> of {mapCases.length} cases mapped
