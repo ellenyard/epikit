@@ -269,6 +269,9 @@ function App() {
     setShowImport(false);
   }, [createDataset]);
 
+  // Get active dataset
+  const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
+
   // Handle data export
   const handleDatasetExport = useCallback(() => {
     if (!activeDataset) return;
@@ -283,9 +286,6 @@ function App() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, [activeDataset]);
-
-  // Get active dataset
-  const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
   // Check if current module needs dataset selector
   const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '1way', '2way'].includes(activeModule);
