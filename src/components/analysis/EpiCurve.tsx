@@ -126,11 +126,14 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   // Refresher
   const [showRefresher, setShowRefresher] = useState(false);
 
-  // Find date columns
-  const dateColumns = dataset.columns.filter(c => c.type === 'date' || c.key.toLowerCase().includes('date'));
+  // Find date columns (memoized to prevent unnecessary re-renders)
+  const dateColumns = useMemo(
+    () => dataset.columns.filter(c => c.type === 'date' || c.key.toLowerCase().includes('date')),
+    [dataset.columns]
+  );
 
   // Auto-select first date column
-  useMemo(() => {
+  useEffect(() => {
     if (!dateColumn && dateColumns.length > 0) {
       setDateColumn(dateColumns[0].key);
     }
@@ -144,10 +147,20 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   }, [dataset.records, filterBy]);
 
   // Reset selected filter values when filter variable changes
-  useMemo(() => {
+  useEffect(() => {
     setSelectedFilterValues(new Set());
     setShowAllFilterValues(false);
   }, [filterBy]);
+
+  // Update x-axis label when date column changes
+  useEffect(() => {
+    if (dateColumn) {
+      const column = dataset.columns.find(c => c.key === dateColumn);
+      if (column) {
+        setXAxisLabel(column.label);
+      }
+    }
+  }, [dateColumn, dataset.columns]);
 
   // Apply filter to records
   const filteredRecords = useMemo(() => {
@@ -592,6 +605,23 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
         <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-4">
           {/* Title */}
           <h4 className="text-center text-lg font-semibold text-gray-900 mb-4">{chartTitle}</h4>
+
+          {/* Legend for Stratified Charts */}
+          {stratifyBy && curveData.strataKeys.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-4 mb-4 pb-3 border-b border-gray-200">
+              {curveData.strataKeys.map((strataKey, strataIndex) => (
+                <div key={strataKey} className="flex items-center gap-2">
+                  <div
+                    className="w-4 h-4 rounded"
+                    style={{
+                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
+                    }}
+                  />
+                  <span className="text-sm text-gray-700 font-medium">{strataKey}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Chart Area */}
           <div className="flex">
@@ -1190,6 +1220,22 @@ function generateSVG(
 
   // Title
   svg += `<text x="${width / 2}" y="30" text-anchor="middle" font-size="18" font-weight="bold">${title}</text>`;
+
+  // Legend for stratified charts
+  if (stratifyBy && data.strataKeys.length > 0) {
+    const legendY = 45;
+    const legendItemWidth = 120;
+    const legendStartX = (width - (data.strataKeys.length * legendItemWidth)) / 2;
+
+    data.strataKeys.forEach((key, index) => {
+      const x = legendStartX + (index * legendItemWidth);
+      const color = getColorForStrata(key, index, colorScheme, data.strataKeys);
+      // Legend color box
+      svg += `<rect x="${x}" y="${legendY}" width="12" height="12" fill="${color}"/>`;
+      // Legend text
+      svg += `<text x="${x + 16}" y="${legendY + 10}" font-size="12">${key}</text>`;
+    });
+  }
 
   // Y-axis label
   svg += `<text x="20" y="${height / 2}" text-anchor="middle" font-size="14" transform="rotate(-90, 20, ${height / 2})">${yLabel}</text>`;
