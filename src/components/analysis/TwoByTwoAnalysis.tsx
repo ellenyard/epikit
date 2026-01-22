@@ -131,7 +131,14 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
       let a = 0, b = 0, c = 0, d = 0;
 
       dataset.records.forEach((record: CaseRecord) => {
-        const exposed = String(record[expVar]) === exposedValue;
+        const expValue = record[expVar];
+
+        // Skip records with missing exposure values
+        if (expValue === null || expValue === undefined || expValue === '') {
+          return;
+        }
+
+        const exposed = String(expValue) === exposedValue;
         const diseased = isCase(record);
 
         if (exposed && diseased) a++;

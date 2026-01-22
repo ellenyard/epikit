@@ -177,7 +177,10 @@ export function AttackRates({ dataset }: AttackRatesProps) {
     // Get unique values for the selected column and count cases/population per stratum
     const strataCounts = new Map<string, { cases: number; population: number }>();
     dataset.records.forEach(record => {
-      const stratumValue = String(record[stratifyBy] ?? 'Unknown');
+      const rawValue = record[stratifyBy];
+      const stratumValue = (rawValue === null || rawValue === undefined || rawValue === '')
+        ? 'Unknown'
+        : String(rawValue);
       const current = strataCounts.get(stratumValue) || { cases: 0, population: 0 };
       current.population += 1;
       if (isCase(record)) {
