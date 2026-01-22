@@ -14,6 +14,7 @@ import { OneWayTables } from './components/analysis/OneWayTables';
 import { DataImport } from './components/analysis/DataImport';
 import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
+import { exportToCSV } from './utils/csvParser';
 
 type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive' | '1way' | '2way';
 type FormView = 'builder' | 'preview';
@@ -268,6 +269,21 @@ function App() {
     setShowImport(false);
   }, [createDataset]);
 
+  // Handle data export
+  const handleDatasetExport = useCallback(() => {
+    if (!activeDataset) return;
+    const csv = exportToCSV(activeDataset.columns, activeDataset.records);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeDataset.name}_export.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [activeDataset]);
+
   // Get active dataset
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
@@ -399,9 +415,12 @@ function App() {
             Import Data
           </button>
           {activeDataset && (
-            <span className="text-sm text-gray-500 ml-auto">
-              {activeDataset.columns.length} columns
-            </span>
+            <button
+              onClick={handleDatasetExport}
+              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+            >
+              Export CSV
+            </button>
           )}
         </div>
       )}

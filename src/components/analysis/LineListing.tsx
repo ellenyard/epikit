@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Dataset, CaseRecord, FilterCondition, SortConfig, DataColumn, EditLogEntry } from '../../types/analysis';
 import { filterRecords, sortRecords } from '../../hooks/useDataset';
-import { exportToCSV } from '../../utils/csvParser';
 import { EditPromptModal } from '../review/EditPromptModal';
 
 interface PendingEdit {
@@ -153,19 +152,6 @@ export function LineListing({
     onShowAddRowChange(false);
   };
 
-  const handleExport = () => {
-    const csv = exportToCSV(dataset.columns, processedRecords);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${dataset.name}_export.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   const handleEditPromptSave = (reason: string, initials: string) => {
     if (!pendingEdit || !onEditComplete) return;
 
@@ -219,22 +205,14 @@ export function LineListing({
               {processedRecords.length} of {dataset.records.length} records
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            {selectedRows.size > 0 && (
-              <button
-                onClick={deleteSelectedRows}
-                className="px-3 py-1.5 text-sm font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-50"
-              >
-                Delete ({selectedRows.size})
-              </button>
-            )}
+          {selectedRows.size > 0 && (
             <button
-              onClick={handleExport}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              onClick={deleteSelectedRows}
+              className="px-3 py-1.5 text-sm font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-50"
             >
-              Export CSV
+              Delete ({selectedRows.size})
             </button>
-          </div>
+          )}
         </div>
       </div>
 
