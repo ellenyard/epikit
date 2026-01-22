@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+        timeout-minutes: 10
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -28,10 +31,25 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          # Retry npm ci up to 3 times with exponential backoff
+          for i in 1 2 3; do
+            if npm ci; then
+              break
+            fi
+            if [ $i -lt 3 ]; then
+              echo "npm ci failed, retrying in $((2**i)) seconds..."
+              sleep $((2**i))
+            else
+              echo "npm ci failed after 3 attempts"
+              exit 1
+            fi
+          done
+        timeout-minutes: 10
 
       - name: Build
         run: npm run build
+        timeout-minutes: 15
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
