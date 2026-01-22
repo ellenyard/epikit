@@ -3,7 +3,7 @@ import { LineListing } from '../analysis/LineListing';
 import { EditLogPanel } from './EditLogPanel';
 import { DataQualityPanel } from './DataQualityPanel';
 import { CreateVariableModal } from './CreateVariableModal';
-import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig } from '../../types/analysis';
+import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig, FilterCondition } from '../../types/analysis';
 import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
 import { addVariableToDataset } from '../../utils/variableCreation';
 
@@ -42,6 +42,9 @@ export function Review({
   const [isRunningChecks, setIsRunningChecks] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<DataQualityIssue | null>(null);
   const [showCreateVariable, setShowCreateVariable] = useState(false);
+  const [filters, setFilters] = useState<FilterCondition[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showAddRow, setShowAddRow] = useState(false);
 
   const currentEditLog = activeDatasetId ? getEditLogForDataset(activeDatasetId) : [];
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
@@ -124,6 +127,23 @@ export function Review({
     });
   }, [activeDataset, updateDataset, addEditLogEntry]);
 
+  const addFilter = useCallback(() => {
+    if (!activeDataset || activeDataset.columns.length === 0) return;
+    setFilters(prev => [...prev, {
+      column: activeDataset.columns[0].key,
+      operator: 'contains',
+      value: '',
+    }]);
+  }, [activeDataset]);
+
+  const updateFilter = useCallback((index: number, updates: Partial<FilterCondition>) => {
+    setFilters(prev => prev.map((f, i) => i === index ? { ...f, ...updates } : f));
+  }, []);
+
+  const removeFilter = useCallback((index: number) => {
+    setFilters(prev => prev.filter((_, i) => i !== index));
+  }, []);
+
   if (!activeDataset) {
     return null;
   }
@@ -186,19 +206,112 @@ export function Review({
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Data Quality Panel */}
+        {/* Left Panel - Controls and Data Quality */}
         {showDataQuality && (
-          <div className="hidden lg:block w-72 border-r border-gray-200 bg-white overflow-hidden">
-            <DataQualityPanel
-              issues={dataQualityIssues}
-              config={dataQualityConfig}
-              columns={activeDataset.columns}
-              onConfigChange={setDataQualityConfig}
-              onRunChecks={runChecks}
-              onSelectIssue={handleSelectIssue}
-              onDismissIssue={handleDismissIssue}
-              isRunning={isRunningChecks}
-            />
+          <div className="hidden lg:block w-72 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
+            {/* Controls Section */}
+            <div className="border-b border-gray-200 bg-white">
+              <div className="p-4 space-y-3">
+                {/* Filter Button */}
+                <button
+                  onClick={() => setShowFilters(!showFilters)}
+                  className={`w-full px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                    filters.length > 0
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    Filters {filters.length > 0 && `(${filters.length})`}
+                  </div>
+                </button>
+
+                {/* Filter Panel */}
+                {showFilters && (
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <div className="space-y-2">
+                      {filters.map((filter, index) => (
+                        <div key={index} className="space-y-2">
+                          <select
+                            value={filter.column}
+                            onChange={(e) => updateFilter(index, { column: e.target.value })}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          >
+                            {activeDataset.columns.map(col => (
+                              <option key={col.key} value={col.key}>{col.label}</option>
+                            ))}
+                          </select>
+                          <select
+                            value={filter.operator}
+                            onChange={(e) => updateFilter(index, { operator: e.target.value as FilterCondition['operator'] })}
+                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          >
+                            <option value="contains">contains</option>
+                            <option value="equals">equals</option>
+                            <option value="not_equals">not equals</option>
+                            <option value="greater_than">greater than</option>
+                            <option value="less_than">less than</option>
+                            <option value="is_empty">is empty</option>
+                            <option value="is_not_empty">is not empty</option>
+                          </select>
+                          {!['is_empty', 'is_not_empty'].includes(filter.operator) && (
+                            <input
+                              type="text"
+                              value={String(filter.value)}
+                              onChange={(e) => updateFilter(index, { value: e.target.value })}
+                              placeholder="Value"
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          )}
+                          <button
+                            onClick={() => removeFilter(index)}
+                            className="w-full px-2 py-1 text-xs text-red-600 hover:text-red-700"
+                          >
+                            Remove filter
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={addFilter}
+                        className="w-full text-sm text-blue-600 hover:text-blue-700 py-1"
+                      >
+                        + Add filter
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Add Record Button */}
+                <button
+                  onClick={() => setShowAddRow(true)}
+                  className="w-full px-3 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add Record
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* Data Quality Panel */}
+            <div className="flex-1 overflow-hidden">
+              <DataQualityPanel
+                issues={dataQualityIssues}
+                config={dataQualityConfig}
+                columns={activeDataset.columns}
+                onConfigChange={setDataQualityConfig}
+                onRunChecks={runChecks}
+                onSelectIssue={handleSelectIssue}
+                onDismissIssue={handleDismissIssue}
+                isRunning={isRunningChecks}
+              />
+            </div>
           </div>
         )}
 
@@ -213,6 +326,9 @@ export function Review({
             highlightedRecordIds={highlightedRecordIds}
             scrollToRecordId={scrollToRecordId}
             highlightField={highlightField}
+            filters={filters}
+            showAddRow={showAddRow}
+            onShowAddRowChange={setShowAddRow}
           />
         </div>
 
