@@ -212,54 +212,70 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Exposure
-                </th>
-                {studyDesign === 'cohort' ? (
-                  <>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Exp Cases
+              {studyDesign === 'cohort' ? (
+                <>
+                  {/* First header row - parent groups */}
+                  <tr className="border-b border-gray-200">
+                    <th rowSpan={2} className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                      Exposure
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total Exp
+                    <th colSpan={3} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                      Exposed
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      AR (Exp)
+                    <th colSpan={3} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                      Not Exposed
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Unexp Cases
+                    <th colSpan={2} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Attack rate ratio
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Total Unexp
+                  </tr>
+                  {/* Second header row - individual columns */}
+                  <tr>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      # Ill
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      AR (Unexp)
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      RR
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                      Attack Rate
                     </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      # Ill
+                    </th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total
+                    </th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                      Attack Rate
+                    </th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      ARR
+                    </th>
+                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       95% CI
                     </th>
-                  </>
-                ) : (
-                  <>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Cases (n, %)
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Controls (n, %)
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      OR
-                    </th>
-                    <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      95% CI
-                    </th>
-                  </>
-                )}
-              </tr>
+                  </tr>
+                </>
+              ) : (
+                <tr>
+                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Exposure
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Cases (n, %)
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Controls (n, %)
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    OR
+                  </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    95% CI
+                  </th>
+                </tr>
+              )}
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {exposureResults.map((result) => {
