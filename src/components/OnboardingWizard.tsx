@@ -17,6 +17,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 }) => {
   const [currentStep, setCurrentStep] = useState<Step>('welcome');
 
+  // Reset to step 1 whenever the wizard is opened
+  React.useEffect(() => {
+    if (isOpen) {
+      setCurrentStep('welcome');
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const steps: Step[] = ['welcome', 'privacy', 'demo', 'tools', 'getstarted'];
@@ -128,6 +135,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 <p className="text-blue-800 mb-4">
                   EpiKit is a free, web-based platform designed for junior epidemiologists and public health professionals.
                   It helps you collect, clean, and analyze outbreak data without requiring coding skills.
+                  <strong className="block mt-2">Within a minute, you can load demo data and generate your first epi curve.</strong>
                 </p>
                 <ul className="space-y-2 text-blue-800">
                   <li className="flex items-start">
@@ -146,13 +154,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
-                    <span><strong>Analysis Tools:</strong> Generate epi curves, spot maps, and statistical tables</span>
+                    <span><strong>Data Quality:</strong> Identify and fix data issues before analysis</span>
                   </li>
                   <li className="flex items-start">
                     <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
-                    <span><strong>Data Quality:</strong> Identify and fix data issues before analysis</span>
+                    <span><strong>Analysis Tools:</strong> Generate epi curves, spot maps, and statistical tables</span>
                   </li>
                 </ul>
               </div>
@@ -322,17 +330,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 </div>
               </div>
 
-              <div className="text-center">
-                <button
-                  onClick={handleTryDemo}
-                  className="px-6 py-3 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                  Load Demo Dataset & Start Exploring
-                </button>
-                <p className="text-sm text-gray-500 mt-2">This will close the wizard and open the Review/Clean tab</p>
+              <div className="bg-gradient-to-r from-purple-100 to-purple-50 border-2 border-purple-300 rounded-lg p-6">
+                <div className="text-center">
+                  <h4 className="font-semibold text-purple-900 mb-3">Ready to Try It?</h4>
+                  <button
+                    onClick={handleTryDemo}
+                    className="px-8 py-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center text-lg shadow-lg"
+                  >
+                    <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                    </svg>
+                    Load Demo Dataset & Start Exploring
+                  </button>
+                  <p className="text-sm text-purple-700 mt-3 font-medium">
+                    Loading the demo will close this wizard and open the Review/Clean tab.<br/>
+                    You can restart the wizard anytime from Help & Tutorials → Restart Onboarding.
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -473,16 +487,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
               <div className="space-y-4">
                 <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-6">
-                  <h4 className="font-semibold text-gray-800 mb-4">Quick Start Options</h4>
+                  <h4 className="font-semibold text-gray-800 mb-4">Typical Workflow</h4>
                   <div className="space-y-3">
                     <div className="flex items-start">
                       <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 mr-3 font-bold">
                         1
                       </div>
                       <div>
-                        <h5 className="font-medium text-gray-800">Explore with Demo Data</h5>
+                        <h5 className="font-medium text-gray-800">Upload Your Data</h5>
                         <p className="text-sm text-gray-600">
-                          Start with the foodborne outbreak demo to learn the tools without uploading your own data
+                          Click "Import Data" from any analysis module to upload a de-identified CSV file
                         </p>
                       </div>
                     </div>
@@ -491,9 +505,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         2
                       </div>
                       <div>
-                        <h5 className="font-medium text-gray-800">Import Your Own Data</h5>
+                        <h5 className="font-medium text-gray-800">Validate Data Quality</h5>
                         <p className="text-sm text-gray-600">
-                          Click "Import Data" from any analysis module to upload a de-identified CSV file
+                          Use Review & Clean to check for duplicates, missing values, and data issues
                         </p>
                       </div>
                     </div>
@@ -502,12 +516,42 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         3
                       </div>
                       <div>
-                        <h5 className="font-medium text-gray-800">Build Custom Forms</h5>
+                        <h5 className="font-medium text-gray-800">Analyze Your Outbreak</h5>
                         <p className="text-sm text-gray-600">
-                          Go to the Forms module to create data collection instruments tailored to your investigation
+                          Generate epi curves, spot maps, and statistical tables to identify patterns
                         </p>
                       </div>
                     </div>
+                    <div className="flex items-start">
+                      <div className="w-8 h-8 bg-blue-500 text-white rounded-full flex items-center justify-center flex-shrink-0 mr-3 font-bold">
+                        4
+                      </div>
+                      <div>
+                        <h5 className="font-medium text-gray-800">Export & Share Results</h5>
+                        <p className="text-sm text-gray-600">
+                          Save charts and export cleaned datasets—see <strong>Help & Tutorials → Saving & Sharing</strong> for reproducibility tips
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-r from-purple-100 to-purple-50 border-2 border-purple-300 rounded-lg p-6">
+                  <div className="text-center">
+                    <h4 className="font-semibold text-purple-900 mb-3">Want to Try the Demo First?</h4>
+                    <button
+                      onClick={handleTryDemo}
+                      className="px-8 py-4 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-700 transition-colors inline-flex items-center text-lg shadow-lg"
+                    >
+                      <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                      Load Demo Dataset & Start Exploring
+                    </button>
+                    <p className="text-sm text-purple-700 mt-3">
+                      Loading the demo will close this wizard.<br/>
+                      Restart anytime from Help & Tutorials → Restart Onboarding.
+                    </p>
                   </div>
                 </div>
 
