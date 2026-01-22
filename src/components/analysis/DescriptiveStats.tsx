@@ -343,25 +343,6 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
         <p className={`text-sm ${highContrast ? 'text-gray-300' : 'text-gray-600'} mb-2`}>
           Explore frequency distributions and summary statistics for any variable. Use this to understand data quality, identify patterns, and check for outliers before analysis.
         </p>
-        <div className={`mt-2 p-3 rounded-lg ${highContrast ? 'bg-gray-900 border-gray-700' : 'bg-blue-50 border-blue-200'} border`}>
-          <p className={`text-sm ${highContrast ? 'text-gray-300' : 'text-blue-800'}`}>
-            💡 <strong>Need to create age groups or derived variables?</strong> Visit the{' '}
-            <a
-              href="#review-clean"
-              onClick={(e) => {
-                e.preventDefault();
-                // Navigate to Review/Clean tab - this will be handled by parent component
-                const event = new CustomEvent('navigate-to-tab', { detail: { tab: 'review', subtab: 'derive' } });
-                window.dispatchEvent(event);
-              }}
-              className={`underline font-medium ${highContrast ? 'text-blue-400' : 'text-blue-600'} hover:${highContrast ? 'text-blue-300' : 'text-blue-700'}`}
-              tabIndex={0}
-            >
-              Review/Clean tab
-            </a>
-            {' '}to create variables like: <code className={`px-1 rounded ${highContrast ? 'bg-gray-800' : 'bg-blue-100'}`}>AgeGroup = cut(age, [0,5,18,50,120])</code>
-          </p>
-        </div>
       </div>
 
       {/* Tutorial Component */}
