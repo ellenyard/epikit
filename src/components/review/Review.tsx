@@ -3,7 +3,6 @@ import { LineListing } from '../analysis/LineListing';
 import { EditLogPanel } from './EditLogPanel';
 import { DataQualityPanel } from './DataQualityPanel';
 import { CreateVariableModal } from './CreateVariableModal';
-import { ReviewHelpPanel } from './ReviewHelpPanel';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig, FilterCondition } from '../../types/analysis';
 import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
 import { addVariableToDataset } from '../../utils/variableCreation';
@@ -38,7 +37,6 @@ export function Review({
   exportEditLog,
 }: ReviewProps) {
   const [showEditLog, setShowEditLog] = useState(false);
-  const [showHelpPanel, setShowHelpPanel] = useState(false);
   const [dataQualityIssues, setDataQualityIssues] = useState<DataQualityIssue[]>([]);
   const [dataQualityConfig, setDataQualityConfig] = useState<DataQualityConfig>(getDefaultConfig());
   const [isRunningChecks, setIsRunningChecks] = useState(false);
@@ -154,16 +152,6 @@ export function Review({
     <div className="h-full flex flex-col bg-white">
       {/* Toolbar */}
       <div className="flex items-center justify-end gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
-        <button
-          onClick={() => setShowHelpPanel(true)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors text-gray-600 hover:bg-gray-100"
-          title="Open help guide"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          Help Guide
-        </button>
         <button
           onClick={() => setShowEditLog(!showEditLog)}
           className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -377,12 +365,6 @@ export function Review({
         existingColumns={activeDataset.columns}
         records={activeDataset.records}
         onCreateVariable={handleCreateVariable}
-      />
-
-      {/* Help Panel */}
-      <ReviewHelpPanel
-        isOpen={showHelpPanel}
-        onClose={() => setShowHelpPanel(false)}
       />
     </div>
   );
