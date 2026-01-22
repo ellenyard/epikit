@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { FormItem, FormDefinition } from './types/form';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
 import { FormBuilder } from './components/FormBuilder';
@@ -12,6 +12,9 @@ import { DescriptiveStats } from './components/analysis/DescriptiveStats';
 import { TwoByTwoAnalysis } from './components/analysis/TwoByTwoAnalysis';
 import { OneWayTables } from './components/analysis/OneWayTables';
 import { DataImport } from './components/analysis/DataImport';
+import { OnboardingWizard } from './components/OnboardingWizard';
+import { HelpCenter } from './components/HelpCenter';
+import { HelpIcon } from './components/HelpIcon';
 import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
@@ -48,6 +51,8 @@ function App() {
   const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
   const [exportItems, setExportItems] = useState<FormItem[] | null>(null);
   const [showImport, setShowImport] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showHelpCenter, setShowHelpCenter] = useState(false);
 
   // Form definitions state (saved forms available for data collection)
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => [createDemoFormDefinition()]);
@@ -59,6 +64,16 @@ function App() {
   // Dataset state (shared between Collect and Analysis)
   const [datasets, setDatasets] = useState<Dataset[]>(() => [createDemoDataset()]);
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(DEMO_DATASET_ID);
+
+  // Check for first-time visit and show onboarding
+  useEffect(() => {
+    const hasCompletedOnboarding = localStorage.getItem('epikit_onboarding_completed');
+    if (!hasCompletedOnboarding) {
+      // Small delay to let the UI settle before showing onboarding
+      const timer = setTimeout(() => setShowOnboarding(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   // Get current form items for the builder
   const currentFormItems = useMemo(() => {
@@ -287,6 +302,17 @@ function App() {
     URL.revokeObjectURL(url);
   }, [activeDataset]);
 
+  // Handle onboarding demo load
+  const handleLoadDemo = useCallback(() => {
+    // Demo dataset is already loaded, just ensure it's selected
+    setActiveDatasetId(DEMO_DATASET_ID);
+  }, []);
+
+  // Handle navigation from onboarding/help
+  const handleNavigateToModule = useCallback((module: string) => {
+    setActiveModule(module as Module);
+  }, []);
+
   // Check if current module needs dataset selector
   const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '1way', '2way'].includes(activeModule);
 
@@ -381,8 +407,20 @@ function App() {
               </button>
             </div>
           </div>
-          <div className="text-sm text-slate-400 hidden lg:block">
-            Epidemiology Toolkit
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowHelpCenter(true)}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label="Help & Tutorials"
+              title="Help & Tutorials"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            <div className="text-sm text-slate-400 hidden lg:block">
+              Epidemiology Toolkit
+            </div>
           </div>
         </div>
       </nav>
@@ -405,15 +443,24 @@ function App() {
               ))}
             </select>
           </div>
-          <button
-            onClick={() => setShowImport(true)}
-            className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg flex items-center gap-1"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Import Data
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setShowImport(true)}
+              className="px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              Import Data
+            </button>
+            <HelpIcon
+              tooltip="Click for help with importing data"
+              onClick={() => {
+                setShowHelpCenter(true);
+                // Note: We could enhance HelpCenter to accept a default section prop
+              }}
+            />
+          </div>
           {activeDataset && (
             <button
               onClick={handleDatasetExport}
@@ -520,6 +567,24 @@ function App() {
           onCancel={() => setShowImport(false)}
         />
       )}
+
+      {/* Onboarding Wizard */}
+      <OnboardingWizard
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+        onLoadDemo={handleLoadDemo}
+        onNavigate={handleNavigateToModule}
+      />
+
+      {/* Help Center */}
+      <HelpCenter
+        isOpen={showHelpCenter}
+        onClose={() => setShowHelpCenter(false)}
+        onOpenOnboarding={() => {
+          setShowHelpCenter(false);
+          setShowOnboarding(true);
+        }}
+      />
     </div>
   );
 }
