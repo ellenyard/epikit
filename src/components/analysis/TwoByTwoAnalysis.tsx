@@ -238,7 +238,17 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                       Total
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                      Attack Rate
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Attack Rate</span>
+                        <div className="group relative">
+                          <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
+                            The proportion of exposed individuals who became ill. Calculated as: (# Ill among Exposed / Total Exposed) × 100
+                          </div>
+                        </div>
+                      </div>
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       # Ill
@@ -247,10 +257,30 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                       Total
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                      Attack Rate
+                      <div className="flex items-center justify-center gap-1">
+                        <span>Attack Rate</span>
+                        <div className="group relative">
+                          <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
+                            The proportion of unexposed individuals who became ill. Calculated as: (# Ill among Unexposed / Total Unexposed) × 100
+                          </div>
+                        </div>
+                      </div>
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ARR
+                      <div className="flex items-center justify-center gap-1">
+                        <span>ARR</span>
+                        <div className="group relative">
+                          <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                          </svg>
+                          <div className="invisible group-hover:visible absolute z-10 w-72 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-32">
+                            Attack Rate Ratio: The ratio of attack rates between exposed and unexposed groups. ARR = Attack Rate (Exposed) / Attack Rate (Unexposed). An ARR &gt; 1 suggests the exposure increases risk of illness; ARR &lt; 1 suggests it decreases risk.
+                          </div>
+                        </div>
+                      </div>
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       95% CI
@@ -445,7 +475,9 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
       {outcomeVar && caseValues.size > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-900 mb-3">Exposure Variables</h4>
-          <p className="text-xs text-gray-500 mb-3">Select one or more exposure variables to analyze. Click to change the exposed value.</p>
+          <p className="text-xs text-gray-600 mb-3">
+            <strong>Select one or more exposure variables to analyze.</strong> For each selected variable, use the dropdown to specify which value should be treated as the <strong>"exposed"</strong> group (e.g., "Yes" for ate the food, or the specific food item). The other values will be grouped as "unexposed."
+          </p>
           <div className="flex flex-wrap gap-2">
             {exposureColumns.map(col => {
               const isSelected = selectedExposures.includes(col.key);
@@ -502,6 +534,21 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
         <div className="space-y-4">
           <h4 className="text-sm font-semibold text-gray-900">Summary Table</h4>
           {renderSummaryTable()}
+
+          {/* Interpretation Example for Cohort Studies */}
+          {studyDesign === 'cohort' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
+              <p className="text-sm text-gray-700 leading-relaxed">
+                <strong>Example interpretation:</strong> If your attack rate ratio (ARR) is 3.2 with a 95% CI of (1.8 - 5.6), you would state:
+                "People who were exposed were 3.2 times more likely to become ill compared to those who were not exposed.
+                The 95% confidence interval (1.8 - 5.6) does not include 1.0, indicating this association is statistically significant (p &lt; 0.05).
+                This suggests a strong positive association between the exposure and illness." An ARR greater than 1.0 indicates increased risk,
+                while an ARR less than 1.0 suggests the exposure may be protective. The confidence interval tells us the range of plausible
+                values for the true ARR in the population.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
