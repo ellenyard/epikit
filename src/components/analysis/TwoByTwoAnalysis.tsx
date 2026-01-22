@@ -744,19 +744,10 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
       )}
 
       {/* Results */}
-      {exposureResults.length > 1 && (
+      {exposureResults.length > 0 && (
         <div className="space-y-4">
           <h4 className="text-sm font-semibold text-gray-900">Summary Table</h4>
           {renderSummaryTable()}
-        </div>
-      )}
-
-      {exposureResults.length === 1 && (
-        <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-gray-900">
-            Detailed Analysis: {exposureResults[0].exposureLabel}
-          </h4>
-          {renderDetailedView(exposureResults[0])}
         </div>
       )}
 
