@@ -184,11 +184,6 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
     return `(${ci[0].toFixed(2)} - ${ci[1].toFixed(2)})`;
   };
 
-  const formatPValue = (p: number): string => {
-    if (p < 0.001) return '< 0.001';
-    return p.toFixed(4);
-  };
-
   // Toggle exposure selection
   const toggleExposure = (expVar: string) => {
     setSelectedExposures(prev => {
