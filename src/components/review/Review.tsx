@@ -6,6 +6,7 @@ import { CreateVariableModal } from './CreateVariableModal';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig, FilterCondition } from '../../types/analysis';
 import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
 import { addVariableToDataset } from '../../utils/variableCreation';
+import { ReviewCleanTutorial } from '../tutorials/ReviewCleanTutorial';
 
 interface ReviewProps {
   datasets: Dataset[];
@@ -178,6 +179,11 @@ export function Review({
           {/* Controls Section */}
           <div className="border-b border-gray-200 bg-white">
             <div className="p-4 space-y-3">
+              {/* Tutorial Component */}
+              <div className="mb-3">
+                <ReviewCleanTutorial />
+              </div>
+
               {/* Filter Button */}
               <button
                 onClick={() => setShowFilters(!showFilters)}
