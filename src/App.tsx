@@ -12,7 +12,7 @@ import { DescriptiveStats } from './components/analysis/DescriptiveStats';
 import { TwoByTwoAnalysis } from './components/analysis/TwoByTwoAnalysis';
 import { OneWayTables } from './components/analysis/OneWayTables';
 import { DataImport } from './components/analysis/DataImport';
-import { demoFormItems, demoColumns, demoCaseRecords, demoDatasetName } from './data/demoData';
+import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 
 type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive' | '1way' | '2way';
