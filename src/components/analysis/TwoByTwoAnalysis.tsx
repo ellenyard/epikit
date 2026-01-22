@@ -293,10 +293,30 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                     Exposure
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Cases (n, %)
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Cases (n, %)</span>
+                      <div className="group relative">
+                        <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
+                          The number and percentage of cases with each exposure level. The percentage represents the proportion of all cases that were exposed.
+                        </div>
+                      </div>
+                    </div>
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Controls (n, %)
+                    <div className="flex items-center justify-center gap-1">
+                      <span>Controls (n, %)</span>
+                      <div className="group relative">
+                        <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
+                          The number and percentage of controls with each exposure level. The percentage represents the proportion of all controls that were exposed.
+                        </div>
+                      </div>
+                    </div>
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     OR
@@ -550,6 +570,22 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 This suggests a strong positive association between the exposure and illness." An ARR greater than 1.0 indicates increased risk,
                 while an ARR less than 1.0 suggests the exposure may be protective. The confidence interval tells us the range of plausible
                 values for the true ARR in the population.
+              </p>
+            </div>
+          )}
+
+          {/* Interpretation Example for Case-Control Studies */}
+          {studyDesign === 'case-control' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
+              <p className="text-sm text-gray-700 leading-relaxed">
+                <strong>Example interpretation:</strong> If your odds ratio (OR) is 4.5 with a 95% CI of (2.1 - 9.3), you would state:
+                "Cases had 4.5 times the odds of being exposed compared to controls.
+                The 95% confidence interval (2.1 - 9.3) does not include 1.0, indicating this association is statistically significant (p &lt; 0.05).
+                This suggests a strong positive association between the exposure and illness." An OR greater than 1.0 indicates that cases had
+                higher odds of exposure (suggesting the exposure may increase risk), while an OR less than 1.0 suggests cases had lower odds
+                of exposure (suggesting the exposure may be protective). The confidence interval tells us the range of plausible
+                values for the true OR in the population.
               </p>
             </div>
           )}
