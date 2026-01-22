@@ -101,6 +101,28 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
     return n.toFixed(decimals);
   };
 
+  // Format number to specified significant figures
+  const formatSigFigs = (n: number, sigFigs: number = 2): string => {
+    if (!isFinite(n) || n === 0) return '0';
+    const magnitude = Math.floor(Math.log10(Math.abs(n)));
+    const precision = sigFigs - 1 - magnitude;
+    if (precision < 0) {
+      return Math.round(n / Math.pow(10, -precision)) * Math.pow(10, -precision) + '';
+    }
+    return n.toFixed(Math.max(0, precision));
+  };
+
+  // Format percentage based on sample size: 2 sig figs if n < 1000, 3 sig figs if n >= 1000
+  const formatPercent = (value: number, sampleSize: number): string => {
+    const sigFigs = sampleSize >= 1000 ? 3 : 2;
+    return formatSigFigs(value, sigFigs);
+  };
+
+  // Calculate total sample size for percentage formatting
+  const totalSampleSize = useMemo(() => {
+    return frequency.reduce((sum, item) => sum + item.count, 0);
+  }, [frequency]);
+
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
       <div>
@@ -224,8 +246,8 @@ export function DescriptiveStats({ dataset }: DescriptiveStatsProps) {
                       <tr key={index} className="hover:bg-gray-50">
                         <td className="px-4 py-2 text-sm text-gray-900">{item.value}</td>
                         <td className="px-4 py-2 text-sm text-gray-900 text-right">{item.count}</td>
-                        <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatNumber(item.percent, 1)}%</td>
-                        <td className="px-4 py-2 text-sm text-gray-500 text-right">{formatNumber(item.cumPercent, 1)}%</td>
+                        <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatPercent(item.percent, totalSampleSize)}%</td>
+                        <td className="px-4 py-2 text-sm text-gray-500 text-right">{formatPercent(item.cumPercent, totalSampleSize)}%</td>
                       </tr>
                     ))}
                   </tbody>
