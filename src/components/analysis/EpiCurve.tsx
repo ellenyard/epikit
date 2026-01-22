@@ -45,6 +45,8 @@ function Refresher({ title, children }: { title: string; children: React.ReactNo
 export function EpiCurve({ dataset }: EpiCurveProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const chartBodyRef = useRef<HTMLDivElement>(null);
+  const [chartBodyWidth, setChartBodyWidth] = useState(800);
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
@@ -72,6 +74,23 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizing]);
+
+  // Measure chart body width to distribute bins evenly
+  useEffect(() => {
+    if (!chartBodyRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setChartBodyWidth(entry.contentRect.width);
+      }
+    });
+
+    resizeObserver.observe(chartBodyRef.current);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   // Configuration state
   const [dateColumn, setDateColumn] = useState<string>('');
@@ -199,7 +218,9 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     }
   };
 
-  const barWidth = Math.max(20, Math.min(60, 800 / (curveData.bins.length || 1)));
+  // Calculate bar width to fill available space
+  // Minimum 20px for readability when there are many bins
+  const barWidth = Math.max(20, chartBodyWidth / (curveData.bins.length || 1));
   const chartHeight = 300;
   // Y-axis max should be at least 1 above the highest bar, rounded up to a nice number
   const yAxisMax = Math.max(curveData.maxCount + 1, Math.ceil((curveData.maxCount + 1) / 5) * 5);
@@ -565,7 +586,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
           <div className="flex">
             {/* Y-Axis Label */}
             <div className="flex items-center justify-center w-8">
-              <span className="text-xs font-bold text-gray-500 transform -rotate-90 whitespace-nowrap">
+              <span className="text-sm font-bold text-gray-500 transform -rotate-90 whitespace-nowrap">
                 {yAxisLabel}
               </span>
             </div>
@@ -575,14 +596,14 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
               {[...Array(6)].map((_, i) => {
                 const value = Math.round((yAxisMax * (5 - i)) / 5);
                 return (
-                  <span key={i} className="text-xs text-gray-500">{value}</span>
+                  <span key={i} className="text-sm text-gray-500">{value}</span>
                 );
               })}
             </div>
 
             {/* Chart Body */}
-            <div className="flex-1 overflow-x-auto">
-              <div className="relative" style={{ minWidth: curveData.bins.length * barWidth + 50 }}>
+            <div ref={chartBodyRef} className="flex-1 overflow-x-auto">
+              <div className="relative" style={{ width: curveData.bins.length * barWidth }}>
                 {/* Grid Lines */}
                 {showGridLines && (
                   <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
@@ -666,7 +687,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                       style={{ width: barWidth, height: 60 }}
                     >
                       <span
-                        className="text-xs text-gray-500 absolute whitespace-nowrap"
+                        className="text-sm text-gray-500 absolute whitespace-nowrap"
                         style={{
                           transform: 'rotate(-45deg)',
                           transformOrigin: 'top left',
@@ -685,7 +706,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
 
           {/* X-Axis Label */}
           <div className="text-center mt-2">
-            <span className="text-xs font-bold text-gray-500">{xAxisLabel}</span>
+            <span className="text-sm font-bold text-gray-500">{xAxisLabel}</span>
           </div>
         </div>
       ) : dateColumn ? (
@@ -958,85 +979,71 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
 }) {
   if (bins.length === 0) return null;
 
-  // Find position by matching the annotation date to bins
-  // Use date string comparison to avoid timezone issues
-  const getDateStr = (d: Date) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // For the annotation, get both the UTC date and local date strings
-  // and try to match either one to handle timezone edge cases
-  const annDateUTC = annotation.date.toISOString().split('T')[0];
-  const annDateLocal = getDateStr(annotation.date);
+  // Find position by matching the annotation timestamp to bins
+  // This positions the flag at the exact date/time proportionally within the bin
+  const annotationTime = annotation.date.getTime();
+  const firstBinStart = bins[0].startDate.getTime();
+  const lastBinEnd = bins[bins.length - 1].endDate.getTime();
 
   let x: number = 0;
-  let binIndex = -1;
 
-  // Try to find a bin that matches the annotation date
-  for (let i = 0; i < bins.length; i++) {
-    const binDateStr = getDateStr(bins[i].startDate);
-    // Check if either interpretation of the annotation date matches this bin
-    if (binDateStr === annDateUTC || binDateStr === annDateLocal) {
-      binIndex = i;
-      break;
+  if (annotationTime < firstBinStart) {
+    // Before first bin
+    x = 0;
+  } else if (annotationTime >= lastBinEnd) {
+    // After last bin
+    x = bins.length * barWidth;
+  } else {
+    // Find which bin contains this timestamp
+    const binIndex = bins.findIndex(b =>
+      annotationTime >= b.startDate.getTime() && annotationTime < b.endDate.getTime()
+    );
+
+    if (binIndex !== -1) {
+      const bin = bins[binIndex];
+      const binStart = bin.startDate.getTime();
+      const binEnd = bin.endDate.getTime();
+      const binDuration = binEnd - binStart;
+
+      // Calculate proportional position within the bin
+      const offsetWithinBin = annotationTime - binStart;
+      const fraction = binDuration > 0 ? offsetWithinBin / binDuration : 0;
+
+      x = binIndex * barWidth + fraction * barWidth;
     }
-  }
-
-  // If no exact match, fall back to timestamp comparison
-  if (binIndex === -1) {
-    const annotationTime = annotation.date.getTime();
-    const firstBinStart = bins[0].startDate.getTime();
-    const lastBinEnd = bins[bins.length - 1].endDate.getTime();
-
-    if (annotationTime < firstBinStart) {
-      x = 0;
-    } else if (annotationTime >= lastBinEnd) {
-      x = bins.length * barWidth;
-    } else {
-      binIndex = bins.findIndex(b => annotationTime >= b.startDate.getTime() && annotationTime < b.endDate.getTime());
-      x = binIndex !== -1 ? binIndex * barWidth + barWidth / 2 : 0;
-    }
-  }
-
-  // Calculate x position - center of the bin
-  if (binIndex !== -1) {
-    x = binIndex * barWidth + barWidth / 2;
   }
 
   // For incubation period ranges, show shaded area
   if (annotation.endDate) {
-    // Find end position using same date matching logic
-    const endDateUTC = annotation.endDate.toISOString().split('T')[0];
-    const endDateLocal = getDateStr(annotation.endDate);
-    let endBinIndex = -1;
-
-    for (let i = 0; i < bins.length; i++) {
-      const binDateStr = getDateStr(bins[i].startDate);
-      if (binDateStr === endDateUTC || binDateStr === endDateLocal) {
-        endBinIndex = i;
-        break;
-      }
-    }
-
+    const endTime = annotation.endDate.getTime();
     let endX: number;
-    if (endBinIndex !== -1) {
-      endX = (endBinIndex + 1) * barWidth;
+
+    if (endTime >= lastBinEnd) {
+      // After last bin
+      endX = bins.length * barWidth;
     } else {
-      // Fallback to timestamp comparison
-      const endTime = annotation.endDate.getTime();
-      const lastBinEnd = bins[bins.length - 1].endDate.getTime();
-      if (endTime >= lastBinEnd) {
-        endX = bins.length * barWidth;
+      // Find which bin contains the end timestamp
+      const endBinIndex = bins.findIndex(b =>
+        endTime >= b.startDate.getTime() && endTime < b.endDate.getTime()
+      );
+
+      if (endBinIndex !== -1) {
+        const bin = bins[endBinIndex];
+        const binStart = bin.startDate.getTime();
+        const binEnd = bin.endDate.getTime();
+        const binDuration = binEnd - binStart;
+
+        // Calculate proportional position within the bin
+        const offsetWithinBin = endTime - binStart;
+        const fraction = binDuration > 0 ? offsetWithinBin / binDuration : 0;
+
+        endX = endBinIndex * barWidth + fraction * barWidth;
       } else {
-        const foundIndex = bins.findIndex(b => endTime >= b.startDate.getTime() && endTime < b.endDate.getTime());
-        endX = foundIndex !== -1 ? (foundIndex + 1) * barWidth : bins.length * barWidth;
+        endX = bins.length * barWidth;
       }
     }
 
-    const width = Math.max(endX - x, barWidth);
+    const width = Math.max(endX - x, barWidth / 2);
 
     return (
       <div
@@ -1174,10 +1181,10 @@ function generateSVG(
   svg += `<text x="${width / 2}" y="30" text-anchor="middle" font-size="18" font-weight="bold">${title}</text>`;
 
   // Y-axis label
-  svg += `<text x="20" y="${height / 2}" text-anchor="middle" font-size="12" transform="rotate(-90, 20, ${height / 2})">${yLabel}</text>`;
+  svg += `<text x="20" y="${height / 2}" text-anchor="middle" font-size="14" transform="rotate(-90, 20, ${height / 2})">${yLabel}</text>`;
 
   // X-axis label
-  svg += `<text x="${width / 2}" y="${height - 10}" text-anchor="middle" font-size="12">${xLabel}</text>`;
+  svg += `<text x="${width / 2}" y="${height - 10}" text-anchor="middle" font-size="14">${xLabel}</text>`;
 
   // Grid lines
   if (showGrid) {
@@ -1191,7 +1198,7 @@ function generateSVG(
   for (let i = 0; i <= 5; i++) {
     const value = Math.round((data.maxCount * (5 - i)) / 5);
     const y = margin.top + (i / 5) * chartHeight;
-    svg += `<text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" font-size="10">${value}</text>`;
+    svg += `<text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" font-size="12">${value}</text>`;
   }
 
   // Bars
@@ -1223,7 +1230,7 @@ function generateSVG(
     }
 
     // X-axis label
-    svg += `<text x="${x + barWidth / 2}" y="${margin.top + chartHeight + 15}" text-anchor="middle" font-size="9" transform="rotate(-45, ${x + barWidth / 2}, ${margin.top + chartHeight + 15})">${bin.label}</text>`;
+    svg += `<text x="${x + barWidth / 2}" y="${margin.top + chartHeight + 15}" text-anchor="middle" font-size="11" transform="rotate(-45, ${x + barWidth / 2}, ${margin.top + chartHeight + 15})">${bin.label}</text>`;
   });
 
   svg += '</svg>';
