@@ -692,7 +692,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                           transform: 'rotate(-45deg)',
                           transformOrigin: 'top left',
                           left: barWidth / 2,
-                          top: 4
+                          top: 10
                         }}
                       >
                         {bin.label}
