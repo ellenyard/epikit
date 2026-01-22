@@ -97,3 +97,24 @@ export interface DataQualityConfig {
   // Which checks are enabled
   enabledChecks: DataQualityCheckType[];
 }
+
+// Variable Creation Types
+export type CreationMethod = 'categorize' | 'formula' | 'copy' | 'blank';
+
+export interface CategoryRule {
+  id: string;
+  label: string;
+  min?: number;
+  max?: number;
+  values?: string[]; // For text categorization
+}
+
+export interface VariableConfig {
+  name: string;
+  label: string;
+  type: DataColumn['type'];
+  method: CreationMethod;
+  sourceColumn?: string;
+  categories?: CategoryRule[];
+  formula?: string;
+}

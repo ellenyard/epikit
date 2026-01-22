@@ -161,6 +161,12 @@ function App() {
     return newDataset;
   }, []);
 
+  const updateDataset = useCallback((id: string, updates: Partial<Dataset>) => {
+    setDatasets(prev => prev.map(d =>
+      d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
+    ));
+  }, []);
+
   const deleteDataset = useCallback((id: string) => {
     setDatasets(prev => prev.filter(d => d.id !== id));
     if (activeDatasetId === id) {
@@ -439,6 +445,7 @@ function App() {
               activeDatasetId={activeDatasetId}
               setActiveDatasetId={setActiveDatasetId}
               createDataset={createDataset}
+              updateDataset={updateDataset}
               deleteDataset={deleteDataset}
               addRecord={addRecord}
               updateRecord={updateRecord}
