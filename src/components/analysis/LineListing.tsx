@@ -22,6 +22,9 @@ interface LineListingProps {
   highlightedRecordIds?: Set<string>;
   scrollToRecordId?: string | null;
   highlightField?: string;
+  filters: FilterCondition[];
+  showAddRow: boolean;
+  onShowAddRowChange: (show: boolean) => void;
 }
 
 export function LineListing({
@@ -33,14 +36,14 @@ export function LineListing({
   highlightedRecordIds,
   scrollToRecordId,
   highlightField,
+  filters,
+  showAddRow,
+  onShowAddRowChange,
 }: LineListingProps) {
-  const [filters, setFilters] = useState<FilterCondition[]>([]);
   const [sort, setSort] = useState<SortConfig | null>(null);
   const [editingCell, setEditingCell] = useState<{ recordId: string; column: string } | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
-  const [showAddRow, setShowAddRow] = useState(false);
   const [newRowData, setNewRowData] = useState<Record<string, unknown>>({});
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
@@ -121,23 +124,6 @@ export function LineListing({
     setEditValue('');
   };
 
-  const addFilter = () => {
-    if (dataset.columns.length === 0) return;
-    setFilters(prev => [...prev, {
-      column: dataset.columns[0].key,
-      operator: 'contains',
-      value: '',
-    }]);
-  };
-
-  const updateFilter = (index: number, updates: Partial<FilterCondition>) => {
-    setFilters(prev => prev.map((f, i) => i === index ? { ...f, ...updates } : f));
-  };
-
-  const removeFilter = (index: number) => {
-    setFilters(prev => prev.filter((_, i) => i !== index));
-  };
-
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedRows(new Set(processedRecords.map(r => r.id)));
@@ -164,7 +150,7 @@ export function LineListing({
   const handleAddRow = () => {
     onAddRecord(newRowData);
     setNewRowData({});
-    setShowAddRow(false);
+    onShowAddRowChange(false);
   };
 
   const handleExport = () => {
@@ -234,22 +220,6 @@ export function LineListing({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-lg border ${
-                filters.length > 0
-                  ? 'bg-blue-50 text-blue-700 border-blue-200'
-                  : 'text-gray-700 border-gray-300 hover:bg-gray-50'
-              }`}
-            >
-              Filters {filters.length > 0 && `(${filters.length})`}
-            </button>
-            <button
-              onClick={() => setShowAddRow(true)}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              + Add Record
-            </button>
             {selectedRows.size > 0 && (
               <button
                 onClick={deleteSelectedRows}
@@ -266,63 +236,6 @@ export function LineListing({
             </button>
           </div>
         </div>
-
-        {/* Filter Panel */}
-        {showFilters && (
-          <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-            <div className="space-y-2">
-              {filters.map((filter, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <select
-                    value={filter.column}
-                    onChange={(e) => updateFilter(index, { column: e.target.value })}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                  >
-                    {dataset.columns.map(col => (
-                      <option key={col.key} value={col.key}>{col.label}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={filter.operator}
-                    onChange={(e) => updateFilter(index, { operator: e.target.value as FilterCondition['operator'] })}
-                    className="px-2 py-1 border border-gray-300 rounded text-sm"
-                  >
-                    <option value="contains">contains</option>
-                    <option value="equals">equals</option>
-                    <option value="not_equals">not equals</option>
-                    <option value="greater_than">greater than</option>
-                    <option value="less_than">less than</option>
-                    <option value="is_empty">is empty</option>
-                    <option value="is_not_empty">is not empty</option>
-                  </select>
-                  {!['is_empty', 'is_not_empty'].includes(filter.operator) && (
-                    <input
-                      type="text"
-                      value={String(filter.value)}
-                      onChange={(e) => updateFilter(index, { value: e.target.value })}
-                      placeholder="Value"
-                      className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
-                    />
-                  )}
-                  <button
-                    onClick={() => removeFilter(index)}
-                    className="p-1 text-gray-400 hover:text-red-500"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={addFilter}
-                className="text-sm text-blue-600 hover:text-blue-700"
-              >
-                + Add filter
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Table */}
@@ -384,7 +297,7 @@ export function LineListing({
                       </svg>
                     </button>
                     <button
-                      onClick={() => { setShowAddRow(false); setNewRowData({}); }}
+                      onClick={() => { onShowAddRowChange(false); setNewRowData({}); }}
                       className="p-1 text-gray-400 hover:text-red-500"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
