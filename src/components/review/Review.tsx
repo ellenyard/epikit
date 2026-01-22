@@ -2,14 +2,17 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { LineListing } from '../analysis/LineListing';
 import { EditLogPanel } from './EditLogPanel';
 import { DataQualityPanel } from './DataQualityPanel';
-import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig } from '../../types/analysis';
+import { CreateVariableModal } from './CreateVariableModal';
+import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig } from '../../types/analysis';
 import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
+import { addVariableToDataset } from '../../utils/variableCreation';
 
 interface ReviewProps {
   datasets: Dataset[];
   activeDatasetId: string | null;
   setActiveDatasetId: (id: string | null) => void;
   createDataset: (name: string, columns: DataColumn[], records: CaseRecord[], source?: 'import' | 'form') => Dataset;
+  updateDataset: (id: string, updates: Partial<Dataset>) => void;
   deleteDataset: (id: string) => void;
   addRecord: (datasetId: string, record: Omit<CaseRecord, 'id'>) => CaseRecord;
   updateRecord: (datasetId: string, recordId: string, updates: Partial<CaseRecord>) => void;
@@ -23,6 +26,7 @@ interface ReviewProps {
 export function Review({
   datasets,
   activeDatasetId,
+  updateDataset,
   updateRecord,
   deleteRecord,
   addRecord,
@@ -37,6 +41,7 @@ export function Review({
   const [dataQualityConfig, setDataQualityConfig] = useState<DataQualityConfig>(getDefaultConfig());
   const [isRunningChecks, setIsRunningChecks] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<DataQualityIssue | null>(null);
+  const [showCreateVariable, setShowCreateVariable] = useState(false);
 
   const currentEditLog = activeDatasetId ? getEditLogForDataset(activeDatasetId) : [];
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
@@ -94,6 +99,31 @@ export function Review({
     );
   }, []);
 
+  const handleCreateVariable = useCallback((config: VariableConfig, values: unknown[]) => {
+    if (!activeDataset) return;
+
+    const updatedDataset = addVariableToDataset(activeDataset, config, values);
+    updateDataset(activeDataset.id, {
+      columns: updatedDataset.columns,
+      records: updatedDataset.records,
+    });
+
+    // Add entry to edit log
+    addEditLogEntry({
+      id: crypto.randomUUID(),
+      datasetId: activeDataset.id,
+      recordId: 'system',
+      recordIdentifier: 'System',
+      columnKey: config.name,
+      columnLabel: config.label,
+      oldValue: null,
+      newValue: `Created new variable: ${config.label}`,
+      reason: `Variable created via ${config.method} method`,
+      initials: 'SYS',
+      timestamp: new Date().toISOString(),
+    });
+  }, [activeDataset, updateDataset, addEditLogEntry]);
+
   if (!activeDataset) {
     return null;
   }
@@ -106,6 +136,15 @@ export function Review({
           <div className="text-sm text-gray-600">
             <span className="font-medium">{activeDataset.records.length}</span> records
           </div>
+          <button
+            onClick={() => setShowCreateVariable(true)}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Create Variable
+          </button>
           <button
             onClick={() => setShowDataQuality(!showDataQuality)}
             className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -252,6 +291,15 @@ export function Review({
           </div>
         </div>
       )}
+
+      {/* Create Variable Modal */}
+      <CreateVariableModal
+        isOpen={showCreateVariable}
+        onClose={() => setShowCreateVariable(false)}
+        existingColumns={activeDataset.columns}
+        records={activeDataset.records}
+        onCreateVariable={handleCreateVariable}
+      />
     </div>
   );
 }
