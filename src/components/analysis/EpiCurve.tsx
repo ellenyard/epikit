@@ -16,7 +16,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartBodyRef = useRef<HTMLDivElement>(null);
-  const [chartBodyWidth, setChartBodyWidth] = useState(800);
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
@@ -44,23 +43,6 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isResizing]);
-
-  // Measure chart body width to distribute bins evenly
-  useEffect(() => {
-    if (!chartBodyRef.current) return;
-
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setChartBodyWidth(entry.contentRect.width);
-      }
-    });
-
-    resizeObserver.observe(chartBodyRef.current);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, []);
 
   // Configuration state
   const [dateColumn, setDateColumn] = useState<string>('');
@@ -145,8 +127,8 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     if (!dateColumn) {
       return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
     }
-    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined);
-  }, [filteredRecords, dateColumn, binSize, stratifyBy]);
+    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, annotations);
+  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations]);
 
   // Helper to get default date from dataset range
   const getDefaultAnnotationDate = (): string => {
@@ -261,12 +243,38 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     }
   };
 
-  // Calculate bar width to fill available space
-  // Minimum 20px for readability when there are many bins
-  const barWidth = Math.max(20, chartBodyWidth / (curveData.bins.length || 1));
+  // Calculate bar width based on optimal sizing, not container width
+  // Use 60px as the optimal width for bars, with a minimum of 25px and maximum of 80px
+  // This allows the chart to naturally size to its content
+  const getOptimalBarWidth = (binCount: number): number => {
+    if (binCount === 0) return 60;
+    // More bins = narrower bars, fewer bins = wider bars (up to max)
+    if (binCount > 50) return 25;
+    if (binCount > 30) return 35;
+    if (binCount > 15) return 50;
+    if (binCount > 7) return 60;
+    return Math.min(80, 60 + (7 - binCount) * 3); // Cap at 80px for very few bins
+  };
+
+  const barWidth = getOptimalBarWidth(curveData.bins.length);
   const chartHeight = 300;
   // Y-axis max should be at least 1 above the highest bar, rounded up to a nice number
   const yAxisMax = Math.max(curveData.maxCount + 1, Math.ceil((curveData.maxCount + 1) / 5) * 5);
+
+  // Determine if x-axis labels should be rotated based on available space
+  // Estimate label width: assume ~7px per character on average for the label text
+  const shouldRotateLabels = useMemo(() => {
+    if (curveData.bins.length === 0) return false;
+
+    // Sample a few labels to estimate average width
+    const sampleLabels = curveData.bins.slice(0, Math.min(5, curveData.bins.length));
+    const avgLabelLength = sampleLabels.reduce((sum, bin) => sum + bin.label.length, 0) / sampleLabels.length;
+    const estimatedLabelWidth = avgLabelLength * 7; // ~7px per character
+
+    // If bar width is less than estimated label width + padding, rotate labels
+    // Add 10px padding for comfortable spacing
+    return barWidth < (estimatedLabelWidth + 10);
+  }, [curveData.bins, barWidth]);
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col lg:flex-row ${isResizing ? 'select-none' : ''}`}>
@@ -749,16 +757,25 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                         <div
                           key={index}
                           className="relative"
-                          style={{ width: barWidth, height: 60 }}
+                          style={{ width: barWidth, height: shouldRotateLabels ? 60 : 30 }}
                         >
                           <span
                             className="text-sm text-gray-500 absolute whitespace-nowrap"
-                            style={{
-                              transform: 'rotate(-45deg)',
-                              transformOrigin: '0 0',
-                              left: barWidth / 2,
-                              top: 5
-                            }}
+                            style={
+                              shouldRotateLabels
+                                ? {
+                                    transform: 'rotate(-45deg)',
+                                    transformOrigin: '0 0',
+                                    left: barWidth / 2,
+                                    top: 5,
+                                  }
+                                : {
+                                    left: '50%',
+                                    transform: 'translateX(-50%)',
+                                    top: 5,
+                                    textAlign: 'center',
+                                  }
+                            }
                           >
                             {bin.label}
                           </span>
