@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { parseCSV } from '../../utils/csvParser';
 import type { DataColumn, CaseRecord } from '../../types/analysis';
+import { useLocale } from '../../contexts/LocaleContext';
 
 interface DataImportProps {
   onImport: (name: string, columns: DataColumn[], records: CaseRecord[]) => void;
@@ -8,6 +9,7 @@ interface DataImportProps {
 }
 
 export function DataImport({ onImport, onCancel }: DataImportProps) {
+  const { config: localeConfig } = useLocale();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<{
     columns: DataColumn[];
@@ -28,7 +30,7 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
 
     try {
       const content = await selectedFile.text();
-      const result = parseCSV(content);
+      const result = parseCSV(content, { localeConfig });
       setPreview(result);
     } catch {
       setPreview({ columns: [], records: [], errors: ['Failed to read file'] });
