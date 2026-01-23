@@ -4,6 +4,7 @@ import { ResultsActions, ExportIcons, AdvancedOptions } from '../shared';
 
 interface TwoWayTableBuilderProps {
   dataset: Dataset;
+  onNavigateTo2x2?: () => void;
 }
 
 type DenominatorMode = 'total' | 'valid';
@@ -44,7 +45,7 @@ const formatPercent = (value: number, sampleSize: number): string => {
   return formatSigFigs(value, sigFigs);
 };
 
-export function TwoWayTableBuilder({ dataset }: TwoWayTableBuilderProps) {
+export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuilderProps) {
   const [rowVariable, setRowVariable] = useState<string>('');
   const [colVariable, setColVariable] = useState<string>('');
   const [denominatorMode, setDenominatorMode] = useState<DenominatorMode>('total');
@@ -88,7 +89,7 @@ export function TwoWayTableBuilder({ dataset }: TwoWayTableBuilderProps) {
           .filter(v => v !== null && v !== undefined && String(v).trim() !== '')
       );
 
-      return uniqueValues.size >= 2 && uniqueValues.size <= 50;
+      return uniqueValues.size >= 2 && uniqueValues.size <= 30;
     });
   }, [dataset]);
 
@@ -332,7 +333,7 @@ export function TwoWayTableBuilder({ dataset }: TwoWayTableBuilderProps) {
           .filter(v => v !== null && v !== undefined && String(v).trim() !== '')
       );
 
-      return uniqueValues.size > 50;
+      return uniqueValues.size > 30;
     };
 
     return (rowVariable && checkColumn(rowVariable)) || (colVariable && checkColumn(colVariable));
@@ -394,9 +395,19 @@ export function TwoWayTableBuilder({ dataset }: TwoWayTableBuilderProps) {
             </div>
 
             {showFreeTextWarning && (
-              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
-                One or more selected variables has many unique values and may be a free-text or ID field.
-                Consider creating categories in Review/Clean before using this analysis.
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg" role="alert">
+                <div className="flex items-start gap-2">
+                  <svg className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-yellow-800">High-Cardinality Variable Detected</p>
+                    <p className="text-sm text-yellow-700 mt-1">
+                      One or more selected variables has more than 30 unique values and may be a free-text or ID field.
+                      Consider creating categories in <strong>Review/Clean</strong> before using this analysis.
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -483,6 +494,32 @@ export function TwoWayTableBuilder({ dataset }: TwoWayTableBuilderProps) {
 
         {/* Right Panel - Results */}
         <div className="lg:col-span-2">
+          {/* Descriptive-Only Notice Banner */}
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-blue-900">Descriptive counts and percentages only</p>
+                <p className="text-sm text-blue-700 mt-1">
+                  This table shows frequency distributions without statistical testing.
+                  {onNavigateTo2x2 && (
+                    <>
+                      {' '}For analytic comparisons with risk ratios, odds ratios, and confidence intervals,{' '}
+                      <button
+                        onClick={onNavigateTo2x2}
+                        className="font-medium underline hover:text-blue-900"
+                      >
+                        use the 2×2 Analysis tab
+                      </button>.
+                    </>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {!rowVariable || !colVariable ? (
             <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-400">
               <svg className="mx-auto h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -608,10 +645,15 @@ export function TwoWayTableBuilder({ dataset }: TwoWayTableBuilderProps) {
                 </div>
 
                 {/* Footer Note */}
-                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-1">
                   <p className="text-xs text-gray-600">
-                    Descriptive counts and percentages only - no statistical testing.
-                    For analytic comparisons use the <strong>2×2 Analysis</strong> tab.
+                    <strong>Denominator:</strong>{' '}
+                    {denominatorMode === 'total' ? 'Total records' : 'Valid records only'}
+                    {' | '}
+                    <strong>Missing in %:</strong> {includeMissingInPercent ? 'Included' : 'Excluded'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Row % = count ÷ row total | Col % = count ÷ column total | Total % = count ÷ grand total
                   </p>
                 </div>
 
