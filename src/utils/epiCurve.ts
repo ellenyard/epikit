@@ -34,26 +34,22 @@ export interface EpiCurveData {
 
 // Annotation categories for timeline events
 export type AnnotationCategory =
-  | 'case-milestone'      // First case, peak, last case (auto-calculated)
   | 'investigation'       // Lab confirmation, traceback, interviews
   | 'notification'        // Reports to health authorities
   | 'control-measure'     // Recalls, closures, advisories
   | 'exposure'            // Suspected exposure events
-  | 'incubation'          // Incubation period windows
   | 'communication'       // Press releases, public notices
   | 'custom';             // User-defined events
 
 export type AnnotationType =
-  // Case milestones (auto-calculated)
-  | 'first-case' | 'peak-day' | 'last-case' | 'outbreak-end'
   // Investigation events
   | 'lab-confirmed' | 'traceback-started' | 'traceback-completed' | 'interviews-completed'
   // Notifications
   | 'notified-local' | 'notified-state' | 'notified-cdc'
   // Control measures
   | 'recall-issued' | 'facility-closed' | 'advisory-issued' | 'control-lifted'
-  // Exposure/incubation
-  | 'exposure' | 'incubation'
+  // Exposure
+  | 'exposure'
   // Communications
   | 'press-release' | 'public-notice'
   // Legacy/custom
@@ -78,16 +74,6 @@ export const ANNOTATION_CATEGORIES: Record<AnnotationCategory, {
   color: string;
   types: { value: AnnotationType; label: string }[];
 }> = {
-  'case-milestone': {
-    label: 'Case Milestones',
-    color: '#3B82F6',
-    types: [
-      { value: 'first-case', label: 'First Case' },
-      { value: 'peak-day', label: 'Peak Day' },
-      { value: 'last-case', label: 'Last Case' },
-      { value: 'outbreak-end', label: 'Outbreak Declared Over' },
-    ]
-  },
   'investigation': {
     label: 'Investigation',
     color: '#8B5CF6',
@@ -122,13 +108,6 @@ export const ANNOTATION_CATEGORIES: Record<AnnotationCategory, {
     color: '#DC2626',
     types: [
       { value: 'exposure', label: 'Suspected Exposure' },
-    ]
-  },
-  'incubation': {
-    label: 'Incubation Period',
-    color: '#7C3AED',
-    types: [
-      { value: 'incubation', label: 'Incubation Window' },
     ]
   },
   'communication': {
@@ -481,78 +460,6 @@ export function findFirstCaseDate(records: CaseRecord[], dateColumn: string): Da
   return new Date(Math.min(...dates.map(d => d.getTime())));
 }
 
-// Calculate auto-generated milestones from the data
-export interface AutoMilestone {
-  type: AnnotationType;
-  date: Date;
-  label: string;
-  description: string;
-  value?: number; // e.g., case count for peak
-}
-
-export function calculateAutoMilestones(
-  data: EpiCurveData,
-  _records: CaseRecord[],
-  dateColumn: string,
-  pathogen?: string
-): AutoMilestone[] {
-  const milestones: AutoMilestone[] = [];
-
-  if (data.bins.length === 0) return milestones;
-
-  // Find bins with actual cases
-  const binsWithCases = data.bins.filter(b => b.total > 0);
-  if (binsWithCases.length === 0) return milestones;
-
-  // First case
-  const firstBin = binsWithCases[0];
-  const firstCaseDates = firstBin.cases.map(r => parseDate(String(r[dateColumn])));
-  const firstCaseDate = new Date(Math.min(...firstCaseDates.map(d => d.getTime())));
-  milestones.push({
-    type: 'first-case',
-    date: firstCaseDate,
-    label: 'First Case',
-    description: `First case onset on ${formatDateForNarrative(firstCaseDate)}`,
-  });
-
-  // Peak day - find the bin with the most cases
-  const peakBin = binsWithCases.reduce((max, bin) => bin.total > max.total ? bin : max, binsWithCases[0]);
-  const peakDate = new Date(peakBin.startDate.getTime() + (peakBin.endDate.getTime() - peakBin.startDate.getTime()) / 2);
-  milestones.push({
-    type: 'peak-day',
-    date: peakDate,
-    label: `Peak (n=${peakBin.total})`,
-    description: `Outbreak peaked on ${formatDateForNarrative(peakDate)} with ${peakBin.total} cases`,
-    value: peakBin.total,
-  });
-
-  // Last case
-  const lastBin = binsWithCases[binsWithCases.length - 1];
-  const lastCaseDates = lastBin.cases.map(r => parseDate(String(r[dateColumn])));
-  const lastCaseDate = new Date(Math.max(...lastCaseDates.map(d => d.getTime())));
-  milestones.push({
-    type: 'last-case',
-    date: lastCaseDate,
-    label: 'Last Case',
-    description: `Last case onset on ${formatDateForNarrative(lastCaseDate)}`,
-  });
-
-  // Outbreak end estimate (2x max incubation period after last case)
-  if (pathogen && PATHOGEN_INCUBATION[pathogen]) {
-    const incubation = PATHOGEN_INCUBATION[pathogen];
-    const outbreakEndDate = new Date(lastCaseDate);
-    outbreakEndDate.setDate(outbreakEndDate.getDate() + Math.ceil(incubation.max * 2));
-    milestones.push({
-      type: 'outbreak-end',
-      date: outbreakEndDate,
-      label: 'Est. Outbreak End',
-      description: `Outbreak can be declared over on ${formatDateForNarrative(outbreakEndDate)} (2× max incubation period for ${pathogen})`,
-    });
-  }
-
-  return milestones;
-}
-
 // Calculate exposure window working backward from cases
 export function calculateExposureWindow(
   firstCaseDate: Date,
@@ -572,108 +479,3 @@ export function calculateExposureWindow(
   return { start, end };
 }
 
-// Format date for narrative text
-function formatDateForNarrative(date: Date): string {
-  const months = ['January', 'February', 'March', 'April', 'May', 'June',
-                  'July', 'August', 'September', 'October', 'November', 'December'];
-  return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
-}
-
-// Generate narrative summary of the outbreak timeline
-export function generateNarrativeSummary(
-  annotations: Annotation[],
-  autoMilestones: AutoMilestone[],
-  totalCases: number,
-  pathogen?: string
-): string {
-  const allEvents: { date: Date; text: string; priority: number }[] = [];
-
-  // Add auto milestones
-  autoMilestones.forEach(m => {
-    allEvents.push({
-      date: m.date,
-      text: m.description,
-      priority: m.type === 'first-case' ? 1 : m.type === 'peak-day' ? 2 : 3,
-    });
-  });
-
-  // Add manual annotations
-  annotations.forEach(ann => {
-    if (ann.source === 'manual' && ann.description) {
-      allEvents.push({
-        date: ann.date,
-        text: ann.description,
-        priority: 5,
-      });
-    } else if (ann.source === 'manual') {
-      // Generate description from type and label
-      const typeDescriptions: Record<string, string> = {
-        'lab-confirmed': `Laboratory confirmation received: ${ann.label}`,
-        'recall-issued': `Product recall issued: ${ann.label}`,
-        'facility-closed': `Facility closed: ${ann.label}`,
-        'advisory-issued': `Health advisory issued: ${ann.label}`,
-        'notified-local': `Local health department notified`,
-        'notified-state': `State health department notified`,
-        'notified-cdc': `CDC notified`,
-        'traceback-started': `Traceback investigation initiated`,
-        'traceback-completed': `Traceback investigation completed: ${ann.label}`,
-        'press-release': `Press release issued: ${ann.label}`,
-        'exposure': `Suspected exposure event: ${ann.label}`,
-      };
-      const text = typeDescriptions[ann.type] || ann.label;
-      if (text) {
-        allEvents.push({
-          date: ann.date,
-          text: `On ${formatDateForNarrative(ann.date)}, ${text.charAt(0).toLowerCase()}${text.slice(1)}`,
-          priority: 5,
-        });
-      }
-    }
-  });
-
-  // Sort by date, then priority
-  allEvents.sort((a, b) => {
-    const dateCompare = a.date.getTime() - b.date.getTime();
-    if (dateCompare !== 0) return dateCompare;
-    return a.priority - b.priority;
-  });
-
-  // Build narrative paragraphs
-  const paragraphs: string[] = [];
-
-  // Opening summary
-  const firstCase = autoMilestones.find(m => m.type === 'first-case');
-  const lastCase = autoMilestones.find(m => m.type === 'last-case');
-  const peak = autoMilestones.find(m => m.type === 'peak-day');
-
-  if (firstCase && lastCase) {
-    let opening = `This outbreak investigation identified ${totalCases} cases`;
-    if (pathogen) {
-      opening += ` of ${pathogen} infection`;
-    }
-    opening += ` with illness onset dates ranging from ${formatDateForNarrative(firstCase.date)} to ${formatDateForNarrative(lastCase.date)}.`;
-    if (peak) {
-      opening += ` The outbreak peaked on ${formatDateForNarrative(peak.date)} with ${peak.value} cases reported on that date.`;
-    }
-    paragraphs.push(opening);
-  }
-
-  // Timeline of events
-  if (allEvents.length > 0) {
-    const timelineEvents = allEvents
-      .filter(e => !e.text.includes('First case') && !e.text.includes('peaked') && !e.text.includes('Last case'))
-      .map(e => e.text);
-
-    if (timelineEvents.length > 0) {
-      paragraphs.push(timelineEvents.join(' '));
-    }
-  }
-
-  // Closing
-  const outbreakEnd = autoMilestones.find(m => m.type === 'outbreak-end');
-  if (outbreakEnd) {
-    paragraphs.push(outbreakEnd.description + '.');
-  }
-
-  return paragraphs.join('\n\n');
-}
