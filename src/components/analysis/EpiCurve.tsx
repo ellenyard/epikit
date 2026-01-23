@@ -10,9 +10,10 @@ import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } fr
 
 interface EpiCurveProps {
   dataset: Dataset;
+  onExportDataset?: () => void;
 }
 
-export function EpiCurve({ dataset }: EpiCurveProps) {
+export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartBodyRef = useRef<HTMLDivElement>(null);
@@ -807,6 +808,12 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                   icon: ExportIcons.download,
                   variant: 'secondary',
                 },
+                ...(onExportDataset ? [{
+                  label: 'Export Dataset CSV',
+                  onClick: onExportDataset,
+                  icon: ExportIcons.csv,
+                  variant: 'secondary' as const,
+                }] : []),
               ]}
             />
           </div>
