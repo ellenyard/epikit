@@ -82,7 +82,7 @@ export function EditPromptModal({
               type="text"
               value={initials}
               onChange={(e) => setInitials(e.target.value.toUpperCase())}
-              placeholder="e.g., EY"
+              placeholder=""
               maxLength={5}
               className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm uppercase focus:ring-blue-500 focus:border-blue-500"
             />
