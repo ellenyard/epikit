@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { FormItem, FormDefinition } from './types/form';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
 import { FormBuilder } from './components/FormBuilder';
@@ -15,11 +15,12 @@ import { OnboardingWizard } from './components/OnboardingWizard';
 import { HelpCenter } from './components/HelpCenter';
 import { HelpIcon } from './components/HelpIcon';
 import { AccessibilitySettings } from './components/AccessibilitySettings';
+import { Dashboard } from './components/Dashboard';
 import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
 
-type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive-tables' | '2way';
+type Module = 'dashboard' | 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive-tables' | '2way';
 type FormView = 'builder' | 'preview';
 
 // Create demo dataset
@@ -46,7 +47,7 @@ const createDemoFormDefinition = (): FormDefinition => ({
 });
 
 function App() {
-  const [activeModule, setActiveModule] = useState<Module>('forms');
+  const [activeModule, setActiveModule] = useState<Module>('dashboard');
   const [formView, setFormView] = useState<FormView>('builder');
   const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
   const [exportItems, setExportItems] = useState<FormItem[] | null>(null);
@@ -66,15 +67,8 @@ function App() {
   const [datasets, setDatasets] = useState<Dataset[]>(() => [createDemoDataset()]);
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(DEMO_DATASET_ID);
 
-  // Check for first-time visit and show onboarding
-  useEffect(() => {
-    const hasCompletedOnboarding = localStorage.getItem('epikit_onboarding_completed');
-    if (!hasCompletedOnboarding) {
-      // Small delay to let the UI settle before showing onboarding
-      const timer = setTimeout(() => setShowOnboarding(true), 500);
-      return () => clearTimeout(timer);
-    }
-  }, []);
+  // Onboarding wizard can be accessed from Help Center
+  // Dashboard now serves as the welcoming landing page
 
   // Get current form items for the builder
   const currentFormItems = useMemo(() => {
@@ -323,8 +317,23 @@ function App() {
       <nav className="bg-slate-800 text-white px-3 sm:px-6 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4">
-            <span className="text-lg sm:text-xl font-bold text-blue-400">EpiKit</span>
+            <button
+              onClick={() => setActiveModule('dashboard')}
+              className="text-lg sm:text-xl font-bold text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              EpiKit
+            </button>
             <div className="flex gap-0.5 overflow-x-auto">
+              <button
+                onClick={() => setActiveModule('dashboard')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === 'dashboard'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Home
+              </button>
               <button
                 onClick={() => { setActiveModule('forms'); setFormView('builder'); }}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
@@ -467,7 +476,16 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 overflow-hidden">
-        {activeModule === 'forms' ? (
+        {activeModule === 'dashboard' ? (
+          <Dashboard
+            datasets={datasets}
+            onNavigate={handleNavigateToModule}
+            onLoadDemo={handleLoadDemo}
+            onImportData={() => setShowImport(true)}
+            onOpenHelp={() => setShowHelpCenter(true)}
+            onSelectDataset={(id) => setActiveDatasetId(id)}
+          />
+        ) : activeModule === 'forms' ? (
           formView === 'builder' ? (
             <FormBuilder
               onPreview={handlePreview}
