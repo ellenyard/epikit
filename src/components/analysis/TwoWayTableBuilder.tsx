@@ -767,7 +767,7 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
               )}
 
               {/* Results Tables */}
-              {crossTabs.map((crossTab, tableIdx) => (
+              {crossTabs.map((crossTab) => (
                 <div key={crossTab.rowVariable} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
                   <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                     <h4 className="text-sm font-semibold text-gray-900">
