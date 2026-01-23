@@ -462,7 +462,7 @@ export function OneWaySection({ dataset }: OneWaySectionProps) {
 
                 {/* Table */}
                 <div className="overflow-x-auto">
-                  <table className="w-full">
+                  <table className="border-collapse">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
