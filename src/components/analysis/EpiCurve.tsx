@@ -83,6 +83,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
   // Annotations
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [showAnnotationForm, setShowAnnotationForm] = useState(false);
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
   const [newAnnotation, setNewAnnotation] = useState({
     type: 'exposure' as Annotation['type'],
     date: '',
@@ -147,7 +148,48 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined);
   }, [filteredRecords, dateColumn, binSize, stratifyBy]);
 
-  const addAnnotation = () => {
+  // Helper to get default date from dataset range
+  const getDefaultAnnotationDate = (): string => {
+    if (curveData.bins.length === 0) {
+      // Fallback to today if no data
+      const today = new Date();
+      return today.toISOString().split('T')[0];
+    }
+    // Use the middle of the date range for better UX
+    const startTime = curveData.dateRange.start.getTime();
+    const endTime = curveData.dateRange.end.getTime();
+    const middleTime = startTime + (endTime - startTime) / 2;
+    const middleDate = new Date(middleTime);
+    return middleDate.toISOString().split('T')[0];
+  };
+
+  const startAddingAnnotation = () => {
+    setEditingAnnotationId(null);
+    setNewAnnotation({
+      type: 'exposure',
+      date: getDefaultAnnotationDate(),
+      endDate: '',
+      label: '',
+      minDays: '',
+      maxDays: '',
+    });
+    setShowAnnotationForm(true);
+  };
+
+  const startEditingAnnotation = (annotation: Annotation) => {
+    setEditingAnnotationId(annotation.id);
+    setNewAnnotation({
+      type: annotation.type,
+      date: annotation.date.toISOString().split('T')[0],
+      endDate: annotation.endDate ? annotation.endDate.toISOString().split('T')[0] : '',
+      label: annotation.label,
+      minDays: '',
+      maxDays: '',
+    });
+    setShowAnnotationForm(true);
+  };
+
+  const saveAnnotation = () => {
     if (!newAnnotation.date) return;
 
     // Parse date as local time (not UTC) by appending time component
@@ -158,7 +200,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
     };
 
     const annotation: Annotation = {
-      id: crypto.randomUUID(),
+      id: editingAnnotationId || crypto.randomUUID(),
       type: newAnnotation.type,
       date: parseLocalDate(newAnnotation.date),
       label: newAnnotation.label || newAnnotation.type,
@@ -179,8 +221,22 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
       annotation.endDate = parseLocalDate(newAnnotation.endDate);
     }
 
-    setAnnotations([...annotations, annotation]);
+    if (editingAnnotationId) {
+      // Update existing annotation
+      setAnnotations(annotations.map(a => a.id === editingAnnotationId ? annotation : a));
+    } else {
+      // Add new annotation
+      setAnnotations([...annotations, annotation]);
+    }
+
     setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', minDays: '', maxDays: '' });
+    setEditingAnnotationId(null);
+    setShowAnnotationForm(false);
+  };
+
+  const cancelAnnotationEdit = () => {
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', minDays: '', maxDays: '' });
+    setEditingAnnotationId(null);
     setShowAnnotationForm(false);
   };
 
@@ -430,7 +486,7 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annotations</p>
                 <button
-                  onClick={() => setShowAnnotationForm(!showAnnotationForm)}
+                  onClick={() => showAnnotationForm ? cancelAnnotationEdit() : startAddingAnnotation()}
                   className="text-xs text-gray-600 hover:text-gray-900"
                 >
                   {showAnnotationForm ? 'Cancel' : '+ Add'}
@@ -500,12 +556,20 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                       />
                     </div>
                   )}
-                  <button
-                    onClick={addAnnotation}
-                    className="w-full px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
-                  >
-                    Add Annotation
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={saveAnnotation}
+                      className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
+                    >
+                      {editingAnnotationId ? 'Update Annotation' : 'Add Annotation'}
+                    </button>
+                    <button
+                      onClick={cancelAnnotationEdit}
+                      className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -519,12 +583,22 @@ export function EpiCurve({ dataset }: EpiCurveProps) {
                       style={{ backgroundColor: `${ann.color}15` }}
                     >
                       <span style={{ color: ann.color }}>{ann.label}</span>
-                      <button
-                        onClick={() => removeAnnotation(ann.id)}
-                        className="text-gray-400 hover:text-gray-600"
-                      >
-                        ×
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => startEditingAnnotation(ann)}
+                          className="text-gray-500 hover:text-gray-700 px-1"
+                          title="Edit annotation"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          onClick={() => removeAnnotation(ann.id)}
+                          className="text-gray-400 hover:text-gray-600 px-1"
+                          title="Delete annotation"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
