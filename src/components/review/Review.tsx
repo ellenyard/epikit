@@ -175,7 +175,7 @@ export function Review({
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Controls and Data Quality */}
-        <div className="hidden lg:block w-72 border-r border-gray-200 bg-white overflow-hidden flex flex-col">
+        <div className="hidden lg:block w-72 border-r border-gray-200 bg-white overflow-y-auto flex flex-col">
           {/* Controls Section */}
           <div className="border-b border-gray-200 bg-white">
             <div className="p-4 space-y-3">
@@ -285,7 +285,7 @@ export function Review({
           </div>
 
           {/* Data Quality Panel */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-y-auto">
             <DataQualityPanel
               issues={dataQualityIssues}
               config={dataQualityConfig}

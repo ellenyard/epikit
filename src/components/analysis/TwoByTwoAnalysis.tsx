@@ -254,7 +254,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                           </svg>
                           <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
-                            The proportion of exposed individuals who became ill. Calculated as: (# Ill among Exposed / Total Exposed) × 100
+                            CDC Definition: The proportion of exposed persons who became ill during the outbreak period. Calculated as: (# Ill among Exposed / Total Exposed) × 100. In outbreak settings, attack rate is often used as a synonym for risk.
                           </div>
                         </div>
                       </div>
@@ -273,7 +273,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                           </svg>
                           <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
-                            The proportion of unexposed individuals who became ill. Calculated as: (# Ill among Unexposed / Total Unexposed) × 100
+                            CDC Definition: The proportion of unexposed persons who became ill during the outbreak period. Calculated as: (# Ill among Unexposed / Total Unexposed) × 100. In outbreak settings, attack rate is often used as a synonym for risk.
                           </div>
                         </div>
                       </div>
@@ -286,7 +286,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                           </svg>
                           <div className="invisible group-hover:visible absolute z-10 w-72 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-32">
-                            Attack Rate Ratio: The ratio of attack rates between exposed and unexposed groups. ARR = Attack Rate (Exposed) / Attack Rate (Unexposed). An ARR &gt; 1 suggests the exposure increases risk of illness; ARR &lt; 1 suggests it decreases risk.
+                            CDC Definition: Attack Rate Ratio (also called Risk Ratio or Relative Risk) compares the risk of illness between exposed and unexposed groups. Calculated as: Attack Rate (Exposed) / Attack Rate (Unexposed). An ARR &gt; 1.0 indicates increased risk for the exposed group; ARR &lt; 1.0 suggests the exposure may be protective.
                           </div>
                         </div>
                       </div>
@@ -583,33 +583,57 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
           {renderSummaryTable()}
 
           {/* Interpretation Example for Cohort Studies */}
-          {studyDesign === 'cohort' && (
+          {studyDesign === 'cohort' && exposureResults.length > 0 && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
-              <p className="text-sm text-gray-700 leading-relaxed">
-                <strong>Example interpretation:</strong> If your attack rate ratio (ARR) is 3.2 with a 95% CI of (1.8 - 5.6), you would state:
-                "People who were exposed were 3.2 times more likely to become ill compared to those who were not exposed.
-                The 95% confidence interval (1.8 - 5.6) does not include 1.0, indicating this association is statistically significant (p &lt; 0.05).
-                This suggests a strong positive association between the exposure and illness." An ARR greater than 1.0 indicates increased risk,
-                while an ARR less than 1.0 suggests the exposure may be protective. The confidence interval tells us the range of plausible
-                values for the true ARR in the population.
-              </p>
+              {(() => {
+                const firstResult = exposureResults[0];
+                const arr = firstResult.results.riskRatio;
+                const ci = firstResult.results.riskRatioCI;
+                const exposureName = firstResult.exposureLabel.toLowerCase();
+                const exposedValue = firstResult.exposedValue;
+                const isSignificant = firstResult.results.chiSquarePValue < 0.05;
+                const ciIncludesOne = ci[0] <= 1.0 && ci[1] >= 1.0;
+
+                return (
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The attack rate ratio (ARR) for {exposureName} is {formatNumber(arr)} with a 95% CI of {formatCI(ci)}.
+                    This means that people who were exposed to {exposureName} ({exposedValue}) were {formatNumber(arr)} times {arr > 1 ? 'more' : 'less'} likely to become ill compared to those who were not exposed.
+                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
+                    This suggests a {arr > 2 ? 'strong' : arr > 1.5 ? 'moderate' : arr > 1 ? 'weak' : ''} {arr > 1 ? 'positive association' : arr < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
+                    An ARR greater than 1.0 indicates increased risk, while an ARR less than 1.0 suggests the exposure may be protective.
+                    The confidence interval tells us the range of plausible values for the true ARR in the population.
+                  </p>
+                );
+              })()}
             </div>
           )}
 
           {/* Interpretation Example for Case-Control Studies */}
-          {studyDesign === 'case-control' && (
+          {studyDesign === 'case-control' && exposureResults.length > 0 && (
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
-              <p className="text-sm text-gray-700 leading-relaxed">
-                <strong>Example interpretation:</strong> If your odds ratio (OR) is 4.5 with a 95% CI of (2.1 - 9.3), you would state:
-                "Cases had 4.5 times the odds of being exposed compared to controls.
-                The 95% confidence interval (2.1 - 9.3) does not include 1.0, indicating this association is statistically significant (p &lt; 0.05).
-                This suggests a strong positive association between the exposure and illness." An OR greater than 1.0 indicates that cases had
-                higher odds of exposure (suggesting the exposure may increase risk), while an OR less than 1.0 suggests cases had lower odds
-                of exposure (suggesting the exposure may be protective). The confidence interval tells us the range of plausible
-                values for the true OR in the population.
-              </p>
+              {(() => {
+                const firstResult = exposureResults[0];
+                const or = firstResult.results.oddsRatio;
+                const ci = firstResult.results.oddsRatioCI;
+                const exposureName = firstResult.exposureLabel.toLowerCase();
+                const exposedValue = firstResult.exposedValue;
+                const isSignificant = firstResult.results.chiSquarePValue < 0.05;
+                const ciIncludesOne = ci[0] <= 1.0 && ci[1] >= 1.0;
+
+                return (
+                  <p className="text-sm text-gray-700 leading-relaxed">
+                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The odds ratio (OR) for {exposureName} is {formatNumber(or)} with a 95% CI of {formatCI(ci)}.
+                    This means that cases had {formatNumber(or)} times the odds of being exposed to {exposureName} ({exposedValue}) compared to controls.
+                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
+                    This suggests a {or > 3 ? 'strong' : or > 2 ? 'moderate' : or > 1 ? 'weak' : ''} {or > 1 ? 'positive association' : or < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
+                    An OR greater than 1.0 indicates that cases had higher odds of exposure (suggesting the exposure may increase risk),
+                    while an OR less than 1.0 suggests cases had lower odds of exposure (suggesting the exposure may be protective).
+                    The confidence interval tells us the range of plausible values for the true OR in the population.
+                  </p>
+                );
+              })()}
             </div>
           )}
         </div>
