@@ -133,29 +133,26 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     });
   }, [dataset.records, filterBy, selectedFilterValues]);
 
-  // Process data
-  const curveData: EpiCurveData = useMemo(() => {
-    if (!dateColumn) {
-      return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
-    }
-    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, annotations);
-  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations]);
-
-  // Calculate exposure window if pathogen is selected
-  // Uses epidemiological method: earliest case - max incubation to earliest case - min incubation
-  const exposureWindow = useMemo(() => {
-    if (!selectedPathogen || !showExposureWindow || curveData.bins.length === 0) return null;
+  // Calculate exposure window dates directly from records (before curveData processing)
+  // This allows us to include them in the date range calculation
+  const exposureWindowDates = useMemo(() => {
+    if (!selectedPathogen || !showExposureWindow || !dateColumn) return null;
 
     const incubation = PATHOGEN_INCUBATION[selectedPathogen];
     if (!incubation) return null;
 
-    // Find first case date from the bins
-    const binsWithCases = curveData.bins.filter(b => b.total > 0);
-    if (binsWithCases.length === 0) return null;
+    // Find first case date directly from filtered records
+    const validRecords = filteredRecords.filter(r => {
+      const dateVal = r[dateColumn];
+      if (!dateVal) return false;
+      const date = parseLocalDate(String(dateVal));
+      return !isNaN(date.getTime());
+    });
 
-    const firstBin = binsWithCases[0];
-    // Get the earliest date from cases in the first bin
-    const firstCaseDate = firstBin.startDate;
+    if (validRecords.length === 0) return null;
+
+    const dates = validRecords.map(r => parseLocalDate(String(r[dateColumn])));
+    const firstCaseDate = new Date(Math.min(...dates.map(d => d.getTime())));
 
     // For a point-source outbreak:
     // Earliest possible exposure = first case - max incubation
@@ -172,7 +169,39 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       pathogen: selectedPathogen,
       incubation,
     };
-  }, [selectedPathogen, showExposureWindow, curveData.bins]);
+  }, [selectedPathogen, showExposureWindow, dateColumn, filteredRecords]);
+
+  // Process data
+  const curveData: EpiCurveData = useMemo(() => {
+    if (!dateColumn) {
+      return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
+    }
+
+    // Include exposure window in annotations for date range calculation
+    const allAnnotations = [...annotations];
+    if (exposureWindowDates) {
+      // Add synthetic annotation for exposure window to ensure it's included in the chart range
+      allAnnotations.push({
+        id: '__exposure_window__',
+        type: 'exposure',
+        category: 'exposure',
+        date: exposureWindowDates.start,
+        endDate: exposureWindowDates.end,
+        label: 'Exposure Window',
+        color: '#dc2626',
+        source: 'auto',
+      });
+    }
+
+    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, allAnnotations);
+  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates]);
+
+  // Calculate exposure window for display (after curveData is available)
+  // Uses epidemiological method: earliest case - max incubation to earliest case - min incubation
+  const exposureWindow = useMemo(() => {
+    if (!exposureWindowDates || curveData.bins.length === 0) return null;
+    return exposureWindowDates;
+  }, [exposureWindowDates, curveData.bins]);
 
   // Helper to get default date from dataset range
   const getDefaultAnnotationDate = (): string => {
@@ -467,6 +496,152 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
             </select>
           </div>
 
+          {/* Annotations */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">Annotations</label>
+              <button
+                onClick={() => showAnnotationForm ? cancelAnnotationEdit() : startAddingAnnotation()}
+                className="text-sm text-gray-600 hover:text-gray-900"
+              >
+                {showAnnotationForm ? 'Cancel' : '+ Add Event'}
+              </button>
+            </div>
+
+            {/* Annotation Form */}
+            {showAnnotationForm && (
+              <div className="space-y-2 mb-3 p-3 bg-white border border-gray-200 rounded-lg">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Event Type</label>
+                  <select
+                    value={newAnnotation.type}
+                    onChange={(e) => setNewAnnotation({ ...newAnnotation, type: e.target.value as AnnotationType })}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                  >
+                    {Object.entries(ANNOTATION_CATEGORIES).map(([categoryKey, category]) => (
+                      <optgroup key={categoryKey} label={category.label}>
+                        {category.types.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={newAnnotation.date}
+                    onChange={(e) => setNewAnnotation({ ...newAnnotation, date: e.target.value })}
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                  />
+                </div>
+                {newAnnotation.type === 'incubation' ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Min Days</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={newAnnotation.minDays}
+                        onChange={(e) => setNewAnnotation({ ...newAnnotation, minDays: e.target.value })}
+                        placeholder="0.5"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Max Days</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={newAnnotation.maxDays}
+                        onChange={(e) => setNewAnnotation({ ...newAnnotation, maxDays: e.target.value })}
+                        placeholder="3"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Label</label>
+                      <input
+                        type="text"
+                        value={newAnnotation.label}
+                        onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
+                        placeholder="Label for chart"
+                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                      />
+                    </div>
+                    {(newAnnotation.type === 'exposure' || newAnnotation.type === 'control-lifted') && (
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">End Date (optional)</label>
+                        <input
+                          type="date"
+                          value={newAnnotation.endDate}
+                          onChange={(e) => setNewAnnotation({ ...newAnnotation, endDate: e.target.value })}
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveAnnotation}
+                    className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
+                  >
+                    {editingAnnotationId ? 'Update' : 'Add Event'}
+                  </button>
+                  <button
+                    onClick={cancelAnnotationEdit}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Active Manual Annotations */}
+            {annotations.length > 0 && (
+              <div className="space-y-1">
+                {annotations.map(ann => (
+                  <div
+                    key={ann.id}
+                    className="flex items-center justify-between px-2 py-1 text-xs rounded"
+                    style={{ backgroundColor: `${ann.color}15` }}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium truncate block" style={{ color: ann.color }}>{ann.label}</span>
+                      <span className="text-gray-400 text-xs">
+                        {ann.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => startEditingAnnotation(ann)}
+                        className="text-gray-500 hover:text-gray-700 px-1"
+                        title="Edit annotation"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={() => removeAnnotation(ann.id)}
+                        className="text-gray-400 hover:text-gray-600 px-1"
+                        title="Delete annotation"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* Advanced Options */}
           <AdvancedOptions>
             {/* Color Scheme */}
@@ -589,152 +764,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                       </p>
                     </div>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* Annotations */}
-            <div className="pt-3 border-t border-gray-200">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annotations</p>
-                <button
-                  onClick={() => showAnnotationForm ? cancelAnnotationEdit() : startAddingAnnotation()}
-                  className="text-xs text-gray-600 hover:text-gray-900"
-                >
-                  {showAnnotationForm ? 'Cancel' : '+ Add'}
-                </button>
-              </div>
-
-              {/* Annotation Form */}
-              {showAnnotationForm && (
-                <div className="space-y-2 mb-3 p-3 bg-white border border-gray-200 rounded-lg">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Event Type</label>
-                    <select
-                      value={newAnnotation.type}
-                      onChange={(e) => setNewAnnotation({ ...newAnnotation, type: e.target.value as AnnotationType })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    >
-                      {Object.entries(ANNOTATION_CATEGORIES).map(([categoryKey, category]) => (
-                        <optgroup key={categoryKey} label={category.label}>
-                          {category.types.map(t => (
-                            <option key={t.value} value={t.value}>{t.label}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Date</label>
-                    <input
-                      type="date"
-                      value={newAnnotation.date}
-                      onChange={(e) => setNewAnnotation({ ...newAnnotation, date: e.target.value })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </div>
-                  {newAnnotation.type === 'incubation' ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Min Days</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={newAnnotation.minDays}
-                          onChange={(e) => setNewAnnotation({ ...newAnnotation, minDays: e.target.value })}
-                          placeholder="0.5"
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Max Days</label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          value={newAnnotation.maxDays}
-                          onChange={(e) => setNewAnnotation({ ...newAnnotation, maxDays: e.target.value })}
-                          placeholder="3"
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                        />
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Label</label>
-                        <input
-                          type="text"
-                          value={newAnnotation.label}
-                          onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
-                          placeholder="Label for chart"
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                        />
-                      </div>
-                      {(newAnnotation.type === 'exposure' || newAnnotation.type === 'control-lifted') && (
-                        <div>
-                          <label className="block text-xs text-gray-500 mb-1">End Date (optional)</label>
-                          <input
-                            type="date"
-                            value={newAnnotation.endDate}
-                            onChange={(e) => setNewAnnotation({ ...newAnnotation, endDate: e.target.value })}
-                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                          />
-                        </div>
-                      )}
-                    </>
-                  )}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={saveAnnotation}
-                      className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
-                    >
-                      {editingAnnotationId ? 'Update' : 'Add Event'}
-                    </button>
-                    <button
-                      onClick={cancelAnnotationEdit}
-                      className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Active Manual Annotations */}
-              {annotations.length > 0 && (
-                <div className="space-y-1">
-                  {annotations.map(ann => (
-                    <div
-                      key={ann.id}
-                      className="flex items-center justify-between px-2 py-1 text-xs rounded"
-                      style={{ backgroundColor: `${ann.color}15` }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium truncate block" style={{ color: ann.color }}>{ann.label}</span>
-                        <span className="text-gray-400 text-xs">
-                          {ann.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button
-                          onClick={() => startEditingAnnotation(ann)}
-                          className="text-gray-500 hover:text-gray-700 px-1"
-                          title="Edit annotation"
-                        >
-                          ✎
-                        </button>
-                        <button
-                          onClick={() => removeAnnotation(ann.id)}
-                          className="text-gray-400 hover:text-gray-600 px-1"
-                          title="Delete annotation"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                  ))}
                 </div>
               )}
             </div>
@@ -927,6 +956,47 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                 <span className="text-sm font-bold text-gray-500">{xAxisLabel}</span>
               </div>
             </div>
+
+            {/* Exposure Window Explanation */}
+            {exposureWindow && (
+              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h5 className="text-sm font-semibold text-blue-900 mb-2">
+                  📚 Understanding the Exposure Window
+                </h5>
+                <div className="text-sm text-blue-800 space-y-2">
+                  <p>
+                    The shaded <span className="font-medium text-red-600">red region</span> on the chart represents the <strong>estimated exposure period</strong> for this outbreak, calculated using CDC epidemiological methods.
+                  </p>
+                  <div className="bg-white p-3 rounded border border-blue-100">
+                    <p className="font-medium mb-1">Calculation Method:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      <li>
+                        <strong>First case date:</strong> {curveData.bins.filter(b => b.total > 0)[0]?.startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </li>
+                      <li>
+                        <strong>Selected pathogen:</strong> {exposureWindow.pathogen}
+                      </li>
+                      <li>
+                        <strong>Incubation period:</strong> {exposureWindow.incubation.min}–{exposureWindow.incubation.max} days
+                      </li>
+                      <li>
+                        <strong>Earliest exposure:</strong> First case date − {Math.ceil(exposureWindow.incubation.max)} days = {exposureWindow.start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </li>
+                      <li>
+                        <strong>Latest exposure:</strong> First case date − {Math.floor(exposureWindow.incubation.min)} days = {exposureWindow.end.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                      </li>
+                    </ul>
+                  </div>
+                  <p className="text-xs text-blue-700 mt-2">
+                    <strong>Note for epidemiologists:</strong> This calculation assumes a point-source outbreak where all cases were exposed during a single time period. For continuing or propagated outbreaks, the exposure period may differ. Incubation period data is based on CDC and peer-reviewed epidemiological literature. Always verify with laboratory confirmation and environmental investigations.
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    <strong>Reference:</strong> CDC. Principles of Epidemiology in Public Health Practice, Third Edition.
+                    Available at: <a href="https://www.cdc.gov/csels/dsepd/ss1978/" target="_blank" rel="noopener noreferrer" className="underline hover:text-blue-800">https://www.cdc.gov/csels/dsepd/ss1978/</a>
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Results Actions */}
             <ResultsActions
