@@ -1,4 +1,18 @@
 import { useState, useMemo, useCallback } from 'react';
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { Dataset } from '../../types/analysis';
 import { ResultsActions, ExportIcons, AdvancedOptions } from '../shared';
 
@@ -9,6 +23,108 @@ interface TwoWayTableBuilderProps {
 
 type DenominatorMode = 'total' | 'valid';
 
+interface VariableConfig {
+  expanded: boolean;
+  valueOfInterest: string;
+}
+
+interface SortableVariableItemProps {
+  varKey: string;
+  column: { key: string; label: string } | undefined;
+  config: VariableConfig;
+  uniqueValues: string[];
+  updateConfig: (varKey: string, updates: Partial<VariableConfig>) => void;
+}
+
+function SortableVariableItem({
+  varKey,
+  column,
+  config,
+  uniqueValues,
+  updateConfig,
+}: SortableVariableItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: varKey });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="border-b border-gray-100 pb-3 last:border-0 last:pb-0"
+    >
+      <div className="flex items-start gap-2">
+        <div
+          {...attributes}
+          {...listeners}
+          className="mt-1 cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600"
+        >
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 8h16M4 16h16"
+            />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-800 mb-2">{column?.label}</p>
+          <div className="flex items-center gap-3 mb-2">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name={`mode-${varKey}`}
+                checked={config.expanded}
+                onChange={() => updateConfig(varKey, { expanded: true })}
+                className="text-gray-700"
+              />
+              <span className="text-xs text-gray-600">Expanded</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name={`mode-${varKey}`}
+                checked={!config.expanded}
+                onChange={() => updateConfig(varKey, { expanded: false })}
+                className="text-gray-700"
+              />
+              <span className="text-xs text-gray-600">Condensed</span>
+            </label>
+          </div>
+          {!config.expanded && (
+            <select
+              value={config.valueOfInterest}
+              onChange={(e) => updateConfig(varKey, { valueOfInterest: e.target.value })}
+              className="w-full text-xs px-2 py-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+            >
+              {uniqueValues.map(val => (
+                <option key={val} value={val}>{val}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface CrossTabCell {
   count: number;
   rowPercent: number;
@@ -17,6 +133,7 @@ interface CrossTabCell {
 }
 
 interface CrossTabResult {
+  rowVariable: string;
   rowValues: string[];
   colValues: string[];
   cells: Map<string, CrossTabCell>; // key: `${rowVal}|${colVal}`
@@ -46,13 +163,50 @@ const formatPercent = (value: number, sampleSize: number): string => {
 };
 
 export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuilderProps) {
-  const [rowVariable, setRowVariable] = useState<string>('');
+  const [selectedRowVariables, setSelectedRowVariables] = useState<string[]>([]);
   const [colVariable, setColVariable] = useState<string>('');
-  const [denominatorMode, setDenominatorMode] = useState<DenominatorMode>('total');
-  const [includeMissingInPercent, setIncludeMissingInPercent] = useState<boolean>(false);
+  const [rowVariableConfigs, setRowVariableConfigs] = useState<Record<string, VariableConfig>>({});
+  const [denominatorMode, setDenominatorMode] = useState<DenominatorMode>('valid');
   const [showRowPercent, setShowRowPercent] = useState<boolean>(true);
   const [showColPercent, setShowColPercent] = useState<boolean>(true);
   const [showTotalPercent, setShowTotalPercent] = useState<boolean>(false);
+
+  // Setup drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  // Handle drag end for reordering row variables
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    setSelectedRowVariables((items) => {
+      const oldIndex = items.findIndex((item) => item === active.id);
+      const newIndex = items.findIndex((item) => item === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        return arrayMove(items, oldIndex, newIndex);
+      }
+      return items;
+    });
+  }, []);
+
+  // Toggle row variable selection
+  const toggleRowVariable = useCallback((varKey: string) => {
+    setSelectedRowVariables(prev => {
+      if (prev.includes(varKey)) {
+        return prev.filter(v => v !== varKey);
+      } else {
+        return [...prev, varKey];
+      }
+    });
+  }, []);
 
   // Get valid categorical/date columns (exclude ID, free-text, coordinates)
   const validColumns = useMemo(() => {
@@ -118,135 +272,175 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
     return orderedValues;
   }, [dataset.records]);
 
-  // Calculate cross-tabulation
-  const crossTab = useMemo((): CrossTabResult | null => {
-    if (!rowVariable || !colVariable) return null;
+  // Get config for a row variable, with defaults
+  const getRowConfig = useCallback((varKey: string): VariableConfig => {
+    if (rowVariableConfigs[varKey]) {
+      return rowVariableConfigs[varKey];
+    }
+    const uniqueValues = getUniqueValues(varKey);
+    const defaultValue = uniqueValues.includes('Yes') ? 'Yes' : uniqueValues[0] || '';
+    return { expanded: true, valueOfInterest: defaultValue };
+  }, [rowVariableConfigs, getUniqueValues]);
 
-    const rowValues = getUniqueValues(rowVariable);
-    const colValues = getUniqueValues(colVariable);
+  // Update config for a row variable
+  const updateRowConfig = useCallback((varKey: string, updates: Partial<VariableConfig>) => {
+    setRowVariableConfigs(prev => ({
+      ...prev,
+      [varKey]: { ...getRowConfig(varKey), ...updates }
+    }));
+  }, [getRowConfig]);
 
-    // Initialize cells
-    const cells = new Map<string, CrossTabCell>();
-    const rowTotals = new Map<string, number>();
-    const colTotals = new Map<string, number>();
+  // Calculate cross-tabulations for all selected row variables
+  const crossTabs = useMemo((): CrossTabResult[] => {
+    if (selectedRowVariables.length === 0 || !colVariable) return [];
 
-    // Initialize all cells to 0
-    for (const rv of rowValues) {
-      rowTotals.set(rv, 0);
-      for (const cv of colValues) {
-        cells.set(`${rv}|${cv}`, { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 });
+    return selectedRowVariables.map(rowVariable => {
+      const config = getRowConfig(rowVariable);
+
+      let rowValues = getUniqueValues(rowVariable);
+      const colValues = getUniqueValues(colVariable);
+
+      // Filter rowValues based on config (expanded vs condensed)
+      let displayRowValues: string[];
+      if (config.expanded) {
+        displayRowValues = [...rowValues];
+        // Add Missing/Unknown to displayed values if denominatorMode is 'total'
+        if (denominatorMode === 'total') {
+          displayRowValues.push('Missing/Unknown');
+        }
+      } else {
+        // Condensed mode: only show the value of interest
+        displayRowValues = [config.valueOfInterest];
       }
-    }
-    for (const cv of colValues) {
-      colTotals.set(cv, 0);
-    }
 
-    // Add Missing/Unknown categories
-    rowValues.push('Missing/Unknown');
-    colValues.push('Missing/Unknown');
-    rowTotals.set('Missing/Unknown', 0);
-    colTotals.set('Missing/Unknown', 0);
+      // Initialize cells
+      const cells = new Map<string, CrossTabCell>();
+      const rowTotals = new Map<string, number>();
+      const colTotals = new Map<string, number>();
 
-    // Initialize missing cells
-    for (const rv of rowValues) {
-      cells.set(`${rv}|Missing/Unknown`, { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 });
-    }
-    for (const cv of colValues) {
-      cells.set(`Missing/Unknown|${cv}`, { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 });
-    }
+      // Add column values including missing if needed
+      let allColValues = [...colValues];
+      if (denominatorMode === 'total') {
+        allColValues.push('Missing/Unknown');
+      }
 
-    let grandTotal = 0;
-    let missingRowCount = 0;
-    let missingColCount = 0;
-    let missingBothCount = 0;
+      // Initialize all cells to 0
+      for (const rv of displayRowValues) {
+        rowTotals.set(rv, 0);
+        for (const cv of allColValues) {
+          cells.set(`${rv}|${cv}`, { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 });
+        }
+      }
+      for (const cv of allColValues) {
+        colTotals.set(cv, 0);
+      }
 
-    // Count records
-    for (const record of dataset.records) {
-      const rowVal = record[rowVariable];
-      const colVal = record[colVariable];
+      let grandTotal = 0;
+      let missingRowCount = 0;
+      let missingColCount = 0;
+      let missingBothCount = 0;
 
-      const rowStr = (rowVal === null || rowVal === undefined || String(rowVal).trim() === '')
-        ? 'Missing/Unknown'
-        : String(rowVal);
-      const colStr = (colVal === null || colVal === undefined || String(colVal).trim() === '')
-        ? 'Missing/Unknown'
-        : String(colVal);
+      // Count records
+      for (const record of dataset.records) {
+        const rowVal = record[rowVariable];
+        const colVal = record[colVariable];
 
-      const key = `${rowStr}|${colStr}`;
-      const cell = cells.get(key) || { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 };
-      cell.count++;
-      cells.set(key, cell);
+        const isRowMissing = rowVal === null || rowVal === undefined || String(rowVal).trim() === '';
+        const isColMissing = colVal === null || colVal === undefined || String(colVal).trim() === '';
 
-      rowTotals.set(rowStr, (rowTotals.get(rowStr) || 0) + 1);
-      colTotals.set(colStr, (colTotals.get(colStr) || 0) + 1);
-      grandTotal++;
+        // Track missing counts
+        if (isRowMissing) missingRowCount++;
+        if (isColMissing) missingColCount++;
+        if (isRowMissing && isColMissing) missingBothCount++;
 
-      if (rowStr === 'Missing/Unknown') missingRowCount++;
-      if (colStr === 'Missing/Unknown') missingColCount++;
-      if (rowStr === 'Missing/Unknown' && colStr === 'Missing/Unknown') missingBothCount++;
-    }
+        // Determine row and column strings
+        let rowStr: string;
+        let colStr: string;
 
-    // Calculate denominator based on mode
-    let percentDenom = grandTotal;
-    if (denominatorMode === 'valid' && !includeMissingInPercent) {
-      // Exclude records where either variable is missing
-      percentDenom = grandTotal - missingRowCount - missingColCount + missingBothCount;
-    }
+        if (denominatorMode === 'total') {
+          rowStr = isRowMissing ? 'Missing/Unknown' : String(rowVal);
+          colStr = isColMissing ? 'Missing/Unknown' : String(colVal);
+        } else {
+          // Skip records with missing values when denominatorMode is 'valid'
+          if (isRowMissing || isColMissing) {
+            grandTotal++;
+            continue;
+          }
+          rowStr = String(rowVal);
+          colStr = String(colVal);
+        }
 
-    // Calculate percentages
-    for (const rv of rowValues) {
-      const rowTotal = rowTotals.get(rv) || 0;
+        // In condensed mode, only count if rowStr matches the value of interest
+        if (!config.expanded && rowStr !== config.valueOfInterest) {
+          grandTotal++;
+          continue;
+        }
 
-      for (const cv of colValues) {
-        const key = `${rv}|${cv}`;
-        const cell = cells.get(key);
-        if (cell) {
-          const colTotal = colTotals.get(cv) || 0;
+        // Only count if this row value is in our display list
+        if (!displayRowValues.includes(rowStr)) {
+          grandTotal++;
+          continue;
+        }
 
-          // Row percentage (denominator = row total)
-          cell.rowPercent = rowTotal > 0 ? (cell.count / rowTotal) * 100 : 0;
+        const key = `${rowStr}|${colStr}`;
+        const cell = cells.get(key) || { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 };
+        cell.count++;
+        cells.set(key, cell);
 
-          // Column percentage (denominator = column total)
-          cell.colPercent = colTotal > 0 ? (cell.count / colTotal) * 100 : 0;
+        rowTotals.set(rowStr, (rowTotals.get(rowStr) || 0) + 1);
+        colTotals.set(colStr, (colTotals.get(colStr) || 0) + 1);
+        grandTotal++;
+      }
 
-          // Total percentage (denominator = grand total or valid total)
-          if (denominatorMode === 'total' || includeMissingInPercent) {
+      // Calculate percentages
+      for (const rv of displayRowValues) {
+        const rowTotal = rowTotals.get(rv) || 0;
+
+        for (const cv of allColValues) {
+          const key = `${rv}|${cv}`;
+          const cell = cells.get(key);
+          if (cell) {
+            const colTotal = colTotals.get(cv) || 0;
+
+            // Row percentage (denominator = row total)
+            cell.rowPercent = rowTotal > 0 ? (cell.count / rowTotal) * 100 : 0;
+
+            // Column percentage (denominator = column total)
+            cell.colPercent = colTotal > 0 ? (cell.count / colTotal) * 100 : 0;
+
+            // Total percentage (denominator = grand total)
             cell.totalPercent = grandTotal > 0 ? (cell.count / grandTotal) * 100 : 0;
-          } else {
-            // Only calculate for non-missing cells
-            if (rv !== 'Missing/Unknown' && cv !== 'Missing/Unknown') {
-              cell.totalPercent = percentDenom > 0 ? (cell.count / percentDenom) * 100 : 0;
-            } else {
-              cell.totalPercent = 0;
-            }
           }
         }
       }
-    }
 
-    return {
-      rowValues,
-      colValues,
-      cells,
-      rowTotals,
-      colTotals,
-      grandTotal,
-      missingRowCount,
-      missingColCount,
-      missingBothCount,
-    };
-  }, [rowVariable, colVariable, dataset.records, getUniqueValues, denominatorMode, includeMissingInPercent]);
+      return {
+        rowVariable,
+        rowValues: displayRowValues,
+        colValues: allColValues,
+        cells,
+        rowTotals,
+        colTotals,
+        grandTotal,
+        missingRowCount,
+        missingColCount,
+        missingBothCount,
+      };
+    });
+  }, [selectedRowVariables, colVariable, dataset.records, getUniqueValues, getRowConfig, denominatorMode]);
 
   // Check for small cell counts
   const hasSmallCells = useMemo(() => {
-    if (!crossTab) return false;
-    for (const cell of crossTab.cells.values()) {
-      if (cell.count > 0 && cell.count < 5) {
-        return true;
+    if (crossTabs.length === 0) return false;
+    for (const crossTab of crossTabs) {
+      for (const cell of crossTab.cells.values()) {
+        if (cell.count > 0 && cell.count < 5) {
+          return true;
+        }
       }
     }
     return false;
-  }, [crossTab]);
+  }, [crossTabs]);
 
   // Get column label
   const getColumnLabel = (key: string): string => {
@@ -256,71 +450,74 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
 
   // Export to CSV
   const exportToCSV = useCallback(() => {
-    if (!crossTab || !rowVariable || !colVariable) return;
+    if (crossTabs.length === 0 || !colVariable) return;
 
     const timestamp = new Date().toISOString();
-    const rowLabel = getColumnLabel(rowVariable);
     const colLabel = getColumnLabel(colVariable);
 
-    let csv = `# Two-Way Table Export\n`;
+    let csv = `# Two-Way Tables Export\n`;
     csv += `# Timestamp: ${timestamp}\n`;
-    csv += `# Row Variable: ${rowLabel}\n`;
     csv += `# Column Variable: ${colLabel}\n`;
-    csv += `# Denominator: ${denominatorMode === 'total' ? 'Total records' : 'Valid records only'}\n`;
-    csv += `# Include missing in percentages: ${includeMissingInPercent ? 'Yes' : 'No'}\n\n`;
+    csv += `# Denominator: ${denominatorMode === 'total' ? 'Total records' : 'Valid records only'}\n\n`;
 
-    // Header row
-    const headers = [rowLabel, ...crossTab.colValues.slice(0, -1), 'Missing/Unknown', 'Row Total'];
-    csv += headers.map(h => `"${h}"`).join(',') + '\n';
+    // Export each row variable's cross-tabulation
+    for (const crossTab of crossTabs) {
+      const rowLabel = getColumnLabel(crossTab.rowVariable);
+      csv += `\n# Row Variable: ${rowLabel}\n`;
 
-    // Data rows
-    for (const rv of crossTab.rowValues) {
-      const rowTotal = crossTab.rowTotals.get(rv) || 0;
-      const rowData = [rv];
+      // Header row
+      const headers = [rowLabel, ...crossTab.colValues, 'Row Total'];
+      csv += headers.map(h => `"${h}"`).join(',') + '\n';
 
-      for (const cv of crossTab.colValues) {
-        const cell = crossTab.cells.get(`${rv}|${cv}`);
-        if (cell) {
-          let cellValue = String(cell.count);
-          const percentParts: string[] = [];
-          if (showRowPercent) percentParts.push(`Row: ${formatPercent(cell.rowPercent, crossTab.grandTotal)}%`);
-          if (showColPercent) percentParts.push(`Col: ${formatPercent(cell.colPercent, crossTab.grandTotal)}%`);
-          if (showTotalPercent) percentParts.push(`Total: ${formatPercent(cell.totalPercent, crossTab.grandTotal)}%`);
-          if (percentParts.length > 0) {
-            cellValue += ` (${percentParts.join('; ')})`;
+      // Data rows
+      for (const rv of crossTab.rowValues) {
+        const rowTotal = crossTab.rowTotals.get(rv) || 0;
+        const rowData = [rv];
+
+        for (const cv of crossTab.colValues) {
+          const cell = crossTab.cells.get(`${rv}|${cv}`);
+          if (cell) {
+            let cellValue = String(cell.count);
+            const percentParts: string[] = [];
+            if (showRowPercent) percentParts.push(`Row: ${formatPercent(cell.rowPercent, crossTab.grandTotal)}%`);
+            if (showColPercent) percentParts.push(`Col: ${formatPercent(cell.colPercent, crossTab.grandTotal)}%`);
+            if (showTotalPercent) percentParts.push(`Total: ${formatPercent(cell.totalPercent, crossTab.grandTotal)}%`);
+            if (percentParts.length > 0) {
+              cellValue += ` (${percentParts.join('; ')})`;
+            }
+            rowData.push(cellValue);
+          } else {
+            rowData.push('0');
           }
-          rowData.push(cellValue);
-        } else {
-          rowData.push('0');
         }
+
+        rowData.push(String(rowTotal));
+        csv += rowData.map(d => `"${d}"`).join(',') + '\n';
       }
 
-      rowData.push(String(rowTotal));
-      csv += rowData.map(d => `"${d}"`).join(',') + '\n';
+      // Column totals row
+      const colTotalRow = ['Column Total'];
+      for (const cv of crossTab.colValues) {
+        colTotalRow.push(String(crossTab.colTotals.get(cv) || 0));
+      }
+      colTotalRow.push(String(crossTab.grandTotal));
+      csv += colTotalRow.map(d => `"${d}"`).join(',') + '\n';
     }
-
-    // Column totals row
-    const colTotalRow = ['Column Total'];
-    for (const cv of crossTab.colValues) {
-      colTotalRow.push(String(crossTab.colTotals.get(cv) || 0));
-    }
-    colTotalRow.push(String(crossTab.grandTotal));
-    csv += colTotalRow.map(d => `"${d}"`).join(',') + '\n';
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `two_way_table_${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `two_way_tables_${new Date().toISOString().split('T')[0]}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [crossTab, rowVariable, colVariable, denominatorMode, includeMissingInPercent, showRowPercent, showColPercent, showTotalPercent]);
+  }, [crossTabs, colVariable, denominatorMode, showRowPercent, showColPercent, showTotalPercent, getColumnLabel]);
 
   // Check if selected variables are valid
   const showFreeTextWarning = useMemo(() => {
-    if (!rowVariable && !colVariable) return false;
+    if (selectedRowVariables.length === 0 && !colVariable) return false;
     const allColumns = dataset.columns;
 
     const checkColumn = (key: string) => {
@@ -336,8 +533,9 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
       return uniqueValues.size > 30;
     };
 
-    return (rowVariable && checkColumn(rowVariable)) || (colVariable && checkColumn(colVariable));
-  }, [rowVariable, colVariable, dataset]);
+    const hasHighCardinalityRow = selectedRowVariables.some(varKey => checkColumn(varKey));
+    return hasHighCardinalityRow || (colVariable && checkColumn(colVariable));
+  }, [selectedRowVariables, colVariable, dataset]);
 
   return (
     <div className="space-y-6">
@@ -348,27 +546,27 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-4">Select Variables</h4>
 
-            {/* Row Variable */}
+            {/* Row Variables */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Row Variable
+                Row Variables
               </label>
-              <select
-                value={rowVariable}
-                onChange={(e) => setRowVariable(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-              >
-                <option value="">Select variable...</option>
+              <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-200 rounded p-2">
                 {validColumns.map(col => (
-                  <option
-                    key={col.key}
-                    value={col.key}
-                    disabled={col.key === colVariable}
-                  >
-                    {col.label}
-                  </option>
+                  <label key={col.key} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedRowVariables.includes(col.key)}
+                      onChange={() => toggleRowVariable(col.key)}
+                      disabled={col.key === colVariable}
+                      className="text-gray-700 rounded"
+                    />
+                    <span className="text-sm text-gray-700 truncate" title={col.label}>
+                      {col.label}
+                    </span>
+                  </label>
                 ))}
-              </select>
+              </div>
             </div>
 
             {/* Column Variable */}
@@ -386,7 +584,7 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
                   <option
                     key={col.key}
                     value={col.key}
-                    disabled={col.key === rowVariable}
+                    disabled={selectedRowVariables.includes(col.key)}
                   >
                     {col.label}
                   </option>
@@ -412,10 +610,78 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
             )}
           </div>
 
-          {/* Denominator Settings */}
+          {/* Percentage Settings */}
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-3">Percentage Settings</h4>
 
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs font-medium text-gray-600 mb-2">Show Percentages</p>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showRowPercent}
+                    onChange={(e) => setShowRowPercent(e.target.checked)}
+                    className="rounded text-gray-700 focus:ring-gray-500"
+                  />
+                  <span className="text-sm text-gray-700">Row % (denominator = row total)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showColPercent}
+                    onChange={(e) => setShowColPercent(e.target.checked)}
+                    className="rounded text-gray-700 focus:ring-gray-500"
+                  />
+                  <span className="text-sm text-gray-700">Column % (denominator = column total)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showTotalPercent}
+                    onChange={(e) => setShowTotalPercent(e.target.checked)}
+                    className="rounded text-gray-700 focus:ring-gray-500"
+                  />
+                  <span className="text-sm text-gray-700">Total % (denominator = grand total)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          {/* Row Variable Settings */}
+          {selectedRowVariables.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-gray-900">Row Variable Settings</h4>
+                <span className="text-xs text-gray-500">Drag to reorder</span>
+              </div>
+              <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                <SortableContext items={selectedRowVariables} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-4">
+                    {selectedRowVariables.map(varKey => {
+                      const column = dataset.columns.find(c => c.key === varKey);
+                      const config = getRowConfig(varKey);
+                      const uniqueValues = getUniqueValues(varKey);
+
+                      return (
+                        <SortableVariableItem
+                          key={varKey}
+                          varKey={varKey}
+                          column={column}
+                          config={config}
+                          uniqueValues={uniqueValues}
+                          updateConfig={updateRowConfig}
+                        />
+                      );
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+          )}
+
+          {/* Advanced Options */}
+          <AdvancedOptions>
             <div className="space-y-3">
               <div>
                 <p className="text-xs font-medium text-gray-600 mb-2">Denominator for Total %</p>
@@ -442,52 +708,6 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
                   </label>
                 </div>
               </div>
-
-              <div className="pt-2 border-t border-gray-100">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeMissingInPercent}
-                    onChange={(e) => setIncludeMissingInPercent(e.target.checked)}
-                    className="rounded text-gray-700 focus:ring-gray-500"
-                  />
-                  <span className="text-sm text-gray-700">Include missing in % denominator</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Display Options */}
-          <AdvancedOptions>
-            <div className="space-y-3">
-              <p className="text-xs font-medium text-gray-600 mb-2">Show Percentages</p>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showRowPercent}
-                  onChange={(e) => setShowRowPercent(e.target.checked)}
-                  className="rounded text-gray-700 focus:ring-gray-500"
-                />
-                <span className="text-sm text-gray-700">Row % (denominator = row total)</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showColPercent}
-                  onChange={(e) => setShowColPercent(e.target.checked)}
-                  className="rounded text-gray-700 focus:ring-gray-500"
-                />
-                <span className="text-sm text-gray-700">Column % (denominator = column total)</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={showTotalPercent}
-                  onChange={(e) => setShowTotalPercent(e.target.checked)}
-                  className="rounded text-gray-700 focus:ring-gray-500"
-                />
-                <span className="text-sm text-gray-700">Total % (denominator = grand total)</span>
-              </label>
             </div>
           </AdvancedOptions>
         </div>
@@ -520,14 +740,14 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
             </div>
           </div>
 
-          {!rowVariable || !colVariable ? (
+          {selectedRowVariables.length === 0 || !colVariable ? (
             <div className="bg-white border border-gray-200 rounded-lg p-8 text-center text-gray-400">
               <svg className="mx-auto h-12 w-12 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
               </svg>
-              <p>Select a row and column variable to create a two-way table</p>
+              <p>Select row variables and a column variable to create two-way tables</p>
             </div>
-          ) : crossTab ? (
+          ) : crossTabs.length > 0 ? (
             <div className="space-y-4">
               {/* Small Cell Warning */}
               {hasSmallCells && (
@@ -546,42 +766,43 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
                 </div>
               )}
 
-              {/* Results Table */}
-              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                  <h4 className="text-sm font-semibold text-gray-900">
-                    {getColumnLabel(rowVariable)} × {getColumnLabel(colVariable)}
-                  </h4>
-                  <p className="text-xs text-gray-500 mt-1">
-                    N = {crossTab.grandTotal} |
-                    Missing row: {crossTab.missingRowCount} |
-                    Missing column: {crossTab.missingColCount}
-                  </p>
-                </div>
+              {/* Results Tables */}
+              {crossTabs.map((crossTab, tableIdx) => (
+                <div key={crossTab.rowVariable} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-900">
+                      {getColumnLabel(crossTab.rowVariable)} × {getColumnLabel(colVariable)}
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-1">
+                      N = {crossTab.grandTotal} |
+                      Missing row: {crossTab.missingRowCount} |
+                      Missing column: {crossTab.missingColCount}
+                    </p>
+                  </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border-b border-r border-gray-200">
-                          {getColumnLabel(rowVariable)} \ {getColumnLabel(colVariable)}
-                        </th>
-                        {crossTab.colValues.map(cv => (
-                          <th
-                            key={cv}
-                            className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200"
-                          >
-                            {cv}
+                  <div className="overflow-x-auto">
+                    <table className="text-sm border-collapse">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase border-b border-r border-gray-200">
+                            {getColumnLabel(crossTab.rowVariable)} \ {getColumnLabel(colVariable)}
                           </th>
-                        ))}
-                        <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase border-b border-l border-gray-200 bg-gray-100">
-                          Row Total
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {crossTab.rowValues.map((rv, rowIdx) => {
-                        const rowTotal = crossTab.rowTotals.get(rv) || 0;
+                          {crossTab.colValues.map(cv => (
+                            <th
+                              key={cv}
+                              className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-b border-gray-200"
+                            >
+                              {cv}
+                            </th>
+                          ))}
+                          <th className="px-3 py-2 text-center text-xs font-medium text-gray-700 uppercase border-b border-l border-gray-200 bg-gray-100">
+                            Row Total
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {crossTab.rowValues.map((rv, rowIdx) => {
+                          const rowTotal = crossTab.rowTotals.get(rv) || 0;
                         const isLastRow = rowIdx === crossTab.rowValues.length - 1;
 
                         return (
@@ -640,37 +861,36 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
                           {crossTab.grandTotal}
                         </td>
                       </tr>
-                    </tbody>
-                  </table>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+              ))}
 
-                {/* Footer Note */}
-                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 space-y-1">
+              {/* Footer Note */}
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
+                <div className="space-y-1">
                   <p className="text-xs text-gray-600">
-                    <strong>Denominator:</strong>{' '}
-                    {denominatorMode === 'total' ? 'Total records' : 'Valid records only'}
-                    {' | '}
-                    <strong>Missing in %:</strong> {includeMissingInPercent ? 'Included' : 'Excluded'}
+                    <strong>Denominator for Total %:</strong>{' '}
+                    {denominatorMode === 'total' ? 'Total records (including missing)' : 'Valid records only (excluding missing)'}
                   </p>
                   <p className="text-xs text-gray-500">
                     Row % = count ÷ row total | Col % = count ÷ column total | Total % = count ÷ grand total
                   </p>
                 </div>
-
-                {/* Results Actions */}
-                <div className="px-4 pb-4">
-                  <ResultsActions
-                    actions={[
-                      {
-                        label: 'Export CSV',
-                        onClick: exportToCSV,
-                        icon: ExportIcons.csv,
-                        variant: 'primary',
-                      },
-                    ]}
-                  />
-                </div>
               </div>
+
+              {/* Results Actions */}
+              <ResultsActions
+                actions={[
+                  {
+                    label: 'Export CSV',
+                    onClick: exportToCSV,
+                    icon: ExportIcons.csv,
+                    variant: 'primary',
+                  },
+                ]}
+              />
             </div>
           ) : null}
         </div>
