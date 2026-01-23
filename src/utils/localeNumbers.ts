@@ -1,4 +1,4 @@
-import { LocaleConfig } from '../contexts/LocaleContext';
+import type { LocaleConfig } from '../contexts/LocaleContext';
 
 /**
  * Parse a number string that may use locale-specific formatting
@@ -145,7 +145,6 @@ export function isValidLocaleNumber(value: string, config: LocaleConfig): boolea
  */
 export function getNumberInputPattern(config: LocaleConfig): string {
   // Allow optional minus, digits with optional thousands separators, optional decimal part
-  const decimal = config.decimalSeparator === '.' ? '\\.' : config.decimalSeparator;
   const thousands = config.thousandsSeparator === '.' ? '\\.' : config.thousandsSeparator;
 
   // Allow both locale format and period format for flexibility
