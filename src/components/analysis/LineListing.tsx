@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import type { Dataset, CaseRecord, FilterCondition, SortConfig, DataColumn, EditLogEntry } from '../../types/analysis';
 import { filterRecords, sortRecords } from '../../hooks/useDataset';
-import { EditPromptModal } from '../review/EditPromptModal';
+import { RecordEditorSidebar } from '../review/RecordEditorSidebar';
 
 interface PendingEdit {
+  record: CaseRecord;
   recordId: string;
   recordIdentifier: string;
   columnKey: string;
@@ -99,11 +100,15 @@ export function LineListing({
       const firstCol = dataset.columns[0];
       const recordIdentifier = firstCol ? String(record[firstCol.key] ?? record.id) : record.id;
 
+      // Create updated record with new value
+      const updatedRecord = { ...record, [editingCell.column]: newValue };
+
       onUpdateRecord(editingCell.recordId, { [editingCell.column]: newValue });
 
-      // Show the edit prompt modal if callback is provided
+      // Show the edit sidebar if callback is provided
       if (onEditComplete) {
         setPendingEdit({
+          record: updatedRecord,
           recordId: editingCell.recordId,
           recordIdentifier,
           columnKey: col.key,
@@ -366,11 +371,15 @@ export function LineListing({
         )}
       </div>
 
-      {/* Edit Prompt Modal */}
+      {/* Record Editor Sidebar */}
       {pendingEdit && (
-        <EditPromptModal
+        <RecordEditorSidebar
+          isOpen={!!pendingEdit}
+          record={pendingEdit.record}
+          columns={dataset.columns}
           recordIdentifier={pendingEdit.recordIdentifier}
-          columnLabel={pendingEdit.columnLabel}
+          editedColumnKey={pendingEdit.columnKey}
+          editedColumnLabel={pendingEdit.columnLabel}
           oldValue={pendingEdit.oldValue}
           newValue={pendingEdit.newValue}
           onSave={handleEditPromptSave}
