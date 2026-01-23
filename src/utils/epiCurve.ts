@@ -73,7 +73,8 @@ export function processEpiCurveData(
   records: CaseRecord[],
   dateColumn: string,
   binSize: BinSize,
-  stratifyBy?: string
+  stratifyBy?: string,
+  annotations?: Annotation[]
 ): EpiCurveData {
   // Filter records with valid dates
   const validRecords = records.filter(r => {
@@ -92,17 +93,51 @@ export function processEpiCurveData(
   const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
   const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
 
-  // Adjust to bin boundaries
-  let startDate = getBinStart(minDate, binSize);
-  let endDate = getBinEnd(maxDate, binSize);
+  // Check if annotations extend the date range
+  let annotationMinDate = minDate;
+  let annotationMaxDate = maxDate;
 
-  // Add padding bins (2 on each side) for visual spacing with 0 cases
+  if (annotations && annotations.length > 0) {
+    annotations.forEach(ann => {
+      if (ann.date < annotationMinDate) {
+        annotationMinDate = ann.date;
+      }
+      if (ann.date > annotationMaxDate) {
+        annotationMaxDate = ann.date;
+      }
+      if (ann.endDate) {
+        if (ann.endDate > annotationMaxDate) {
+          annotationMaxDate = ann.endDate;
+        }
+      }
+    });
+  }
+
+  // Adjust to bin boundaries
+  let startDate = getBinStart(annotationMinDate, binSize);
+  let endDate = getBinEnd(annotationMaxDate, binSize);
+
+  // Add padding bins - 2 on each side for data, but if we have annotations
+  // add 1 extra bin before/after the annotation for better visualization
   const paddingBins = 2;
   for (let i = 0; i < paddingBins; i++) {
     startDate = getPreviousBinStart(startDate, binSize);
   }
   for (let i = 0; i < paddingBins; i++) {
     endDate = getNextBinStart(endDate, binSize);
+  }
+
+  // If annotations extend beyond data range, add 1 extra bin for padding
+  if (annotations && annotations.length > 0) {
+    const dataStart = getBinStart(minDate, binSize);
+    const dataEnd = getBinEnd(maxDate, binSize);
+
+    if (annotationMinDate < dataStart) {
+      startDate = getPreviousBinStart(startDate, binSize);
+    }
+    if (annotationMaxDate > dataEnd) {
+      endDate = getNextBinStart(endDate, binSize);
+    }
   }
 
   // Generate bins
