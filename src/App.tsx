@@ -8,9 +8,8 @@ import { Review } from './components/review/Review';
 import { Collect } from './components/collect/Collect';
 import { EpiCurve } from './components/analysis/EpiCurve';
 import { SpotMap } from './components/analysis/SpotMap';
-import { DescriptiveStats } from './components/analysis/DescriptiveStats';
+import { DescriptiveTables } from './components/analysis/DescriptiveTables';
 import { TwoByTwoAnalysis } from './components/analysis/TwoByTwoAnalysis';
-import { OneWayTables } from './components/analysis/OneWayTables';
 import { DataImport } from './components/analysis/DataImport';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { HelpCenter } from './components/HelpCenter';
@@ -20,7 +19,7 @@ import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
 
-type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive' | '1way' | '2way';
+type Module = 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive-tables' | '2way';
 type FormView = 'builder' | 'preview';
 
 // Create demo dataset
@@ -316,7 +315,7 @@ function App() {
   }, []);
 
   // Check if current module needs dataset selector
-  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive', '1way', '2way'].includes(activeModule);
+  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'descriptive-tables', '2way'].includes(activeModule);
 
   return (
     <div className="h-screen flex flex-col">
@@ -378,24 +377,14 @@ function App() {
                 Spot Map
               </button>
               <button
-                onClick={() => setActiveModule('descriptive')}
+                onClick={() => setActiveModule('descriptive-tables')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'descriptive'
+                  activeModule === 'descriptive-tables'
                     ? 'bg-slate-700 text-white'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
-                Descriptive
-              </button>
-              <button
-                onClick={() => setActiveModule('1way')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === '1way'
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                1-Way Tables
+                Descriptive Tables
               </button>
               <button
                 onClick={() => setActiveModule('2way')}
@@ -537,10 +526,8 @@ function App() {
             <EpiCurve dataset={activeDataset} />
           ) : activeModule === 'spotmap' ? (
             <SpotMap dataset={activeDataset} />
-          ) : activeModule === 'descriptive' ? (
-            <DescriptiveStats dataset={activeDataset} />
-          ) : activeModule === '1way' ? (
-            <OneWayTables dataset={activeDataset} />
+          ) : activeModule === 'descriptive-tables' ? (
+            <DescriptiveTables dataset={activeDataset} />
           ) : activeModule === '2way' ? (
             <TwoByTwoAnalysis dataset={activeDataset} />
           ) : null
