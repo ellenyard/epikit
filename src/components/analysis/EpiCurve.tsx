@@ -78,8 +78,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     endDate: '',
     label: '',
     description: '',
-    minDays: '',
-    maxDays: '',
   });
 
   // Exposure window estimation
@@ -226,8 +224,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       endDate: '',
       label: '',
       description: '',
-      minDays: '',
-      maxDays: '',
     });
     setShowAnnotationForm(true);
   };
@@ -240,8 +236,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       endDate: annotation.endDate ? annotation.endDate.toISOString().split('T')[0] : '',
       label: annotation.label,
       description: annotation.description || '',
-      minDays: '',
-      maxDays: '',
     });
     setShowAnnotationForm(true);
   };
@@ -260,16 +254,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       source: 'manual',
     };
 
-    if (newAnnotation.type === 'incubation' && newAnnotation.minDays && newAnnotation.maxDays) {
-      const minDays = parseFloat(newAnnotation.minDays);
-      const maxDays = parseFloat(newAnnotation.maxDays);
-      if (!isNaN(minDays) && !isNaN(maxDays)) {
-        const endDate = parseLocalDate(newAnnotation.date);
-        endDate.setDate(endDate.getDate() + maxDays);
-        annotation.endDate = endDate;
-        annotation.label = newAnnotation.label || `Incubation period (${minDays}-${maxDays} days)`;
-      }
-    } else if (newAnnotation.endDate) {
+    if (newAnnotation.endDate) {
       annotation.endDate = parseLocalDate(newAnnotation.endDate);
     }
 
@@ -281,13 +266,13 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       setAnnotations([...annotations, annotation]);
     }
 
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '', minDays: '', maxDays: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
     setEditingAnnotationId(null);
     setShowAnnotationForm(false);
   };
 
   const cancelAnnotationEdit = () => {
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '', minDays: '', maxDays: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
     setEditingAnnotationId(null);
     setShowAnnotationForm(false);
   };
@@ -536,57 +521,26 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                   />
                 </div>
-                {newAnnotation.type === 'incubation' ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Min Days</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={newAnnotation.minDays}
-                        onChange={(e) => setNewAnnotation({ ...newAnnotation, minDays: e.target.value })}
-                        placeholder="0.5"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Max Days</label>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={newAnnotation.maxDays}
-                        onChange={(e) => setNewAnnotation({ ...newAnnotation, maxDays: e.target.value })}
-                        placeholder="3"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Label</label>
+                  <input
+                    type="text"
+                    value={newAnnotation.label}
+                    onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
+                    placeholder="Label for chart"
+                    className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                  />
+                </div>
+                {(newAnnotation.type === 'exposure' || newAnnotation.type === 'control-lifted') && (
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">End Date (optional)</label>
+                    <input
+                      type="date"
+                      value={newAnnotation.endDate}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, endDate: e.target.value })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    />
                   </div>
-                ) : (
-                  <>
-                    <div>
-                      <label className="block text-xs text-gray-500 mb-1">Label</label>
-                      <input
-                        type="text"
-                        value={newAnnotation.label}
-                        onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
-                        placeholder="Label for chart"
-                        className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                      />
-                    </div>
-                    {(newAnnotation.type === 'exposure' || newAnnotation.type === 'control-lifted') && (
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">End Date (optional)</label>
-                        <input
-                          type="date"
-                          value={newAnnotation.endDate}
-                          onChange={(e) => setNewAnnotation({ ...newAnnotation, endDate: e.target.value })}
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                        />
-                      </div>
-                    )}
-                  </>
                 )}
                 <div className="flex gap-2">
                   <button
