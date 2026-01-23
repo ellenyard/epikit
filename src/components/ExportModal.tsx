@@ -183,16 +183,8 @@ export function ExportModal({ items, formName, onClose }: ExportModalProps) {
     rows.push(header.map(h => `"${h}"`).join(','));
 
     const formNameSlug = formName.toLowerCase().replace(/[^a-z0-9_]/g, '_');
-    let currentSection = '';
 
-    // Track sections from layout elements
-    items.forEach((item) => {
-      if (item.type === 'section') {
-        currentSection = item.content;
-      }
-    });
-
-    fields.forEach((field, index) => {
+    fields.forEach((field) => {
       const variableName = field.variableName || field.id.replace(/[^a-zA-Z0-9_]/g, '_');
       const fieldType = mapToREDCapType(field.type);
       const fieldLabel = `"${field.label.replace(/"/g, '""')}"`;
