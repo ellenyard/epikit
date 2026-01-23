@@ -115,6 +115,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
         </div>
 
+        {/* Data Persistence Info */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6 mb-8">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-blue-900 mb-1">Your work is automatically saved</h3>
+              <p className="text-sm text-blue-800 mb-2">
+                All your datasets, forms, and edits are saved automatically in your browser. You can close this tab and return later - everything will be exactly as you left it.
+              </p>
+              <p className="text-sm text-blue-700">
+                <strong>Note:</strong> Data is saved only on this browser. To transfer work to another device or create backups, use the export features in each module.
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Recent Datasets Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
           <div className="flex items-center justify-between mb-4">
