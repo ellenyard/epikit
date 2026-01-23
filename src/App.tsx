@@ -15,10 +15,12 @@ import { OnboardingWizard } from './components/OnboardingWizard';
 import { HelpCenter } from './components/HelpCenter';
 import { HelpIcon } from './components/HelpIcon';
 import { AccessibilitySettings } from './components/AccessibilitySettings';
+import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
 import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
+import { useLocale } from './contexts/LocaleContext';
 
 type Module = 'dashboard' | 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'descriptive-tables' | '2way';
 type FormView = 'builder' | 'preview';
@@ -47,6 +49,7 @@ const createDemoFormDefinition = (): FormDefinition => ({
 });
 
 function App() {
+  const { config: localeConfig } = useLocale();
   const [activeModule, setActiveModule] = useState<Module>('dashboard');
   const [formView, setFormView] = useState<FormView>('builder');
   const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
@@ -55,6 +58,7 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showHelpCenter, setShowHelpCenter] = useState(false);
   const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
+  const [showLocaleSettings, setShowLocaleSettings] = useState(false);
 
   // Form definitions state (saved forms available for data collection)
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => {
@@ -325,7 +329,7 @@ function App() {
   // Handle data export
   const handleDatasetExport = useCallback(() => {
     if (!activeDataset) return;
-    const csv = exportToCSV(activeDataset.columns, activeDataset.records);
+    const csv = exportToCSV(activeDataset.columns, activeDataset.records, { localeConfig });
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -335,7 +339,7 @@ function App() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [activeDataset]);
+  }, [activeDataset, localeConfig]);
 
   // Handle onboarding demo load
   const handleLoadDemo = useCallback(() => {
@@ -448,6 +452,16 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowLocaleSettings(true)}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label="Language & Region Settings"
+              title="Language & Region Settings"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+              </svg>
+            </button>
             <button
               onClick={() => setShowAccessibilitySettings(true)}
               className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
@@ -639,6 +653,12 @@ function App() {
       <AccessibilitySettings
         isOpen={showAccessibilitySettings}
         onClose={() => setShowAccessibilitySettings(false)}
+      />
+
+      {/* Locale Settings */}
+      <LocaleSettings
+        isOpen={showLocaleSettings}
+        onClose={() => setShowLocaleSettings(false)}
       />
     </div>
   );
