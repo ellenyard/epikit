@@ -369,16 +369,6 @@ function App() {
             </button>
             <div className="flex gap-0.5 overflow-x-auto">
               <button
-                onClick={() => setActiveModule('dashboard')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'dashboard'
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Home
-              </button>
-              <button
                 onClick={() => { setActiveModule('forms'); setFormView('builder'); }}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'forms'
