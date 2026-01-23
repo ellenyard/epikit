@@ -517,11 +517,11 @@ function App() {
           ) : activeModule === 'epicurve' ? (
             <EpiCurve dataset={activeDataset} onExportDataset={handleDatasetExport} />
           ) : activeModule === 'spotmap' ? (
-            <SpotMap dataset={activeDataset} onExportDataset={handleDatasetExport} />
+            <SpotMap dataset={activeDataset} />
           ) : activeModule === 'descriptive-tables' ? (
             <DescriptiveTables dataset={activeDataset} onNavigateTo2x2={() => setActiveModule('2way')} onExportDataset={handleDatasetExport} />
           ) : activeModule === '2way' ? (
-            <TwoByTwoAnalysis dataset={activeDataset} onExportDataset={handleDatasetExport} />
+            <TwoByTwoAnalysis dataset={activeDataset} />
           ) : null
         ) : (
           // No dataset selected - show prompt

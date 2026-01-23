@@ -62,7 +62,7 @@ export function DescriptiveTables({ dataset, onNavigateTo2x2, onExportDataset }:
       <div className="flex-1">
         {activeSection === 'single' && <SingleVariable dataset={dataset} onExportDataset={onExportDataset} />}
         {activeSection === 'oneway' && <OneWaySection dataset={dataset} onExportDataset={onExportDataset} />}
-        {activeSection === 'twoway' && <TwoWayTableBuilder dataset={dataset} onNavigateTo2x2={onNavigateTo2x2} onExportDataset={onExportDataset} />}
+        {activeSection === 'twoway' && <TwoWayTableBuilder dataset={dataset} onNavigateTo2x2={onNavigateTo2x2} />}
       </div>
 
       {/* Unified Help Panel */}
