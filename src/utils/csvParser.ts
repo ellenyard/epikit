@@ -105,7 +105,16 @@ function inferColumnType(values: string[]): DataColumn['type'] {
   const isNumber = values.every(v => !isNaN(Number(v)) && v !== '');
   if (isNumber) return 'number';
 
-  const isDate = values.every(v => !isNaN(Date.parse(v)));
+  // Check for date patterns - must contain date separators and have valid structure
+  // Accepts formats like: YYYY-MM-DD, DD/MM/YYYY, MM-DD-YYYY, YYYY/MM/DD, etc.
+  // Also accepts ISO 8601 formats with time components
+  const datePattern = /^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}|^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}T\d{2}:\d{2}/;
+  const isDate = values.every(v => {
+    // Must match a date pattern AND be parseable as a valid date
+    if (!datePattern.test(v)) return false;
+    const parsed = Date.parse(v);
+    return !isNaN(parsed);
+  });
   if (isDate) return 'date';
 
   const isBoolean = values.every(v =>
