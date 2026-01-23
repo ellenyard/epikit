@@ -14,6 +14,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Dataset } from '../../types/analysis';
+import { TabHeader, ResultsActions, ExportIcons, HelpPanel } from '../shared';
 
 interface OneWayTablesProps {
   dataset: Dataset;
@@ -84,7 +85,7 @@ function SortableVariableItem({
                 name={`mode-${varKey}`}
                 checked={config.expanded}
                 onChange={() => updateConfig(varKey, { expanded: true })}
-                className="text-blue-600"
+                className="text-gray-700"
               />
               <span className="text-xs text-gray-600">Expanded</span>
             </label>
@@ -94,7 +95,7 @@ function SortableVariableItem({
                 name={`mode-${varKey}`}
                 checked={!config.expanded}
                 onChange={() => updateConfig(varKey, { expanded: false })}
-                className="text-blue-600"
+                className="text-gray-700"
               />
               <span className="text-xs text-gray-600">Condensed</span>
             </label>
@@ -336,12 +337,11 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="h-full overflow-auto p-6 space-y-6">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">1-Way Tables</h3>
-          <p className="text-sm text-gray-600">
-            Create frequency tables for multiple variables. Select variables below, then configure each as expanded (all values) or condensed (single value).
-          </p>
-        </div>
+        {/* TabHeader */}
+        <TabHeader
+          title="1-Way Tables"
+          description="Quick frequency tables for selected variables."
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Panel - Configuration */}
@@ -352,14 +352,14 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
               <h4 className="text-sm font-semibold text-gray-900">Percentage Calculation</h4>
               <button
                 onClick={() => setShowPercentHelp(!showPercentHelp)}
-                className="text-xs text-blue-600 hover:text-blue-700"
+                className="text-xs text-gray-600 hover:text-gray-900"
               >
                 {showPercentHelp ? 'Hide help' : 'Help'}
               </button>
             </div>
 
             {showPercentHelp && (
-              <div className="mb-3 p-3 bg-blue-50 rounded-lg text-xs text-blue-800">
+              <div className="mb-3 p-3 bg-gray-50 rounded-lg text-xs text-gray-700">
                 <p className="font-medium mb-1">Which should I choose?</p>
                 <p className="mb-2">
                   <strong>% of Total Records:</strong> Use when missing data is meaningful (e.g., "refused to answer" or data not collected). Missing values appear as a row.
@@ -377,7 +377,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                   name="percentMode"
                   checked={percentMode === 'total'}
                   onChange={() => setPercentMode('total')}
-                  className="text-blue-600"
+                  className="text-gray-700"
                 />
                 <span className="text-sm text-gray-700">% of Total Records</span>
               </label>
@@ -387,7 +387,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                   name="percentMode"
                   checked={percentMode === 'non-missing'}
                   onChange={() => setPercentMode('non-missing')}
-                  className="text-blue-600"
+                  className="text-gray-700"
                 />
                 <span className="text-sm text-gray-700">% of Non-Missing Values</span>
               </label>
@@ -404,7 +404,7 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                     type="checkbox"
                     checked={selectedVariables.includes(col.key)}
                     onChange={() => toggleVariable(col.key)}
-                    className="text-blue-600 rounded"
+                    className="text-gray-700 rounded"
                   />
                   <span className="text-sm text-gray-700 truncate" title={col.label}>
                     {col.label}
@@ -443,6 +443,25 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
               </SortableContext>
             </div>
           )}
+
+          {/* Help Panel */}
+          <HelpPanel title="About 1-Way Tables">
+            <div className="text-sm text-gray-700 space-y-3">
+              <p>
+                Use 1-way tables to quickly summarize categorical variables. Select one or more variables
+                from the list, then choose whether to display all values (expanded) or just a single value
+                of interest (condensed).
+              </p>
+              <p>
+                <strong>Percentage Basis:</strong> Choose whether percentages should be calculated based on
+                total records (including missing) or only non-missing values.
+              </p>
+              <p>
+                <strong>Reordering:</strong> Drag variables in the "Variable Settings" section to change the
+                order they appear in the results table.
+              </p>
+            </div>
+          </HelpPanel>
         </div>
 
         {/* Right Panel - Results Table */}
@@ -457,17 +476,8 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
           ) : (
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
               {/* Table Header */}
-              <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                 <h4 className="text-sm font-semibold text-gray-900">Results</h4>
-                <button
-                  onClick={exportToCSV}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Export CSV
-                </button>
               </div>
 
               {/* Table */}
@@ -516,6 +526,20 @@ export function OneWayTables({ dataset }: OneWayTablesProps) {
                 <p className="text-xs text-gray-500">
                   Percentages calculated as % of {percentMode === 'total' ? 'total records' : 'non-missing values'}.
                 </p>
+              </div>
+
+              {/* Results Actions */}
+              <div className="px-4 pb-4">
+                <ResultsActions
+                  actions={[
+                    {
+                      label: 'Export CSV',
+                      onClick: exportToCSV,
+                      icon: ExportIcons.csv,
+                      variant: 'primary',
+                    },
+                  ]}
+                />
               </div>
             </div>
           )}

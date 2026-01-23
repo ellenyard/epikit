@@ -3,6 +3,7 @@ import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
+import { TabHeader, HelpPanel } from '../shared';
 
 interface TwoByTwoAnalysisProps {
   dataset: Dataset;
@@ -343,7 +344,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 const ci = studyDesign === 'cohort' ? r.riskRatioCI : r.oddsRatioCI;
 
                 return (
-                  <tr key={result.exposureVar} className={isSignificant ? 'bg-green-50' : ''}>
+                  <tr key={result.exposureVar} className={isSignificant ? 'bg-gray-50' : ''}>
                     <td className="px-3 py-2 text-sm font-medium text-gray-900">
                       {result.exposureLabel}
                       <span className="text-xs text-gray-500 ml-1">({result.exposedValue})</span>
@@ -360,7 +361,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
                           {formatPercent(r.attackRateUnexposed * 100, r.total)}%
                         </td>
-                        <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-green-700' : 'text-gray-900'}`}>
+                        <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
                           {formatNumber(measure)}
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-500">
@@ -375,7 +376,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
                           {r.table.b} ({formatPercent((r.table.b / r.totalNoDisease) * 100, r.total)}%)
                         </td>
-                        <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-green-700' : 'text-gray-900'}`}>
+                        <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
                           {formatNumber(measure)}
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-500">
@@ -400,8 +401,11 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
-      {/* Tutorial Component */}
-      <TwoByTwoTutorial />
+      {/* TabHeader */}
+      <TabHeader
+        title="2×2 Tables"
+        description="Compare exposure and outcome with a 2×2 table and measures of association."
+      />
 
       {/* Study Design Selector */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
@@ -414,7 +418,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
               value="cohort"
               checked={studyDesign === 'cohort'}
               onChange={() => setStudyDesign('cohort')}
-              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+              className="w-4 h-4 text-gray-700 focus:ring-gray-500"
             />
             <span className="text-sm text-gray-900">Retrospective Cohort Investigation</span>
           </label>
@@ -425,7 +429,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
               value="case-control"
               checked={studyDesign === 'case-control'}
               onChange={() => setStudyDesign('case-control')}
-              className="w-4 h-4 text-blue-600 focus:ring-blue-500"
+              className="w-4 h-4 text-gray-700 focus:ring-gray-500"
             />
             <span className="text-sm text-gray-900">Case-Control Investigation</span>
           </label>
@@ -433,7 +437,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
       </div>
 
       {/* Outcome Variable */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <h4 className="text-sm font-semibold text-gray-900 mb-3">Outcome Variable</h4>
         <p className="text-xs text-gray-600 mb-3">
           <strong>Select the variable that defines your outcome of interest</strong> (e.g., illness status, case status). Then choose which values represent a "case" (e.g., "Yes", "Confirmed", "Probable"). The remaining values will be treated as non-cases or controls.
@@ -449,7 +453,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 setOutcomeVar(e.target.value);
                 setCaseValues(new Set());
               }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
             >
               <option value="">Select variable...</option>
               {caseDefinitionColumns.map(col => (
@@ -468,7 +472,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                     key={value}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
                       caseValues.has(value)
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-gray-700 text-white'
                         : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
@@ -494,13 +498,13 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
           )}
         </div>
         {outcomeVar && caseValues.size > 0 && (
-          <div className="mt-3 text-sm text-blue-800">
+          <div className="mt-3 text-sm text-gray-700">
             <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
             ({formatPercent((totalCases / dataset.records.length) * 100, dataset.records.length)}%)
           </div>
         )}
         {outcomeVar && caseValues.size === 0 && (
-          <div className="mt-3 text-sm text-amber-700">
+          <div className="mt-3 text-sm text-gray-600">
             Please select which values count as cases
           </div>
         )}
@@ -525,11 +529,11 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                     onClick={() => toggleExposure(col.key)}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                       isSelected
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-gray-700 text-white'
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    <span className={`w-4 h-4 flex items-center justify-center rounded ${isSelected ? 'bg-blue-500' : 'bg-gray-300'}`}>
+                    <span className={`w-4 h-4 flex items-center justify-center rounded ${isSelected ? 'bg-gray-600' : 'bg-gray-300'}`}>
                       {isSelected && (
                         <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -544,7 +548,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                         value={exposedValue}
                         onChange={(e) => updateExposedValue(col.key, e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                        className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-gray-500"
                       >
                         {values.map(v => (
                           <option key={v} value={v}>{v} = Exposed</option>
@@ -572,7 +576,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
 
           {/* Interpretation Example for Cohort Studies */}
           {studyDesign === 'cohort' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
               <p className="text-sm text-gray-700 leading-relaxed">
                 <strong>Example interpretation:</strong> If your attack rate ratio (ARR) is 3.2 with a 95% CI of (1.8 - 5.6), you would state:
@@ -587,7 +591,7 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
 
           {/* Interpretation Example for Case-Control Studies */}
           {studyDesign === 'case-control' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
               <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
               <p className="text-sm text-gray-700 leading-relaxed">
                 <strong>Example interpretation:</strong> If your odds ratio (OR) is 4.5 with a 95% CI of (2.1 - 9.3), you would state:
@@ -614,6 +618,11 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
           Define the case definition above to begin analysis
         </div>
       )}
+
+      {/* Help Panel */}
+      <HelpPanel title="Tutorial: 2×2 Tables">
+        <TwoByTwoTutorial />
+      </HelpPanel>
     </div>
   );
 }

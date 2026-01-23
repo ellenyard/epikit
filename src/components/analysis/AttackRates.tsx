@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import type { Dataset } from '../../types/analysis';
+import { TabHeader, HelpPanel } from '../shared';
 
 interface AttackRatesProps {
   dataset: Dataset;
@@ -228,11 +229,15 @@ export function AttackRates({ dataset }: AttackRatesProps) {
   return (
     <div className="p-6">
       <div className="max-w-4xl mx-auto">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Attack Rate Analysis</h2>
+        {/* TabHeader */}
+        <TabHeader
+          title="Attack Rates"
+          description="Calculate attack rates by exposure group and compare risk."
+        />
 
         {/* Case Definition */}
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h3 className="text-sm font-semibold text-blue-900 mb-3">Case Definition</h3>
+        <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Case Definition</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -244,7 +249,7 @@ export function AttackRates({ dataset }: AttackRatesProps) {
                   setCaseVariable(e.target.value);
                   setCaseValues(new Set());
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
               >
                 <option value="">Select variable...</option>
                 {caseDefinitionColumns.map(col => (
@@ -263,7 +268,7 @@ export function AttackRates({ dataset }: AttackRatesProps) {
                       key={value}
                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
                         caseValues.has(value)
-                          ? 'bg-blue-600 text-white'
+                          ? 'bg-gray-700 text-white'
                           : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
                       }`}
                     >
@@ -289,13 +294,13 @@ export function AttackRates({ dataset }: AttackRatesProps) {
             )}
           </div>
           {caseVariable && caseValues.size > 0 && (
-            <div className="mt-3 text-sm text-blue-800">
+            <div className="mt-3 text-sm text-gray-700">
               <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
               ({((totalCases / dataset.records.length) * 100).toFixed(1)}%)
             </div>
           )}
           {caseVariable && caseValues.size === 0 && (
-            <div className="mt-3 text-sm text-amber-700">
+            <div className="mt-3 text-sm text-gray-600">
               Please select which values count as cases
             </div>
           )}
@@ -312,7 +317,7 @@ export function AttackRates({ dataset }: AttackRatesProps) {
               setStratifyBy(e.target.value || null);
               setPopulations({});
             }}
-            className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
           >
             <option value="">None (overall only)</option>
             {stratificationColumns.map(col => (
@@ -347,7 +352,7 @@ export function AttackRates({ dataset }: AttackRatesProps) {
                       value={stratifyBy ? (populations[row.stratum] ?? '') : (overallPopulation ?? '')}
                       onChange={(e) => handlePopulationChange(row.stratum, e.target.value)}
                       placeholder="Enter population"
-                      className="w-32 px-2 py-1 text-sm text-right border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-32 px-2 py-1 text-sm text-right border border-gray-300 rounded focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
                     />
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-900 text-right font-medium">
@@ -393,7 +398,7 @@ export function AttackRates({ dataset }: AttackRatesProps) {
                     {/* CI range bar (lighter) */}
                     {row.ciLower !== null && row.ciUpper !== null && maxRate > 0 && (
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 h-2 bg-blue-200 rounded"
+                        className="absolute top-1/2 -translate-y-1/2 h-2 bg-gray-300 rounded"
                         style={{
                           left: `${(row.ciLower / maxRate) * 100}%`,
                           width: `${((row.ciUpper - row.ciLower) / maxRate) * 100}%`,
@@ -403,7 +408,7 @@ export function AttackRates({ dataset }: AttackRatesProps) {
                     {/* Point estimate bar */}
                     {row.attackRate !== null && maxRate > 0 && (
                       <div
-                        className="absolute top-1/2 -translate-y-1/2 h-6 bg-blue-500 rounded"
+                        className="absolute top-1/2 -translate-y-1/2 h-6 bg-gray-600 rounded"
                         style={{ width: `${(row.attackRate / maxRate) * 100}%` }}
                       />
                     )}
@@ -416,16 +421,39 @@ export function AttackRates({ dataset }: AttackRatesProps) {
             </div>
             <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
               <div className="flex items-center gap-1">
-                <div className="w-4 h-3 bg-blue-500 rounded" />
+                <div className="w-4 h-3 bg-gray-600 rounded" />
                 <span>Attack Rate</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-4 h-2 bg-blue-200 rounded" />
+                <div className="w-4 h-2 bg-gray-300 rounded" />
                 <span>95% CI</span>
               </div>
             </div>
           </div>
         )}
+
+        {/* Help Panel */}
+        <HelpPanel title="About Attack Rates">
+          <div className="text-sm text-gray-700 space-y-3">
+            <p>
+              <strong>Attack rates</strong> measure the proportion of a population that develops illness
+              during an outbreak. They are calculated as the number of cases divided by the population
+              at risk, expressed as a percentage.
+            </p>
+            <p>
+              <strong>Case Definition:</strong> Select the variable that indicates whether someone is a case,
+              then choose which values count as cases (e.g., "Yes", "Confirmed").
+            </p>
+            <p>
+              <strong>Stratification:</strong> Optionally stratify by a grouping variable (e.g., food item,
+              age group) to compare attack rates across groups.
+            </p>
+            <p>
+              <strong>Population:</strong> Enter the population at risk for each group. If left blank, the
+              tool uses the number of records in your dataset as a proxy for population.
+            </p>
+          </div>
+        </HelpPanel>
 
       </div>
     </div>
