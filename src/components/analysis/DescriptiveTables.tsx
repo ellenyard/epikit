@@ -7,11 +7,12 @@ import { TwoWayTableBuilder } from './TwoWayTableBuilder';
 
 interface DescriptiveTablesProps {
   dataset: Dataset;
+  onNavigateTo2x2?: () => void;
 }
 
 type Section = 'single' | 'oneway' | 'twoway';
 
-export function DescriptiveTables({ dataset }: DescriptiveTablesProps) {
+export function DescriptiveTables({ dataset, onNavigateTo2x2 }: DescriptiveTablesProps) {
   const [activeSection, setActiveSection] = useState<Section>('single');
 
   return (
@@ -19,7 +20,7 @@ export function DescriptiveTables({ dataset }: DescriptiveTablesProps) {
       {/* TabHeader */}
       <TabHeader
         title="Descriptive Tables"
-        description="Explore frequency distributions and cross-tabulations for categorical variables."
+        description="Summarize and cross-tabulate variables with counts and clear denominators."
       />
 
       {/* Section Navigation */}
@@ -60,7 +61,7 @@ export function DescriptiveTables({ dataset }: DescriptiveTablesProps) {
       <div className="flex-1">
         {activeSection === 'single' && <SingleVariable dataset={dataset} />}
         {activeSection === 'oneway' && <OneWaySection dataset={dataset} />}
-        {activeSection === 'twoway' && <TwoWayTableBuilder dataset={dataset} />}
+        {activeSection === 'twoway' && <TwoWayTableBuilder dataset={dataset} onNavigateTo2x2={onNavigateTo2x2} />}
       </div>
 
       {/* Unified Help Panel */}
@@ -93,8 +94,8 @@ export function DescriptiveTables({ dataset }: DescriptiveTablesProps) {
               <strong className="text-gray-900">Two-Way Tables</strong>
               <p className="text-gray-600 mt-1">
                 Build cross-tabulations showing the relationship between two categorical variables.
-                View counts and percentages (row, column, and overall). This is for descriptive
-                purposes only.
+                View counts and percentages (row, column, and overall) with explicit denominators.
+                High-cardinality variables (more than 30 unique values) will trigger a warning.
               </p>
             </div>
           </div>
