@@ -516,6 +516,50 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2, onExportDataset }
     URL.revokeObjectURL(url);
   }, [crossTabs, colVariable, denominatorMode, showRowPercent, showColPercent, showTotalPercent, getColumnLabel]);
 
+  // Export dataset with only records used in the analysis
+  const exportDatasetCSV = useCallback(() => {
+    if (selectedRowVariables.length === 0 || !colVariable) return;
+
+    // Get all variables involved in the analysis
+    const analysisVars = [...selectedRowVariables, colVariable];
+
+    // Filter to records with at least some valid values for the analysis variables
+    const analysisRecords = dataset.records.filter(record => {
+      // Check if at least one analysis variable has a valid value
+      return analysisVars.some(varKey => {
+        const value = record[varKey];
+        return value !== null && value !== undefined && String(value).trim() !== '';
+      });
+    });
+
+    // Create CSV
+    const headers = dataset.columns.map(col => col.label);
+    let csv = headers.join(',') + '\n';
+
+    analysisRecords.forEach(record => {
+      const row = dataset.columns.map(col => {
+        const value = record[col.key];
+        const strValue = value === null || value === undefined ? '' : String(value);
+        // Escape quotes and wrap in quotes if contains comma or quote
+        if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+          return `"${strValue.replace(/"/g, '""')}"`;
+        }
+        return strValue;
+      });
+      csv += row.join(',') + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `two_way_data_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [dataset, selectedRowVariables, colVariable]);
+
   // Check if selected variables are valid
   const showFreeTextWarning = useMemo(() => {
     if (selectedRowVariables.length === 0 && !colVariable) return false;
@@ -775,7 +819,7 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2, onExportDataset }
                       {getColumnLabel(crossTab.rowVariable)} × {getColumnLabel(colVariable)}
                     </h4>
                     <p className="text-xs text-gray-500 mt-1">
-                      N = {crossTab.grandTotal} |
+                      n = {crossTab.grandTotal} |
                       Missing row: {crossTab.missingRowCount} |
                       Missing column: {crossTab.missingColCount}
                     </p>
@@ -890,12 +934,12 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2, onExportDataset }
                     icon: ExportIcons.csv,
                     variant: 'primary',
                   },
-                  ...(onExportDataset ? [{
+                  {
                     label: 'Export Dataset CSV',
-                    onClick: onExportDataset,
+                    onClick: exportDatasetCSV,
                     icon: ExportIcons.csv,
-                    variant: 'secondary' as const,
-                  }] : []),
+                    variant: 'secondary',
+                  },
                 ]}
               />
             </div>
