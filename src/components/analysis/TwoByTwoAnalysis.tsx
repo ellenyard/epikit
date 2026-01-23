@@ -7,7 +7,6 @@ import { TabHeader, HelpPanel, ResultsActions, ExportIcons } from '../shared';
 
 interface TwoByTwoAnalysisProps {
   dataset: Dataset;
-  onExportDataset?: () => void;
 }
 
 type StudyDesign = 'cohort' | 'case-control';
@@ -19,7 +18,7 @@ interface ExposureResult {
   results: TwoByTwoResults;
 }
 
-export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisProps) {
+export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
   // Study design
   const [studyDesign, setStudyDesign] = useState<StudyDesign>('cohort');
 
