@@ -632,7 +632,7 @@ export function SingleVariable({ dataset }: SingleVariableProps) {
                 </div>
 
                 <div className="max-h-96 overflow-auto">
-                  <table className="w-full">
+                  <table className="border-collapse">
                     <thead className="sticky top-0 bg-gray-50">
                       <tr>
                         <th className="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">Value</th>
