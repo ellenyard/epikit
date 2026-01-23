@@ -110,6 +110,7 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
 export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
   const [latColumn, setLatColumn] = useState<string>('');
   const [lngColumn, setLngColumn] = useState<string>('');
+  const [classificationColumn, setClassificationColumn] = useState<string>('');
   const [filterBy, setFilterBy] = useState<string>('');
   const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
   const [colorScheme, setColorScheme] = useState<ColorScheme>('classification');
@@ -174,7 +175,42 @@ export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
     }
   };
 
-  // Auto-detect lat/lng columns
+  // Export filtered dataset as CSV
+  const exportDatasetCSV = () => {
+    if (filteredCases.length === 0) return;
+
+    // Get the records for filtered cases
+    const filteredRecords = filteredCases.map(c => c.record);
+
+    // Create CSV
+    const headers = dataset.columns.map(col => col.label);
+    let csv = headers.join(',') + '\n';
+
+    filteredRecords.forEach(record => {
+      const row = dataset.columns.map(col => {
+        const value = record[col.key];
+        const strValue = value === null || value === undefined ? '' : String(value);
+        // Escape quotes and wrap in quotes if contains comma or quote
+        if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+          return `"${strValue.replace(/"/g, '""')}"`;
+        }
+        return strValue;
+      });
+      csv += row.join(',') + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `spot_map_data_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Auto-detect lat/lng and classification columns
   useEffect(() => {
     const latCol = dataset.columns.find(c =>
       c.key.toLowerCase().includes('lat') ||
@@ -185,10 +221,16 @@ export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
       c.key.toLowerCase().includes('lon') ||
       c.label.toLowerCase().includes('longitude')
     );
+    const classCol = dataset.columns.find(c =>
+      c.key.toLowerCase().includes('case_status') ||
+      c.key.toLowerCase().includes('classification') ||
+      c.key.toLowerCase() === 'status'
+    );
 
     if (latCol && !latColumn) setLatColumn(latCol.key);
     if (lngCol && !lngColumn) setLngColumn(lngCol.key);
-  }, [dataset.columns, latColumn, lngColumn]);
+    if (classCol && !classificationColumn) setClassificationColumn(classCol.key);
+  }, [dataset.columns, latColumn, lngColumn, classificationColumn]);
 
   // Process cases with coordinates
   const mapCases: MapCase[] = useMemo(() => {
@@ -202,8 +244,10 @@ export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
         if (isNaN(lat) || isNaN(lng)) return null;
         if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
 
-        // Use case_status or classification field for coloring
-        const classification = String(record['case_status'] ?? record['classification'] ?? 'Unknown');
+        // Use selected classification field for coloring
+        const classification = classificationColumn
+          ? String(record[classificationColumn] ?? 'Unknown')
+          : 'Unknown';
 
         // Apply jitter if obfuscation is enabled
         const seed = String(record.id || record[latColumn] || '') + String(jitterDistance);
@@ -221,7 +265,7 @@ export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
         };
       })
       .filter((c): c is MapCase => c !== null);
-  }, [dataset.records, latColumn, lngColumn, obfuscateLocations, jitterDistance]);
+  }, [dataset.records, latColumn, lngColumn, classificationColumn, obfuscateLocations, jitterDistance]);
 
   // Apply filters if selected
   const filteredCases = useMemo(() => {
@@ -445,6 +489,24 @@ export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
             </select>
           </div>
 
+          {/* Classification Variable */}
+          <div>
+            <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
+              Classification Variable (for coloring)
+              <InfoTooltip text="Select the variable to use for color-coding markers (e.g., case status, classification). This determines the colors shown on the map when using classification-based color schemes." />
+            </label>
+            <select
+              value={classificationColumn}
+              onChange={(e) => setClassificationColumn(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="">None (all same color)</option>
+              {dataset.columns.filter(c => c.type !== 'number' || c.key.toLowerCase().includes('status') || c.key.toLowerCase().includes('class')).map(col => (
+                <option key={col.key} value={col.key}>{col.label}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Privacy Controls */}
           <div className="pt-4 border-t border-gray-200">
             <label className="block text-sm font-medium text-gray-700 mb-3">Privacy Settings</label>
@@ -644,12 +706,12 @@ export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
                       disabled: isExporting,
                       variant: 'primary',
                     },
-                    ...(onExportDataset ? [{
+                    {
                       label: 'Export Dataset CSV',
-                      onClick: onExportDataset,
+                      onClick: exportDatasetCSV,
                       icon: ExportIcons.csv,
-                      variant: 'secondary' as const,
-                    }] : []),
+                      variant: 'secondary',
+                    },
                   ]}
                 />
               </div>
