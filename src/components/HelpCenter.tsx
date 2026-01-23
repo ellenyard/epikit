@@ -197,8 +197,8 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <p className="text-xs">Map geographic distribution of cases</p>
                       </div>
                       <div className="border border-gray-200 rounded p-3">
-                        <h5 className="font-medium text-gray-800 mb-1">Descriptive Stats</h5>
-                        <p className="text-xs">Calculate summary statistics</p>
+                        <h5 className="font-medium text-gray-800 mb-1">Descriptive Tables</h5>
+                        <p className="text-xs">Frequency tables, cross-tabs, and statistics</p>
                       </div>
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">2×2 Tables</h5>

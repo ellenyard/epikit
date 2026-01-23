@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { DataImport } from './DataImport';
 import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
-import { DescriptiveStats } from './DescriptiveStats';
+import { DescriptiveTables } from './DescriptiveTables';
 import { EpiCurve } from './EpiCurve';
 import { SpotMap } from './SpotMap';
-import { OneWayTables } from './OneWayTables';
 import type { Dataset, DataColumn, CaseRecord } from '../../types/analysis';
 
-type AnalysisTab = 'epicurve' | 'spotmap' | 'descriptive' | 'oneway' | '2x2';
+type AnalysisTab = 'epicurve' | 'spotmap' | 'descriptive-tables' | '2x2';
 
 interface AnalysisProps {
   datasets: Dataset[];
@@ -39,8 +38,7 @@ export function Analysis({
   const tabs: { id: AnalysisTab; label: string; icon: string }[] = [
     { id: 'epicurve', label: 'Epi Curve', icon: '📈' },
     { id: 'spotmap', label: 'Spot Map', icon: '📍' },
-    { id: 'descriptive', label: 'Descriptive', icon: '📊' },
-    { id: 'oneway', label: '1-Way Tables', icon: '📋' },
+    { id: 'descriptive-tables', label: 'Descriptive Tables', icon: '📊' },
     { id: '2x2', label: '2-way Analyses', icon: '⊞' },
   ];
 
@@ -316,11 +314,8 @@ export function Analysis({
                 {activeTab === 'spotmap' && (
                   <SpotMap dataset={activeDataset} />
                 )}
-                {activeTab === 'descriptive' && (
-                  <DescriptiveStats dataset={activeDataset} />
-                )}
-                {activeTab === 'oneway' && (
-                  <OneWayTables dataset={activeDataset} />
+                {activeTab === 'descriptive-tables' && (
+                  <DescriptiveTables dataset={activeDataset} />
                 )}
                 {activeTab === '2x2' && (
                   <TwoByTwoAnalysis dataset={activeDataset} />
