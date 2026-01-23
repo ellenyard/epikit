@@ -1,4 +1,6 @@
 import type { Dataset, DataColumn, CaseRecord, VariableConfig, CategoryRule } from '../types/analysis';
+import type { LocaleConfig } from '../contexts/LocaleContext';
+import { parseFlexibleNumber } from './localeNumbers';
 
 /**
  * Converts a label to a valid variable name
@@ -14,12 +16,23 @@ export function toVariableName(label: string): string {
 /**
  * Categorizes a numeric value based on category rules
  */
-function categorizeNumericValue(value: unknown, categories: CategoryRule[]): string {
+function categorizeNumericValue(
+  value: unknown,
+  categories: CategoryRule[],
+  localeConfig?: LocaleConfig
+): string {
   if (value === null || value === undefined || value === '') {
     return '';
   }
 
-  const numValue = typeof value === 'number' ? value : parseFloat(String(value));
+  let numValue: number;
+  if (typeof value === 'number') {
+    numValue = value;
+  } else if (localeConfig) {
+    numValue = parseFlexibleNumber(value, localeConfig);
+  } else {
+    numValue = parseFloat(String(value));
+  }
 
   if (isNaN(numValue)) {
     return '';
@@ -66,13 +79,14 @@ export function categorizeVariable(
   records: CaseRecord[],
   sourceColumn: string,
   categories: CategoryRule[],
-  sourceColumnType: DataColumn['type']
+  sourceColumnType: DataColumn['type'],
+  localeConfig?: LocaleConfig
 ): unknown[] {
   return records.map(record => {
     const value = record[sourceColumn];
 
     if (sourceColumnType === 'number') {
-      return categorizeNumericValue(value, categories);
+      return categorizeNumericValue(value, categories, localeConfig);
     } else {
       return categorizeTextValue(value, categories);
     }
@@ -99,10 +113,12 @@ export function createBlankVariable(records: CaseRecord[]): unknown[] {
 /**
  * Evaluates a simple formula for a record
  * Currently supports basic arithmetic operations
+ * Supports locale-aware decimal separators in formulas
  */
 export function evaluateFormula(
   record: Record<string, unknown>,
-  formula: string
+  formula: string,
+  localeConfig?: LocaleConfig
 ): unknown {
   try {
     // Replace variable references with their values
@@ -118,7 +134,20 @@ export function evaluateFormula(
       return String(value);
     });
 
-    // Basic validation: only allow numbers, operators, parentheses, and decimal points
+    // Normalize locale decimal separators to periods for JavaScript evaluation
+    if (localeConfig && localeConfig.decimalSeparator !== '.') {
+      // Replace locale decimal separator with period, but be careful not to replace
+      // operators or thousands separators
+      const decimalRegex = new RegExp(
+        `\\d${localeConfig.decimalSeparator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d`,
+        'g'
+      );
+      expression = expression.replace(decimalRegex, (match) =>
+        match.replace(localeConfig.decimalSeparator, '.')
+      );
+    }
+
+    // Basic validation: only allow numbers, operators, parentheses, decimal points, and spaces
     if (!/^[\d+\-*/(). ]+$/.test(expression.replace(/null/g, ''))) {
       return '';
     }
@@ -143,7 +172,8 @@ export function evaluateFormula(
 export function generateVariableValues(
   records: CaseRecord[],
   config: VariableConfig,
-  sourceColumnType?: DataColumn['type']
+  sourceColumnType?: DataColumn['type'],
+  localeConfig?: LocaleConfig
 ): unknown[] {
   switch (config.method) {
     case 'categorize':
@@ -154,7 +184,8 @@ export function generateVariableValues(
         records,
         config.sourceColumn,
         config.categories,
-        sourceColumnType || 'text'
+        sourceColumnType || 'text',
+        localeConfig
       );
 
     case 'copy':
@@ -167,7 +198,7 @@ export function generateVariableValues(
       if (!config.formula) {
         return createBlankVariable(records);
       }
-      return records.map(record => evaluateFormula(record, config.formula!));
+      return records.map(record => evaluateFormula(record, config.formula!, localeConfig));
 
     case 'blank':
     default:

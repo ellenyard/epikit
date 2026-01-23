@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { DataColumn, VariableConfig, CategoryRule, CaseRecord } from '../../types/analysis';
 import { toVariableName, validateVariableConfig, generateVariableValues } from '../../utils/variableCreation';
+import { useLocale } from '../../contexts/LocaleContext';
 
 interface CreateVariableModalProps {
   isOpen: boolean;
@@ -17,6 +18,7 @@ export function CreateVariableModal({
   records,
   onCreateVariable,
 }: CreateVariableModalProps) {
+  const { config: localeConfig } = useLocale();
   const [label, setLabel] = useState('');
   const [name, setName] = useState('');
   const [type, setType] = useState<DataColumn['type']>('categorical');
@@ -82,12 +84,12 @@ export function CreateVariableModal({
     };
 
     try {
-      const values = generateVariableValues(records, config, sourceColumnType);
+      const values = generateVariableValues(records, config, sourceColumnType, localeConfig);
       return values.slice(0, 3); // Show first 3
     } catch {
       return [];
     }
-  }, [name, label, type, method, sourceColumn, categories, formula, records, sourceColumnType]);
+  }, [name, label, type, method, sourceColumn, categories, formula, records, sourceColumnType, localeConfig]);
 
   const handleAddCategory = () => {
     const newCategory: CategoryRule = {
@@ -129,7 +131,7 @@ export function CreateVariableModal({
 
     // Generate values
     try {
-      const values = generateVariableValues(records, config, sourceColumnType);
+      const values = generateVariableValues(records, config, sourceColumnType, localeConfig);
       onCreateVariable(config, values);
       onClose();
     } catch (err) {
