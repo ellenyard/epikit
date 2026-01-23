@@ -3,16 +3,13 @@ import type { Dataset } from '../../types/analysis';
 import {
   processEpiCurveData,
   getColorForStrata,
-  calculateAutoMilestones,
-  calculateExposureWindow,
-  generateNarrativeSummary,
   getAnnotationColor,
   getAnnotationCategory,
   ANNOTATION_CATEGORIES,
   PATHOGEN_INCUBATION,
   parseLocalDate,
 } from '../../utils/epiCurve';
-import type { BinSize, ColorScheme, Annotation, EpiCurveData, AnnotationType, AutoMilestone } from '../../utils/epiCurve';
+import type { BinSize, ColorScheme, Annotation, EpiCurveData, AnnotationType } from '../../utils/epiCurve';
 import { EpiCurveTutorial } from '../tutorials/EpiCurveTutorial';
 import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
 
@@ -85,10 +82,8 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     maxDays: '',
   });
 
-  // Timeline features
+  // Exposure window estimation
   const [selectedPathogen, setSelectedPathogen] = useState<string>('');
-  const [showAutoMilestones, setShowAutoMilestones] = useState(true);
-  const [showTimelineTrack, setShowTimelineTrack] = useState(true);
   const [showExposureWindow, setShowExposureWindow] = useState(false);
 
   // Find date columns (memoized to prevent unnecessary re-renders)
@@ -146,75 +141,38 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, annotations);
   }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations]);
 
-  // Calculate auto milestones
-  const autoMilestones: AutoMilestone[] = useMemo(() => {
-    if (!dateColumn || curveData.bins.length === 0) return [];
-    return calculateAutoMilestones(curveData, filteredRecords, dateColumn, selectedPathogen || undefined);
-  }, [curveData, filteredRecords, dateColumn, selectedPathogen]);
-
   // Calculate exposure window if pathogen is selected
+  // Uses epidemiological method: earliest case - max incubation to earliest case - min incubation
   const exposureWindow = useMemo(() => {
-    if (!selectedPathogen || !showExposureWindow) return null;
-    const firstMilestone = autoMilestones.find(m => m.type === 'first-case');
-    const lastMilestone = autoMilestones.find(m => m.type === 'last-case');
-    if (!firstMilestone || !lastMilestone) return null;
-    return calculateExposureWindow(firstMilestone.date, lastMilestone.date, selectedPathogen);
-  }, [autoMilestones, selectedPathogen, showExposureWindow]);
+    if (!selectedPathogen || !showExposureWindow || curveData.bins.length === 0) return null;
 
-  // Combine all timeline events for display
-  const allTimelineEvents = useMemo(() => {
-    const events: Array<{
-      id: string;
-      date: Date;
-      endDate?: Date;
-      label: string;
-      color: string;
-      source: 'auto' | 'manual';
-      type: string;
-    }> = [];
+    const incubation = PATHOGEN_INCUBATION[selectedPathogen];
+    if (!incubation) return null;
 
-    // Add auto milestones
-    if (showAutoMilestones) {
-      autoMilestones.forEach(m => {
-        events.push({
-          id: `auto-${m.type}`,
-          date: m.date,
-          label: m.label,
-          color: getAnnotationColor(m.type),
-          source: 'auto',
-          type: m.type,
-        });
-      });
-    }
+    // Find first case date from the bins
+    const binsWithCases = curveData.bins.filter(b => b.total > 0);
+    if (binsWithCases.length === 0) return null;
 
-    // Add exposure window
-    if (exposureWindow) {
-      events.push({
-        id: 'exposure-window',
-        date: exposureWindow.start,
-        endDate: exposureWindow.end,
-        label: `Est. Exposure (${selectedPathogen})`,
-        color: '#DC2626',
-        source: 'auto',
-        type: 'exposure',
-      });
-    }
+    const firstBin = binsWithCases[0];
+    // Get the earliest date from cases in the first bin
+    const firstCaseDate = firstBin.startDate;
 
-    // Add manual annotations
-    annotations.forEach(ann => {
-      events.push({
-        id: ann.id,
-        date: ann.date,
-        endDate: ann.endDate,
-        label: ann.label,
-        color: ann.color,
-        source: ann.source,
-        type: ann.type,
-      });
-    });
+    // For a point-source outbreak:
+    // Earliest possible exposure = first case - max incubation
+    // Latest possible exposure = first case - min incubation
+    const earliestExposure = new Date(firstCaseDate);
+    earliestExposure.setDate(earliestExposure.getDate() - Math.ceil(incubation.max));
 
-    return events.sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [autoMilestones, annotations, exposureWindow, showAutoMilestones, selectedPathogen]);
+    const latestExposure = new Date(firstCaseDate);
+    latestExposure.setDate(latestExposure.getDate() - Math.floor(incubation.min));
+
+    return {
+      start: earliestExposure,
+      end: latestExposure,
+      pathogen: selectedPathogen,
+      incubation,
+    };
+  }, [selectedPathogen, showExposureWindow, curveData.bins]);
 
   // Helper to get default date from dataset range
   const getDefaultAnnotationDate = (): string => {
@@ -312,24 +270,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       if (typeInfo) return typeInfo.label;
     }
     return type;
-  };
-
-  // Generate narrative summary
-  const narrativeSummary = useMemo(() => {
-    if (curveData.bins.length === 0) return '';
-    return generateNarrativeSummary(
-      annotations,
-      autoMilestones,
-      filteredRecords.length,
-      selectedPathogen || undefined
-    );
-  }, [annotations, autoMilestones, filteredRecords.length, selectedPathogen, curveData.bins.length]);
-
-  // Export narrative as text file
-  const exportNarrative = () => {
-    if (!narrativeSummary) return;
-    const blob = new Blob([narrativeSummary], { type: 'text/plain' });
-    downloadBlob(blob, `${chartTitle.replace(/\s+/g, '_')}_narrative.txt`);
   };
 
   const removeAnnotation = (id: string) => {
@@ -599,16 +539,19 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               </div>
             </div>
 
-            {/* Timeline Builder */}
+            {/* Exposure Estimation */}
             <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Timeline Builder</p>
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Exposure Estimation</p>
 
               {/* Pathogen Selection */}
               <div className="mb-3">
                 <label className="block text-xs text-gray-500 mb-1">Suspected Pathogen</label>
                 <select
                   value={selectedPathogen}
-                  onChange={(e) => setSelectedPathogen(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedPathogen(e.target.value);
+                    if (e.target.value) setShowExposureWindow(true);
+                  }}
                   className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
                 >
                   <option value="">Select pathogen...</option>
@@ -620,27 +563,9 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                 </select>
               </div>
 
-              {/* Timeline Display Options */}
-              <div className="space-y-2 mb-3">
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showAutoMilestones}
-                    onChange={(e) => setShowAutoMilestones(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-gray-700">Show auto-milestones</span>
-                </label>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showTimelineTrack}
-                    onChange={(e) => setShowTimelineTrack(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  <span className="text-gray-700">Show timeline track</span>
-                </label>
-                {selectedPathogen && (
+              {/* Exposure Window Toggle & Info */}
+              {selectedPathogen && (
+                <div className="space-y-2 mb-3">
                   <label className="flex items-center gap-2 text-sm cursor-pointer">
                     <input
                       type="checkbox"
@@ -648,31 +573,30 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                       onChange={(e) => setShowExposureWindow(e.target.checked)}
                       className="rounded border-gray-300"
                     />
-                    <span className="text-gray-700">Show exposure window</span>
+                    <span className="text-gray-700">Show estimated exposure window</span>
                   </label>
-                )}
-              </div>
 
-              {/* Auto Milestones Summary */}
-              {showAutoMilestones && autoMilestones.length > 0 && (
-                <div className="mb-3 p-2 bg-blue-50 border border-blue-100 rounded-lg">
-                  <p className="text-xs font-medium text-blue-700 mb-1">Auto-calculated:</p>
-                  <div className="space-y-0.5">
-                    {autoMilestones.map(m => (
-                      <div key={m.type} className="text-xs text-blue-600 flex justify-between">
-                        <span>{m.label}</span>
-                        <span className="text-blue-400">
-                          {m.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  {exposureWindow && (
+                    <div className="p-2 bg-red-50 border border-red-100 rounded-lg">
+                      <p className="text-xs font-medium text-red-700 mb-1">Estimated Exposure Period</p>
+                      <p className="text-xs text-red-600">
+                        {exposureWindow.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {' '}&ndash;{' '}
+                        {exposureWindow.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </p>
+                      <p className="text-xs text-red-400 mt-1">
+                        Based on {selectedPathogen} incubation ({exposureWindow.incubation.min}-{exposureWindow.incubation.max} days)
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
+            </div>
 
-              {/* Manual Annotations */}
+            {/* Annotations */}
+            <div className="pt-3 border-t border-gray-200">
               <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-medium text-gray-500">Manual Events</p>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Annotations</p>
                 <button
                   onClick={() => showAnnotationForm ? cancelAnnotationEdit() : startAddingAnnotation()}
                   className="text-xs text-gray-600 hover:text-gray-900"
@@ -744,17 +668,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                           type="text"
                           value={newAnnotation.label}
                           onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
-                          placeholder="Brief label for chart"
-                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-gray-500 mb-1">Description (for report)</label>
-                        <input
-                          type="text"
-                          value={newAnnotation.description}
-                          onChange={(e) => setNewAnnotation({ ...newAnnotation, description: e.target.value })}
-                          placeholder="Detailed description for narrative"
+                          placeholder="Label for chart"
                           className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                         />
                       </div>
@@ -898,6 +812,16 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                       </div>
                     )}
 
+                    {/* Exposure Window Shading */}
+                    {exposureWindow && (
+                      <ExposureWindowShading
+                        exposureWindow={exposureWindow}
+                        bins={curveData.bins}
+                        barWidth={barWidth}
+                        chartHeight={chartHeight}
+                      />
+                    )}
+
                     {/* Annotations */}
                     {annotations.map(ann => (
                       <AnnotationMarker
@@ -1002,34 +926,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               <div className="text-center mt-2">
                 <span className="text-sm font-bold text-gray-500">{xAxisLabel}</span>
               </div>
-
-              {/* Timeline Track */}
-              {showTimelineTrack && allTimelineEvents.length > 0 && curveData.bins.length > 0 && (
-                <TimelineTrack
-                  events={allTimelineEvents}
-                  bins={curveData.bins}
-                  barWidth={barWidth}
-                />
-              )}
-
-              {/* Narrative Summary */}
-              {narrativeSummary && (
-                <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <h5 className="text-sm font-semibold text-gray-700">Outbreak Summary</h5>
-                    <button
-                      onClick={exportNarrative}
-                      className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                    >
-                      {ExportIcons.download}
-                      Export
-                    </button>
-                  </div>
-                  <div className="text-sm text-gray-600 whitespace-pre-wrap">
-                    {narrativeSummary}
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Results Actions */}
@@ -1047,12 +943,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                   icon: ExportIcons.download,
                   variant: 'secondary',
                 },
-                ...(narrativeSummary ? [{
-                  label: 'Export Narrative',
-                  onClick: exportNarrative,
-                  icon: ExportIcons.download,
-                  variant: 'secondary' as const,
-                }] : []),
                 ...(onExportDataset ? [{
                   label: 'Export Dataset CSV',
                   onClick: onExportDataset,
@@ -1231,21 +1121,19 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
   );
 }
 
-// Timeline track component - displays events below the epi curve
-function TimelineTrack({ events, bins, barWidth }: {
-  events: Array<{
-    id: string;
-    date: Date;
-    endDate?: Date;
-    label: string;
-    color: string;
-    source: 'auto' | 'manual';
-    type: string;
-  }>;
+// Exposure window shading component - shows estimated exposure period on the chart
+function ExposureWindowShading({ exposureWindow, bins, barWidth, chartHeight }: {
+  exposureWindow: {
+    start: Date;
+    end: Date;
+    pathogen: string;
+    incubation: { min: number; max: number; typical: number };
+  };
   bins: EpiCurveData['bins'];
   barWidth: number;
+  chartHeight: number;
 }) {
-  if (bins.length === 0 || events.length === 0) return null;
+  if (bins.length === 0) return null;
 
   const firstBinStart = bins[0].startDate.getTime();
   const lastBinEnd = bins[bins.length - 1].endDate.getTime();
@@ -1257,125 +1145,56 @@ function TimelineTrack({ events, bins, barWidth }: {
     if (time <= firstBinStart) return 0;
     if (time >= lastBinEnd) return totalWidth;
 
-    const binIndex = bins.findIndex(b =>
-      time >= b.startDate.getTime() && time < b.endDate.getTime()
-    );
-
-    if (binIndex !== -1) {
-      const bin = bins[binIndex];
-      const binStart = bin.startDate.getTime();
-      const binEnd = bin.endDate.getTime();
-      const fraction = (time - binStart) / (binEnd - binStart);
-      return binIndex * barWidth + fraction * barWidth;
-    }
-
-    return totalWidth;
+    // Calculate proportional position across all bins
+    const totalDuration = lastBinEnd - firstBinStart;
+    const offset = time - firstBinStart;
+    return (offset / totalDuration) * totalWidth;
   };
 
-  // Group events by approximate position to avoid overlap
-  const eventRows: typeof events[] = [];
-  events.forEach(event => {
-    const x = getXPosition(event.date);
-    const width = event.endDate ? getXPosition(event.endDate) - x : 80;
+  const startX = getXPosition(exposureWindow.start);
+  const endX = getXPosition(exposureWindow.end);
+  const width = Math.max(endX - startX, barWidth / 2);
 
-    // Find a row where this event doesn't overlap
-    let placed = false;
-    for (const row of eventRows) {
-      const hasOverlap = row.some(existing => {
-        const existingX = getXPosition(existing.date);
-        const existingWidth = existing.endDate ? getXPosition(existing.endDate) - existingX : 80;
-        return !(x + width < existingX || x > existingX + existingWidth);
-      });
-
-      if (!hasOverlap) {
-        row.push(event);
-        placed = true;
-        break;
-      }
-    }
-
-    if (!placed) {
-      eventRows.push([event]);
-    }
-  });
-
-  const rowHeight = 24;
-  const trackHeight = eventRows.length * rowHeight + 8;
+  // Format dates for the label
+  const formatDate = (date: Date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   return (
-    <div className="mt-4 border-t border-gray-200 pt-2">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Timeline</span>
-        <div className="flex-1 border-b border-gray-100" />
-      </div>
-      <div className="flex">
-        {/* Left margin to align with chart */}
-        <div className="w-8 flex-shrink-0" />
-        <div className="w-10 flex-shrink-0" />
+    <div
+      className="absolute top-0 pointer-events-none"
+      style={{
+        left: startX,
+        width,
+        height: chartHeight,
+      }}
+      title={`Estimated exposure: ${formatDate(exposureWindow.start)} - ${formatDate(exposureWindow.end)}`}
+    >
+      {/* Shaded region with diagonal stripes pattern */}
+      <div
+        className="absolute inset-0"
+        style={{
+          backgroundColor: 'rgba(220, 38, 38, 0.15)',
+          backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(220, 38, 38, 0.1) 5px, rgba(220, 38, 38, 0.1) 10px)',
+        }}
+      />
 
-        {/* Timeline content */}
-        <div className="flex-1 overflow-x-auto">
-          <div
-            className="relative bg-gray-50 rounded"
-            style={{ width: totalWidth, height: trackHeight, minWidth: '100%' }}
-          >
-            {/* Time axis line */}
-            <div
-              className="absolute top-0 left-0 right-0 h-px bg-gray-300"
-              style={{ width: totalWidth }}
-            />
+      {/* Left edge line */}
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-red-400"
+        style={{ left: 0 }}
+      />
 
-            {/* Event markers */}
-            {eventRows.map((row, rowIndex) => (
-              row.map(event => {
-                const x = getXPosition(event.date);
-                const hasRange = event.endDate !== undefined;
-                const width = hasRange ? Math.max(getXPosition(event.endDate!) - x, 20) : undefined;
+      {/* Right edge line */}
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-red-400"
+        style={{ right: 0 }}
+      />
 
-                return (
-                  <div
-                    key={event.id}
-                    className="absolute flex items-center"
-                    style={{
-                      left: x,
-                      top: rowIndex * rowHeight + 4,
-                      width: width,
-                    }}
-                    title={`${event.label} - ${event.date.toLocaleDateString()}`}
-                  >
-                    {/* Marker dot/line */}
-                    <div
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ backgroundColor: event.color }}
-                    />
-
-                    {/* Range line */}
-                    {hasRange && (
-                      <div
-                        className="h-0.5 flex-1 opacity-50"
-                        style={{ backgroundColor: event.color }}
-                      />
-                    )}
-
-                    {/* Label */}
-                    <span
-                      className="ml-1 text-xs whitespace-nowrap px-1 py-0.5 rounded"
-                      style={{
-                        backgroundColor: `${event.color}15`,
-                        color: event.color,
-                        maxWidth: hasRange ? 'none' : '120px',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {event.source === 'auto' && '●'} {event.label}
-                    </span>
-                  </div>
-                );
-              })
-            ))}
-          </div>
-        </div>
+      {/* Label at top */}
+      <div
+        className="absolute top-1 left-1 px-1.5 py-0.5 text-xs font-medium text-red-700 bg-red-100 rounded shadow-sm whitespace-nowrap"
+        style={{ maxWidth: width - 8, overflow: 'hidden', textOverflow: 'ellipsis' }}
+      >
+        Est. Exposure
       </div>
     </div>
   );
