@@ -8,11 +8,12 @@ import { TwoWayTableBuilder } from './TwoWayTableBuilder';
 interface DescriptiveTablesProps {
   dataset: Dataset;
   onNavigateTo2x2?: () => void;
+  onExportDataset?: () => void;
 }
 
 type Section = 'single' | 'oneway' | 'twoway';
 
-export function DescriptiveTables({ dataset, onNavigateTo2x2 }: DescriptiveTablesProps) {
+export function DescriptiveTables({ dataset, onNavigateTo2x2, onExportDataset }: DescriptiveTablesProps) {
   const [activeSection, setActiveSection] = useState<Section>('single');
 
   return (
@@ -59,9 +60,9 @@ export function DescriptiveTables({ dataset, onNavigateTo2x2 }: DescriptiveTable
 
       {/* Active Section Content */}
       <div className="flex-1">
-        {activeSection === 'single' && <SingleVariable dataset={dataset} />}
-        {activeSection === 'oneway' && <OneWaySection dataset={dataset} />}
-        {activeSection === 'twoway' && <TwoWayTableBuilder dataset={dataset} onNavigateTo2x2={onNavigateTo2x2} />}
+        {activeSection === 'single' && <SingleVariable dataset={dataset} onExportDataset={onExportDataset} />}
+        {activeSection === 'oneway' && <OneWaySection dataset={dataset} onExportDataset={onExportDataset} />}
+        {activeSection === 'twoway' && <TwoWayTableBuilder dataset={dataset} onNavigateTo2x2={onNavigateTo2x2} onExportDataset={onExportDataset} />}
       </div>
 
       {/* Unified Help Panel */}

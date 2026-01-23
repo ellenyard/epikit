@@ -3,10 +3,11 @@ import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
-import { TabHeader, HelpPanel } from '../shared';
+import { TabHeader, HelpPanel, ResultsActions, ExportIcons } from '../shared';
 
 interface TwoByTwoAnalysisProps {
   dataset: Dataset;
+  onExportDataset?: () => void;
 }
 
 type StudyDesign = 'cohort' | 'case-control';
@@ -18,7 +19,7 @@ interface ExposureResult {
   results: TwoByTwoResults;
 }
 
-export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
+export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisProps) {
   // Study design
   const [studyDesign, setStudyDesign] = useState<StudyDesign>('cohort');
 
@@ -635,6 +636,20 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
                 );
               })()}
             </div>
+          )}
+
+          {/* Results Actions */}
+          {onExportDataset && (
+            <ResultsActions
+              actions={[
+                {
+                  label: 'Export Dataset CSV',
+                  onClick: onExportDataset,
+                  icon: ExportIcons.csv,
+                  variant: 'secondary',
+                },
+              ]}
+            />
           )}
         </div>
       )}

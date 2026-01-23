@@ -18,6 +18,7 @@ import { ResultsActions, ExportIcons } from '../shared';
 
 interface OneWaySectionProps {
   dataset: Dataset;
+  onExportDataset?: () => void;
 }
 
 interface SortableVariableItemProps {
@@ -150,7 +151,7 @@ const formatPercent = (value: number, sampleSize: number): string => {
   return formatSigFigs(value, sigFigs);
 };
 
-export function OneWaySection({ dataset }: OneWaySectionProps) {
+export function OneWaySection({ dataset, onExportDataset }: OneWaySectionProps) {
   const [selectedVariables, setSelectedVariables] = useState<string[]>([]);
   const [variableConfigs, setVariableConfigs] = useState<Record<string, VariableConfig>>({});
   const [percentMode, setPercentMode] = useState<'total' | 'non-missing'>('total');
@@ -518,6 +519,12 @@ export function OneWaySection({ dataset }: OneWaySectionProps) {
                         icon: ExportIcons.csv,
                         variant: 'primary',
                       },
+                      ...(onExportDataset ? [{
+                        label: 'Export Dataset CSV',
+                        onClick: onExportDataset,
+                        icon: ExportIcons.csv,
+                        variant: 'secondary' as const,
+                      }] : []),
                     ]}
                   />
                 </div>
