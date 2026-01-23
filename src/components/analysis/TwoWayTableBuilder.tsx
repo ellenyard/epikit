@@ -19,6 +19,7 @@ import { ResultsActions, ExportIcons, AdvancedOptions } from '../shared';
 interface TwoWayTableBuilderProps {
   dataset: Dataset;
   onNavigateTo2x2?: () => void;
+  onExportDataset?: () => void;
 }
 
 type DenominatorMode = 'total' | 'valid';
@@ -162,7 +163,7 @@ const formatPercent = (value: number, sampleSize: number): string => {
   return formatSigFigs(value, sigFigs);
 };
 
-export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuilderProps) {
+export function TwoWayTableBuilder({ dataset, onNavigateTo2x2, onExportDataset }: TwoWayTableBuilderProps) {
   const [selectedRowVariables, setSelectedRowVariables] = useState<string[]>([]);
   const [colVariable, setColVariable] = useState<string>('');
   const [rowVariableConfigs, setRowVariableConfigs] = useState<Record<string, VariableConfig>>({});
@@ -889,6 +890,12 @@ export function TwoWayTableBuilder({ dataset, onNavigateTo2x2 }: TwoWayTableBuil
                     icon: ExportIcons.csv,
                     variant: 'primary',
                   },
+                  ...(onExportDataset ? [{
+                    label: 'Export Dataset CSV',
+                    onClick: onExportDataset,
+                    icon: ExportIcons.csv,
+                    variant: 'secondary' as const,
+                  }] : []),
                 ]}
               />
             </div>

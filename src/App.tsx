@@ -462,14 +462,6 @@ function App() {
               }}
             />
           </div>
-          {activeDataset && (
-            <button
-              onClick={handleDatasetExport}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-            >
-              Export CSV
-            </button>
-          )}
         </div>
       )}
 
@@ -523,13 +515,13 @@ function App() {
               exportEditLog={exportEditLog}
             />
           ) : activeModule === 'epicurve' ? (
-            <EpiCurve dataset={activeDataset} />
+            <EpiCurve dataset={activeDataset} onExportDataset={handleDatasetExport} />
           ) : activeModule === 'spotmap' ? (
-            <SpotMap dataset={activeDataset} />
+            <SpotMap dataset={activeDataset} onExportDataset={handleDatasetExport} />
           ) : activeModule === 'descriptive-tables' ? (
-            <DescriptiveTables dataset={activeDataset} onNavigateTo2x2={() => setActiveModule('2way')} />
+            <DescriptiveTables dataset={activeDataset} onNavigateTo2x2={() => setActiveModule('2way')} onExportDataset={handleDatasetExport} />
           ) : activeModule === '2way' ? (
-            <TwoByTwoAnalysis dataset={activeDataset} />
+            <TwoByTwoAnalysis dataset={activeDataset} onExportDataset={handleDatasetExport} />
           ) : null
         ) : (
           // No dataset selected - show prompt

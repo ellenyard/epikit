@@ -6,6 +6,7 @@ import { ResultsActions, ExportIcons, AdvancedOptions } from '../shared';
 
 interface SingleVariableProps {
   dataset: Dataset;
+  onExportDataset?: () => void;
 }
 
 interface HistogramBin {
@@ -35,7 +36,7 @@ const formatPercent = (value: number, sampleSize: number): string => {
   return formatSigFigs(value, sigFigs);
 };
 
-export function SingleVariable({ dataset }: SingleVariableProps) {
+export function SingleVariable({ dataset, onExportDataset }: SingleVariableProps) {
   const [selectedVar, setSelectedVar] = useState<string>('');
   const [binWidth, setBinWidth] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -684,6 +685,12 @@ export function SingleVariable({ dataset }: SingleVariableProps) {
                         icon: ExportIcons.csv,
                         variant: 'primary',
                       },
+                      ...(onExportDataset ? [{
+                        label: 'Export Dataset CSV',
+                        onClick: onExportDataset,
+                        icon: ExportIcons.csv,
+                        variant: 'secondary' as const,
+                      }] : []),
                     ]}
                   />
                 </div>
