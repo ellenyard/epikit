@@ -29,7 +29,7 @@ function categorizeNumericValue(
   if (typeof value === 'number') {
     numValue = value;
   } else if (localeConfig) {
-    numValue = parseFlexibleNumber(value, localeConfig);
+    numValue = parseFlexibleNumber(value as string | number | undefined | null, localeConfig);
   } else {
     numValue = parseFloat(String(value));
   }
