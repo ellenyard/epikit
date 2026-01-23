@@ -8,6 +8,7 @@ import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } fr
 
 interface SpotMapProps {
   dataset: Dataset;
+  onExportDataset?: () => void;
 }
 
 type ColorScheme = 'default' | 'classification' | 'colorblind' | 'sequential';
@@ -16,6 +17,8 @@ interface MapCase {
   record: CaseRecord;
   lat: number;
   lng: number;
+  displayLat: number;  // Jittered coordinates for display
+  displayLng: number;
   classification: string;
 }
 
@@ -60,13 +63,43 @@ function getMarkerColor(classification: string, scheme: ColorScheme): string {
   return palette[classification] || palette._default;
 }
 
+// Deterministic jitter function for privacy
+function jitterCoordinates(
+  lat: number,
+  lng: number,
+  distanceMeters: number,
+  seed: string
+): { lat: number; lng: number } {
+  if (distanceMeters === 0) return { lat, lng };
+
+  // Simple hash function to generate deterministic random values from seed
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+
+  // Generate deterministic "random" angle and radius
+  const angle = ((hash % 360) / 360) * 2 * Math.PI;
+  const radius = ((Math.abs(hash) % 1000) / 1000) * distanceMeters;
+
+  // Convert meters to degrees
+  const dLat = radius * Math.cos(angle) / 111320;
+  const dLng = radius * Math.sin(angle) / (111320 * Math.cos(lat * Math.PI / 180));
+
+  return {
+    lat: lat + dLat,
+    lng: lng + dLng,
+  };
+}
+
 // Component to fit map bounds
 function FitBounds({ cases }: { cases: MapCase[] }) {
   const map = useMap();
 
   useEffect(() => {
     if (cases.length > 0) {
-      const bounds = cases.map(c => [c.lat, c.lng] as [number, number]);
+      const bounds = cases.map(c => [c.displayLat, c.displayLng] as [number, number]);
       map.fitBounds(bounds, { padding: [50, 50] });
     }
   }, [cases, map]);
@@ -74,7 +107,7 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
   return null;
 }
 
-export function SpotMap({ dataset }: SpotMapProps) {
+export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
   const [latColumn, setLatColumn] = useState<string>('');
   const [lngColumn, setLngColumn] = useState<string>('');
   const [filterBy, setFilterBy] = useState<string>('');
@@ -85,6 +118,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
+
+  // Privacy safeguards
+  const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(true);
+  const [jitterDistance, setJitterDistance] = useState<number>(500); // meters
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
@@ -168,15 +205,23 @@ export function SpotMap({ dataset }: SpotMapProps) {
         // Use case_status or classification field for coloring
         const classification = String(record['case_status'] ?? record['classification'] ?? 'Unknown');
 
+        // Apply jitter if obfuscation is enabled
+        const seed = String(record.id || record[latColumn] || '') + String(jitterDistance);
+        const jittered = obfuscateLocations
+          ? jitterCoordinates(lat, lng, jitterDistance, seed)
+          : { lat, lng };
+
         return {
           record,
           lat,
           lng,
+          displayLat: jittered.lat,
+          displayLng: jittered.lng,
           classification,
         };
       })
       .filter((c): c is MapCase => c !== null);
-  }, [dataset.records, latColumn, lngColumn]);
+  }, [dataset.records, latColumn, lngColumn, obfuscateLocations, jitterDistance]);
 
   // Apply filters if selected
   const filteredCases = useMemo(() => {
@@ -189,6 +234,12 @@ export function SpotMap({ dataset }: SpotMapProps) {
       return selectedFilterValues.has(value);
     });
   }, [mapCases, filterBy, selectedFilterValues]);
+
+  // Calculate missing records
+  const missingRecordsCount = useMemo(() => {
+    if (!latColumn || !lngColumn) return 0;
+    return dataset.records.length - mapCases.length;
+  }, [dataset.records.length, mapCases.length, latColumn, lngColumn]);
 
   // Get unique classification values for legend
   const classificationValues = useMemo(() => {
@@ -394,6 +445,43 @@ export function SpotMap({ dataset }: SpotMapProps) {
             </select>
           </div>
 
+          {/* Privacy Controls */}
+          <div className="pt-4 border-t border-gray-200">
+            <label className="block text-sm font-medium text-gray-700 mb-3">Privacy Settings</label>
+
+            <div className="space-y-3">
+              {/* Obfuscation Toggle */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={obfuscateLocations}
+                  onChange={(e) => setObfuscateLocations(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">Obfuscate locations (recommended)</span>
+              </label>
+
+              {/* Jitter Distance Selector */}
+              {obfuscateLocations && (
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    Jitter distance: {jitterDistance}m
+                  </label>
+                  <select
+                    value={jitterDistance}
+                    onChange={(e) => setJitterDistance(Number(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                  >
+                    <option value={200}>200 meters</option>
+                    <option value={500}>500 meters</option>
+                    <option value={1000}>1 kilometer</option>
+                    <option value={2000}>2 kilometers</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Advanced Options */}
           <AdvancedOptions>
             {/* Color Scheme */}
@@ -460,6 +548,22 @@ export function SpotMap({ dataset }: SpotMapProps) {
       <div className="flex-1 relative min-h-[400px] lg:min-h-0">
         {latColumn && lngColumn ? (
           <div ref={mapContainerRef} className="h-full w-full relative">
+            {/* Privacy Warning Banner */}
+            {obfuscateLocations && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] max-w-lg">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 shadow-lg">
+                  <p className="text-xs text-amber-900">
+                    <span className="font-semibold">Privacy notice:</span> Map locations are jittered by {jitterDistance}m for display. Do not interpret as exact household locations.
+                    {missingRecordsCount > 0 && (
+                      <span className="block mt-1 text-amber-800">
+                        {missingRecordsCount} record{missingRecordsCount !== 1 ? 's' : ''} missing lat/lon coordinates.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <MapContainer
               center={defaultCenter}
               zoom={defaultZoom}
@@ -475,7 +579,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
               {filteredCases.map((caseData, index) => (
                 <CircleMarker
                   key={caseData.record.id || index}
-                  center={[caseData.lat, caseData.lng]}
+                  center={[caseData.displayLat, caseData.displayLng]}
                   radius={markerSize}
                   pathOptions={{
                     fillColor: getMarkerColor(caseData.classification, colorScheme),
@@ -496,9 +600,11 @@ export function SpotMap({ dataset }: SpotMapProps) {
                           </p>
                         );
                       })}
-                      <p className="text-gray-500 mt-2 text-xs">
-                        Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
-                      </p>
+                      {!obfuscateLocations && (
+                        <p className="text-gray-500 mt-2 text-xs">
+                          Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
+                        </p>
+                      )}
                     </div>
                   </Popup>
                 </CircleMarker>
@@ -526,7 +632,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
               </div>
             )}
 
-            {/* Results Actions - Export PNG */}
+            {/* Results Actions - Export */}
             {latColumn && lngColumn && mapCases.length > 0 && (
               <div className="absolute bottom-4 right-4 z-[1000]">
                 <ResultsActions
@@ -538,6 +644,12 @@ export function SpotMap({ dataset }: SpotMapProps) {
                       disabled: isExporting,
                       variant: 'primary',
                     },
+                    ...(onExportDataset ? [{
+                      label: 'Export Dataset CSV',
+                      onClick: onExportDataset,
+                      icon: ExportIcons.csv,
+                      variant: 'secondary' as const,
+                    }] : []),
                   ]}
                 />
               </div>
