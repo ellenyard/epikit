@@ -527,7 +527,7 @@ function App() {
           ) : activeModule === 'spotmap' ? (
             <SpotMap dataset={activeDataset} />
           ) : activeModule === 'descriptive-tables' ? (
-            <DescriptiveTables dataset={activeDataset} />
+            <DescriptiveTables dataset={activeDataset} onNavigateTo2x2={() => setActiveModule('2way')} />
           ) : activeModule === '2way' ? (
             <TwoByTwoAnalysis dataset={activeDataset} />
           ) : null
