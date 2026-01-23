@@ -123,13 +123,60 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
     return caseValues.has(value);
   };
 
+  // Export dataset with only the records used in the current analysis
+  const exportDatasetCSV = () => {
+    if (!outcomeVar || caseValues.size === 0 || selectedExposures.length === 0) return;
+
+    // Filter to only records with valid outcome and at least one valid exposure
+    const analysisRecords = dataset.records.filter(record => {
+      // Must have valid outcome
+      const outcomeValue = record[outcomeVar];
+      if (outcomeValue === null || outcomeValue === undefined || String(outcomeValue).trim() === '') {
+        return false;
+      }
+
+      // Must have at least one valid exposure value
+      return selectedExposures.some(expVar => {
+        const expValue = record[expVar];
+        return expValue !== null && expValue !== undefined && String(expValue).trim() !== '';
+      });
+    });
+
+    // Create CSV
+    const headers = dataset.columns.map(col => col.label);
+    let csv = headers.join(',') + '\n';
+
+    analysisRecords.forEach(record => {
+      const row = dataset.columns.map(col => {
+        const value = record[col.key];
+        const strValue = value === null || value === undefined ? '' : String(value);
+        // Escape quotes and wrap in quotes if contains comma or quote
+        if (strValue.includes(',') || strValue.includes('"') || strValue.includes('\n')) {
+          return `"${strValue.replace(/"/g, '""')}"`;
+        }
+        return strValue;
+      });
+      csv += row.join(',') + '\n';
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `2x2_analysis_data_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Calculate 2x2 results for each selected exposure
   const exposureResults: ExposureResult[] = useMemo(() => {
     if (!outcomeVar || caseValues.size === 0 || selectedExposures.length === 0) {
       return [];
     }
 
-    return selectedExposures.map(expVar => {
+    const results = selectedExposures.map(expVar => {
       const exposedValue = exposurePositiveValues[expVar] || detectExposedValue(expVar);
       let a = 0, b = 0, c = 0, d = 0;
 
@@ -160,7 +207,21 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
         results,
       };
     });
-  }, [dataset.records, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues]);
+
+    // Sort by proportion of cases exposed (for case-control) or attack rate among exposed (for cohort)
+    // Both in descending order (highest first)
+    return results.sort((a, b) => {
+      if (studyDesign === 'cohort') {
+        // Sort by attack rate among exposed (descending)
+        return b.results.attackRateExposed - a.results.attackRateExposed;
+      } else {
+        // Sort by proportion of cases exposed (descending)
+        const propA = a.results.totalDisease > 0 ? a.results.table.a / a.results.totalDisease : 0;
+        const propB = b.results.totalDisease > 0 ? b.results.table.a / b.results.totalDisease : 0;
+        return propB - propA;
+      }
+    });
+  }, [dataset.records, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, studyDesign]);
 
   // Count total cases
   const totalCases = useMemo(() => {
@@ -304,7 +365,7 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
-                      <span>Cases (n, %)</span>
+                      <span>CASES (n={exposureResults.length > 0 ? exposureResults[0].results.totalDisease : 0})</span>
                       <div className="group relative">
                         <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
@@ -317,7 +378,7 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
-                      <span>Controls (n, %)</span>
+                      <span>CONTROLS (n={exposureResults.length > 0 ? exposureResults[0].results.totalNoDisease : 0})</span>
                       <div className="group relative">
                         <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
@@ -345,7 +406,7 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
                 const ci = studyDesign === 'cohort' ? r.riskRatioCI : r.oddsRatioCI;
 
                 return (
-                  <tr key={result.exposureVar} className={isSignificant ? 'bg-gray-50' : ''}>
+                  <tr key={result.exposureVar}>
                     <td className="px-3 py-2 text-sm font-medium text-gray-900">
                       {result.exposureLabel}
                       <span className="text-xs text-gray-500 ml-1">({result.exposedValue})</span>
@@ -354,12 +415,12 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
                       <>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.a}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalExposed}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">
+                        <td className="px-3 py-2 text-sm text-center text-gray-900 border-r border-gray-200">
                           {formatPercent(r.attackRateExposed * 100, r.total)}%
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.c}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalUnexposed}</td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-900">
+                        <td className="px-3 py-2 text-sm text-center text-gray-900 border-r border-gray-200">
                           {formatPercent(r.attackRateUnexposed * 100, r.total)}%
                         </td>
                         <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
@@ -393,8 +454,8 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
         </div>
         <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
           {studyDesign === 'cohort'
-            ? 'AR = Attack Rate (Row %), RR = Risk Ratio. Green highlighting indicates p < 0.05.'
-            : 'Percentages are column percentages. OR = Odds Ratio. Green highlighting indicates p < 0.05.'}
+            ? 'AR = Attack Rate (Row %), RR = Risk Ratio. These are bivariate risk ratios (associations were run one at a time).'
+            : 'Percentages are column percentages. OR = Odds Ratio. These are bivariate odds ratios (associations were run one at a time).'}
         </div>
       </div>
     );
@@ -639,18 +700,16 @@ export function TwoByTwoAnalysis({ dataset, onExportDataset }: TwoByTwoAnalysisP
           )}
 
           {/* Results Actions */}
-          {onExportDataset && (
-            <ResultsActions
-              actions={[
-                {
-                  label: 'Export Dataset CSV',
-                  onClick: onExportDataset,
-                  icon: ExportIcons.csv,
-                  variant: 'secondary',
-                },
-              ]}
-            />
-          )}
+          <ResultsActions
+            actions={[
+              {
+                label: 'Export Dataset CSV',
+                onClick: exportDatasetCSV,
+                icon: ExportIcons.csv,
+                variant: 'secondary',
+              },
+            ]}
+          />
         </div>
       )}
 
