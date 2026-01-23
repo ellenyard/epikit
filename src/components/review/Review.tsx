@@ -300,7 +300,7 @@ export function Review({
         </div>
 
         {/* Line Listing */}
-        <div className={`flex-1 overflow-hidden ${showEditLog ? 'lg:mr-80' : ''}`}>
+        <div className="flex-1 overflow-hidden">
           <LineListing
             dataset={activeDataset}
             onUpdateRecord={(recordId, updates) => updateRecord(activeDataset.id, recordId, updates)}
@@ -315,48 +315,16 @@ export function Review({
             onShowAddRowChange={setShowAddRow}
           />
         </div>
-
-        {/* Edit Log Panel */}
-        {showEditLog && (
-          <div className="hidden lg:block w-80 border-l border-gray-200 bg-white overflow-y-auto">
-            <EditLogPanel
-              entries={currentEditLog}
-              isOpen={showEditLog}
-              onToggle={() => setShowEditLog(!showEditLog)}
-              onUpdateEntry={updateEditLogEntry}
-              onExport={() => activeDatasetId && exportEditLog(activeDatasetId)}
-            />
-          </div>
-        )}
       </div>
 
-      {/* Mobile Edit Log */}
-      {showEditLog && (
-        <div className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setShowEditLog(false)}>
-          <div
-            className="absolute right-0 top-0 bottom-0 w-full max-w-md bg-white shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h2 className="font-semibold text-gray-900">Edit Log</h2>
-              <button onClick={() => setShowEditLog(false)} className="p-1 text-gray-400 hover:text-gray-600">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="overflow-y-auto h-full pb-20">
-              <EditLogPanel
-                entries={currentEditLog}
-                isOpen={showEditLog}
-                onToggle={() => setShowEditLog(!showEditLog)}
-                onUpdateEntry={updateEditLogEntry}
-                onExport={() => activeDatasetId && exportEditLog(activeDatasetId)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Edit Log Sidebar */}
+      <EditLogPanel
+        entries={currentEditLog}
+        isOpen={showEditLog}
+        onToggle={() => setShowEditLog(!showEditLog)}
+        onUpdateEntry={updateEditLogEntry}
+        onExport={() => activeDatasetId && exportEditLog(activeDatasetId)}
+      />
 
       {/* Create Variable Modal */}
       <CreateVariableModal
