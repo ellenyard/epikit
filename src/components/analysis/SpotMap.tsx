@@ -4,6 +4,7 @@ import html2canvas from 'html2canvas';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import 'leaflet/dist/leaflet.css';
 import { SpotMapTutorial } from '../tutorials/SpotMapTutorial';
+import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
 
 interface SpotMapProps {
   dataset: Dataset;
@@ -243,7 +244,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
             href={link}
             target="_blank"
             rel="noopener noreferrer"
-            className="block mt-1 text-blue-300 hover:text-blue-200 pointer-events-auto"
+            className="block mt-1 text-gray-300 hover:text-gray-200 pointer-events-auto underline"
             onClick={(e) => e.stopPropagation()}
           >
             Learn more about coordinates
@@ -266,8 +267,11 @@ export function SpotMap({ dataset }: SpotMapProps) {
         style={{ width: window.innerWidth >= 1024 ? panelWidth : '100%' }}
       >
         <div className="space-y-4">
-          {/* Tutorial Component */}
-          <SpotMapTutorial />
+          {/* TabHeader */}
+          <TabHeader
+            title="Spot Map"
+            description="Map case locations using latitude/longitude and optional case status styling."
+          />
 
           {/* Case count summary */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
@@ -299,7 +303,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => setSelectedFilterValues(new Set(filterValues))}
-                      className="text-xs text-blue-600 hover:text-blue-700"
+                      className="text-xs text-gray-600 hover:text-gray-900"
                     >
                       All
                     </button>
@@ -339,7 +343,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 {hasMoreFilterValues && (
                   <button
                     onClick={() => setShowAllFilterValues(!showAllFilterValues)}
-                    className="mt-2 text-xs text-blue-600 hover:text-blue-700"
+                    className="mt-2 text-xs text-gray-600 hover:text-gray-900"
                   >
                     {showAllFilterValues ? 'Show less' : `Show ${filterValues.length - 5} more...`}
                   </button>
@@ -390,89 +394,66 @@ export function SpotMap({ dataset }: SpotMapProps) {
             </select>
           </div>
 
-          {/* Divider */}
-          <div className="border-t border-gray-200 pt-4">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Formatting</p>
-          </div>
+          {/* Advanced Options */}
+          <AdvancedOptions>
+            {/* Color Scheme */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
+              <select
+                value={colorScheme}
+                onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="default">Default Blue</option>
+                <option value="classification">By Classification</option>
+                <option value="colorblind">Colorblind-Friendly</option>
+                <option value="sequential">Sequential</option>
+              </select>
+            </div>
 
-          {/* Color Scheme */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
-            <select
-              value={colorScheme}
-              onChange={(e) => setColorScheme(e.target.value as ColorScheme)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="default">Default Blue</option>
-              <option value="classification">By Classification</option>
-              <option value="colorblind">Colorblind-Friendly</option>
-              <option value="sequential">Sequential</option>
-            </select>
-          </div>
+            {/* Map Style */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
+              <select
+                value={mapStyle}
+                onChange={(e) => setMapStyle(e.target.value as 'street' | 'satellite' | 'topo')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="street">Street</option>
+                <option value="satellite">Satellite</option>
+                <option value="topo">Topographic</option>
+              </select>
+            </div>
 
-          {/* Map Style */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
-            <select
-              value={mapStyle}
-              onChange={(e) => setMapStyle(e.target.value as 'street' | 'satellite' | 'topo')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-            >
-              <option value="street">Street</option>
-              <option value="satellite">Satellite</option>
-              <option value="topo">Topographic</option>
-            </select>
-          </div>
+            {/* Marker Size */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Marker Size <span className="text-gray-400 font-normal">({markerSize}px)</span>
+              </label>
+              <input
+                type="range"
+                min="4"
+                max="20"
+                value={markerSize}
+                onChange={(e) => setMarkerSize(Number(e.target.value))}
+                className="w-full"
+              />
+            </div>
+          </AdvancedOptions>
 
-          {/* Marker Size */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Marker Size <span className="text-gray-400 font-normal">({markerSize}px)</span>
-            </label>
-            <input
-              type="range"
-              min="4"
-              max="20"
-              value={markerSize}
-              onChange={(e) => setMarkerSize(Number(e.target.value))}
-              className="w-full"
-            />
-          </div>
-
-          {/* Export Button */}
-          <div className="pt-3 border-t border-gray-200">
-            <button
-              onClick={exportMap}
-              disabled={isExporting || !latColumn || !lngColumn}
-              className="w-full px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {isExporting ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  Exporting...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Export as PNG
-                </>
-              )}
-            </button>
-          </div>
+          {/* Help Panel */}
+          <HelpPanel title="Tutorial: Spot Maps">
+            <SpotMapTutorial />
+          </HelpPanel>
         </div>
       </div>
 
       {/* Resize Handle */}
       <div
-        className="hidden lg:flex w-1 bg-gray-200 hover:bg-blue-400 cursor-col-resize flex-shrink-0 items-center justify-center group transition-colors"
+        className="hidden lg:flex w-1 bg-gray-200 hover:bg-gray-300 cursor-col-resize flex-shrink-0 items-center justify-center group transition-colors"
         onMouseDown={() => setIsResizing(true)}
       >
-        <div className="w-0.5 h-8 bg-gray-400 group-hover:bg-blue-600 rounded-full transition-colors" />
+        <div className="w-0.5 h-8 bg-gray-400 group-hover:bg-gray-600 rounded-full transition-colors" />
       </div>
 
       {/* Right Panel - Map */}
@@ -542,6 +523,23 @@ export function SpotMap({ dataset }: SpotMapProps) {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Results Actions - Export PNG */}
+            {latColumn && lngColumn && mapCases.length > 0 && (
+              <div className="absolute bottom-4 right-4 z-[1000]">
+                <ResultsActions
+                  actions={[
+                    {
+                      label: isExporting ? 'Exporting...' : 'Export PNG',
+                      onClick: exportMap,
+                      icon: ExportIcons.image,
+                      disabled: isExporting,
+                      variant: 'primary',
+                    },
+                  ]}
+                />
               </div>
             )}
           </div>
