@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import type { FormItem, FormDefinition } from './types/form';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
 import { FormBuilder } from './components/FormBuilder';
@@ -57,15 +57,27 @@ function App() {
   const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
 
   // Form definitions state (saved forms available for data collection)
-  const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => [createDemoFormDefinition()]);
+  const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => {
+    const saved = localStorage.getItem('epikit_formDefinitions');
+    return saved ? JSON.parse(saved) : [createDemoFormDefinition()];
+  });
 
   // Current form being edited in the builder
-  const [currentFormId, setCurrentFormId] = useState<string | null>(DEMO_FORM_ID);
+  const [currentFormId, setCurrentFormId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('epikit_currentFormId');
+    return saved || DEMO_FORM_ID;
+  });
   const [currentFormName] = useState('Foodborne Outbreak Investigation');
 
   // Dataset state (shared between Collect and Analysis)
-  const [datasets, setDatasets] = useState<Dataset[]>(() => [createDemoDataset()]);
-  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(DEMO_DATASET_ID);
+  const [datasets, setDatasets] = useState<Dataset[]>(() => {
+    const saved = localStorage.getItem('epikit_datasets');
+    return saved ? JSON.parse(saved) : [createDemoDataset()];
+  });
+  const [activeDatasetId, setActiveDatasetId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('epikit_activeDatasetId');
+    return saved || DEMO_DATASET_ID;
+  });
 
   // Onboarding wizard can be accessed from Help Center
   // Dashboard now serves as the welcoming landing page
@@ -216,7 +228,35 @@ function App() {
   }, []);
 
   // Edit log state and functions
-  const [editLog, setEditLog] = useState<EditLogEntry[]>([]);
+  const [editLog, setEditLog] = useState<EditLogEntry[]>(() => {
+    const saved = localStorage.getItem('epikit_editLog');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Auto-save to localStorage whenever data changes
+  useEffect(() => {
+    localStorage.setItem('epikit_formDefinitions', JSON.stringify(formDefinitions));
+  }, [formDefinitions]);
+
+  useEffect(() => {
+    localStorage.setItem('epikit_datasets', JSON.stringify(datasets));
+  }, [datasets]);
+
+  useEffect(() => {
+    localStorage.setItem('epikit_editLog', JSON.stringify(editLog));
+  }, [editLog]);
+
+  useEffect(() => {
+    if (activeDatasetId) {
+      localStorage.setItem('epikit_activeDatasetId', activeDatasetId);
+    }
+  }, [activeDatasetId]);
+
+  useEffect(() => {
+    if (currentFormId) {
+      localStorage.setItem('epikit_currentFormId', currentFormId);
+    }
+  }, [currentFormId]);
 
   const addEditLogEntry = useCallback((entry: EditLogEntry) => {
     setEditLog(prev => [...prev, entry]);
