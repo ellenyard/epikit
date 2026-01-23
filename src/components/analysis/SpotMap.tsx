@@ -8,7 +8,6 @@ import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } fr
 
 interface SpotMapProps {
   dataset: Dataset;
-  onExportDataset?: () => void;
 }
 
 type ColorScheme = 'default' | 'classification' | 'colorblind' | 'sequential';
@@ -107,7 +106,7 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
   return null;
 }
 
-export function SpotMap({ dataset, onExportDataset }: SpotMapProps) {
+export function SpotMap({ dataset }: SpotMapProps) {
   const [latColumn, setLatColumn] = useState<string>('');
   const [lngColumn, setLngColumn] = useState<string>('');
   const [classificationColumn, setClassificationColumn] = useState<string>('');
