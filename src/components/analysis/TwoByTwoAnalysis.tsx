@@ -497,14 +497,6 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         description="Compare exposure and outcome with a 2×2 table and measures of association."
       />
 
-      {/* Analytic Note */}
-      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
-        <p className="text-sm text-gray-600">
-          <strong className="text-gray-700">Analytic tool:</strong> This tab calculates measures of association (risk ratios, odds ratios, confidence intervals, p-values).
-          For descriptive cross-tabulations with counts and percentages only, use the <strong>Two-Way Tables</strong> section in the <strong>Descriptive Tables</strong> tab.
-        </p>
-      </div>
-
       {/* Study Design Selector */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <label className="block text-sm font-medium text-gray-700 mb-3">Study Design</label>
