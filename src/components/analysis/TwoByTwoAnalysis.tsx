@@ -7,6 +7,7 @@ import { TabHeader, HelpPanel, ResultsActions, ExportIcons } from '../shared';
 
 interface TwoByTwoAnalysisProps {
   dataset: Dataset;
+  initialExposure?: string;
 }
 
 type StudyDesign = 'cohort' | 'case-control';
@@ -18,7 +19,7 @@ interface ExposureResult {
   results: TwoByTwoResults;
 }
 
-export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
+export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisProps) {
   // Study design
   const [studyDesign, setStudyDesign] = useState<StudyDesign>('cohort');
 
@@ -91,6 +92,34 @@ export function TwoByTwoAnalysis({ dataset }: TwoByTwoAnalysisProps) {
       }
     }
   }, [caseDefinitionColumns, dataset.records, outcomeVar]);
+
+  // Auto-select initial exposure when provided from parent (e.g., from Variable Explorer)
+  useEffect(() => {
+    if (initialExposure && exposureColumns.some(col => col.key === initialExposure)) {
+      if (!selectedExposures.includes(initialExposure)) {
+        setSelectedExposures(prev => [...prev, initialExposure]);
+        // Set default exposed value
+        if (!exposurePositiveValues[initialExposure]) {
+          const values = new Set<string>();
+          dataset.records.forEach(r => {
+            const v = r[initialExposure];
+            if (v !== null && v !== undefined && v !== '') {
+              values.add(String(v));
+            }
+          });
+          const valuesArray = Array.from(values).sort();
+          const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
+          const found = valuesArray.find(v =>
+            positiveKeywords.some(kw => v.toLowerCase() === kw)
+          );
+          const defaultValue = found || valuesArray[0] || '';
+          if (defaultValue) {
+            setExposurePositiveValues(prev => ({ ...prev, [initialExposure]: defaultValue }));
+          }
+        }
+      }
+    }
+  }, [initialExposure, exposureColumns, selectedExposures, exposurePositiveValues, dataset.records]);
 
   // Get unique values for a specific exposure variable
   const getExposureValues = (expVar: string): string[] => {
