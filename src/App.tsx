@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { FormItem, FormDefinition } from './types/form';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
 import { FormBuilder } from './components/FormBuilder';
@@ -21,6 +21,7 @@ import { formToColumns, formDataToRecord, generateDatasetName } from './utils/fo
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
+import { exportProject, downloadProject, parseProjectFile } from './utils/persistence';
 import type { VariableConfig } from './types/analysis';
 
 type Module = 'dashboard' | 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'analysis';
@@ -60,6 +61,8 @@ function App() {
   const [showHelpCenter, setShowHelpCenter] = useState(false);
   const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
   const [showLocaleSettings, setShowLocaleSettings] = useState(false);
+  const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
+  const projectFileInputRef = useRef<HTMLInputElement>(null);
 
   // Form definitions state (saved forms available for data collection)
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => {
@@ -415,6 +418,66 @@ function App() {
     });
   }, [activeDataset, updateDataset, addEditLogEntry]);
 
+  // Project save handler
+  const handleSaveProject = useCallback(() => {
+    const project = exportProject(
+      datasets,
+      activeDatasetId,
+      formDefinitions,
+      currentFormId,
+      editLog
+    );
+    downloadProject(project);
+  }, [datasets, activeDatasetId, formDefinitions, currentFormId, editLog]);
+
+  // Project load handler - show file picker
+  const handleLoadProjectClick = useCallback(() => {
+    projectFileInputRef.current?.click();
+  }, []);
+
+  // Project file selected
+  const handleProjectFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const project = parseProjectFile(content);
+      if (project) {
+        setShowProjectLoadConfirm({ project, filename: file.name });
+      } else {
+        alert('Invalid project file. Please select a valid EpiKit project file.');
+      }
+    };
+    reader.readAsText(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  }, []);
+
+  // Confirm loading project
+  const handleConfirmLoadProject = useCallback(() => {
+    if (!showProjectLoadConfirm?.project) return;
+
+    const project = showProjectLoadConfirm.project;
+
+    // Load all project data
+    setDatasets(project.datasets);
+    setActiveDatasetId(project.activeDatasetId);
+    setFormDefinitions(project.formDefinitions);
+    setCurrentFormId(project.currentFormId);
+    setEditLog(project.editLog);
+
+    // Restore analysis states to localStorage
+    if (project.analysisState) {
+      localStorage.setItem('epikit_analysis_state', JSON.stringify(project.analysisState));
+    }
+
+    setShowProjectLoadConfirm(null);
+    setActiveModule('dashboard');
+  }, [showProjectLoadConfirm]);
+
   // Check if current module needs dataset selector
   const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'analysis'].includes(activeModule);
 
@@ -495,6 +558,35 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Hidden file input for project load */}
+            <input
+              ref={projectFileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleProjectFileChange}
+              className="hidden"
+            />
+            <button
+              onClick={handleSaveProject}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label="Save Project"
+              title="Save Project"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+            </button>
+            <button
+              onClick={handleLoadProjectClick}
+              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label="Load Project"
+              title="Load Project"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+            </button>
+            <span className="hidden sm:block w-px h-6 bg-slate-600 mx-1" />
             <button
               onClick={() => setShowLocaleSettings(true)}
               className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
@@ -705,6 +797,41 @@ function App() {
         isOpen={showLocaleSettings}
         onClose={() => setShowLocaleSettings(false)}
       />
+
+      {/* Project Load Confirmation Modal */}
+      {showProjectLoadConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Load Project?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Loading <span className="font-medium">{showProjectLoadConfirm.filename}</span> will replace all current data including:
+            </p>
+            <ul className="text-sm text-gray-600 mb-4 space-y-1 ml-4">
+              <li>• {showProjectLoadConfirm.project?.datasets.length || 0} dataset(s)</li>
+              <li>• {showProjectLoadConfirm.project?.formDefinitions.length || 0} form definition(s)</li>
+              <li>• {showProjectLoadConfirm.project?.editLog.length || 0} edit log entries</li>
+              <li>• All saved analysis settings</li>
+            </ul>
+            <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
+              This action cannot be undone. Consider saving your current project first.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowProjectLoadConfirm(null)}
+                className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmLoadProject}
+                className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+              >
+                Load Project
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
