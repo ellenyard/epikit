@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Dataset } from '../../types/analysis';
+import type { Dataset, VariableConfig } from '../../types/analysis';
 import { VariableExplorer } from './VariableExplorer';
 import { TableBuilder } from './TableBuilder';
 import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
 
 interface AnalysisWorkflowProps {
   dataset: Dataset;
+  onCreateVariable?: (config: VariableConfig, values: unknown[]) => void;
+  onUpdateRecords?: (updates: Array<{ recordId: string; field: string; value: unknown }>) => void;
 }
 
 type SubTab = 'explore' | 'build' | 'test';
@@ -44,7 +46,7 @@ function saveWorkflowState(datasetId: string, state: PersistedState): void {
  * - Table Builder: Create report-ready tables (1-way and cross-tabs)
  * - 2x2 Analysis: Test hypotheses with measures of association
  */
-export function AnalysisWorkflow({ dataset }: AnalysisWorkflowProps) {
+export function AnalysisWorkflow({ dataset, onCreateVariable, onUpdateRecords }: AnalysisWorkflowProps) {
   // Track previous dataset ID to detect actual changes
   const prevDatasetIdRef = useRef<string>(dataset.id);
 
@@ -185,6 +187,8 @@ export function AnalysisWorkflow({ dataset }: AnalysisWorkflowProps) {
             onRunTwoByTwo={handleRunTwoByTwo}
             selectedVar={explorerSelectedVar}
             onSelectedVarChange={setExplorerSelectedVar}
+            onCreateVariable={onCreateVariable}
+            onUpdateRecords={onUpdateRecords}
           />
         </div>
 
