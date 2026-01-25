@@ -445,3 +445,125 @@ export function calculateFrequency(values: unknown[]): FrequencyItem[] {
 
   return items;
 }
+
+/**
+ * Chi-square test for R×C contingency tables (Group Comparison)
+ * Used when comparing proportions across multiple groups
+ */
+export interface ChiSquareResult {
+  chiSquare: number;
+  degreesOfFreedom: number;
+  pValue: number;
+}
+
+export interface GroupComparisonRow {
+  groupValue: string;
+  outcomeYes: number;
+  outcomeNo: number;
+  total: number;
+  proportion: number;
+}
+
+export interface GroupComparisonResults {
+  rows: GroupComparisonRow[];
+  totalOutcomeYes: number;
+  totalOutcomeNo: number;
+  grandTotal: number;
+  chiSquare: ChiSquareResult;
+}
+
+/**
+ * Calculate chi-square test for an R×2 contingency table
+ * (R groups × 2 outcome levels)
+ */
+export function calculateGroupComparison(
+  data: { group: string; hasOutcome: boolean }[]
+): GroupComparisonResults {
+  // Count by group
+  const groupCounts = new Map<string, { yes: number; no: number }>();
+
+  data.forEach(({ group, hasOutcome }) => {
+    if (!groupCounts.has(group)) {
+      groupCounts.set(group, { yes: 0, no: 0 });
+    }
+    const counts = groupCounts.get(group)!;
+    if (hasOutcome) {
+      counts.yes++;
+    } else {
+      counts.no++;
+    }
+  });
+
+  // Build rows
+  const rows: GroupComparisonRow[] = [];
+  let totalYes = 0;
+  let totalNo = 0;
+
+  // Sort groups alphabetically for consistent display
+  const sortedGroups = Array.from(groupCounts.keys()).sort();
+
+  for (const group of sortedGroups) {
+    const counts = groupCounts.get(group)!;
+    const total = counts.yes + counts.no;
+    rows.push({
+      groupValue: group,
+      outcomeYes: counts.yes,
+      outcomeNo: counts.no,
+      total,
+      proportion: total > 0 ? counts.yes / total : 0,
+    });
+    totalYes += counts.yes;
+    totalNo += counts.no;
+  }
+
+  const grandTotal = totalYes + totalNo;
+
+  // Calculate chi-square for R×2 table
+  const chiSquare = calculateChiSquareRC(rows, totalYes, totalNo, grandTotal);
+
+  return {
+    rows,
+    totalOutcomeYes: totalYes,
+    totalOutcomeNo: totalNo,
+    grandTotal,
+    chiSquare,
+  };
+}
+
+/**
+ * Calculate chi-square statistic for R×2 table
+ */
+function calculateChiSquareRC(
+  rows: GroupComparisonRow[],
+  totalYes: number,
+  totalNo: number,
+  grandTotal: number
+): ChiSquareResult {
+  if (grandTotal === 0 || rows.length < 2) {
+    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1 };
+  }
+
+  let chiSquare = 0;
+
+  for (const row of rows) {
+    // Expected values under null hypothesis (no association)
+    const expectedYes = (row.total * totalYes) / grandTotal;
+    const expectedNo = (row.total * totalNo) / grandTotal;
+
+    // Add to chi-square (skip if expected is 0)
+    if (expectedYes > 0) {
+      chiSquare += Math.pow(row.outcomeYes - expectedYes, 2) / expectedYes;
+    }
+    if (expectedNo > 0) {
+      chiSquare += Math.pow(row.outcomeNo - expectedNo, 2) / expectedNo;
+    }
+  }
+
+  // Degrees of freedom for R×2 table: (R-1) × (C-1) = (R-1) × 1 = R-1
+  const df = rows.length - 1;
+
+  // Calculate p-value
+  const pValue = 1 - chiSquareCDF(chiSquare, df);
+
+  return { chiSquare, degreesOfFreedom: df, pValue };
+}
