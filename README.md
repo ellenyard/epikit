@@ -108,7 +108,6 @@ src/
 │   │   ├── EpiCurve.tsx            # Epidemic curve visualization
 │   │   ├── SpotMap.tsx             # Geographic mapping
 │   │   ├── LineListing.tsx         # Case data table
-│   │   ├── AttackRates.tsx         # Attack rate calculations
 │   │   ├── DataImport.tsx          # CSV/Excel import
 │   │   └── ...
 │   ├── review/                 # Data review & cleaning
