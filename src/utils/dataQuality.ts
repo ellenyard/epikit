@@ -5,7 +5,9 @@ import type {
   DataQualityConfig,
   DateOrderRule,
   NumericRangeRule,
+  FuzzyMatchingConfig,
 } from '../types/analysis';
+import { calculateRecordSimilarity } from './stringSimilarity';
 
 // Generate unique ID for issues
 function generateId(): string {
@@ -33,6 +35,11 @@ function isEmpty(value: unknown): boolean {
 export function getDefaultConfig(): DataQualityConfig {
   return {
     duplicateFields: [],
+    fuzzyMatching: {
+      enabled: true,
+      textThreshold: 0.85, // 85% similarity for text fields
+      dateTolerance: 0, // Exact date match by default
+    },
     dateOrderRules: [],
     checkFutureDates: false,
     numericRangeRules: [],
@@ -41,11 +48,12 @@ export function getDefaultConfig(): DataQualityConfig {
   };
 }
 
-// Check for exact duplicates across all fields
+// Check for duplicates using fuzzy matching
 function checkDuplicates(
   records: CaseRecord[],
   fields: string[],
-  columns: DataColumn[]
+  columns: DataColumn[],
+  fuzzyConfig: FuzzyMatchingConfig
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
@@ -57,40 +65,92 @@ function checkDuplicates(
 
   if (fieldsToCheck.length === 0) return issues;
 
-  const seen = new Map<string, string[]>();
+  // Build field info with types for similarity calculation
+  const fieldInfo = fieldsToCheck.map(key => {
+    const col = columns.find(c => c.key === key);
+    return {
+      key,
+      type: (col?.type || 'text') as 'text' | 'date' | 'number' | 'boolean',
+    };
+  });
 
-  for (const record of records) {
-    // Create a key from all checked fields
-    const keyParts = fieldsToCheck.map(fieldKey => {
-      const val = record[fieldKey];
-      return val === null || val === undefined ? '' : String(val).trim().toLowerCase();
+  // Track which records have been assigned to a duplicate group
+  const assignedToGroup = new Set<string>();
+  const duplicateGroups: string[][] = [];
+
+  // Threshold for considering records as duplicates
+  const threshold = fuzzyConfig.enabled ? fuzzyConfig.textThreshold : 1.0;
+
+  // Compare each pair of records
+  for (let i = 0; i < records.length; i++) {
+    const record1 = records[i];
+
+    // Skip if all checked fields are empty
+    const hasData1 = fieldsToCheck.some(f => {
+      const val = record1[f];
+      return val !== null && val !== undefined && String(val).trim() !== '';
     });
+    if (!hasData1) continue;
 
-    // Skip if all fields are empty
-    if (keyParts.every(p => p === '')) continue;
+    // Skip if already in a group
+    if (assignedToGroup.has(record1.id)) continue;
 
-    const key = keyParts.join('|');
+    const currentGroup: string[] = [record1.id];
 
-    const existing = seen.get(key);
-    if (existing) {
-      existing.push(record.id);
-    } else {
-      seen.set(key, [record.id]);
+    for (let j = i + 1; j < records.length; j++) {
+      const record2 = records[j];
+
+      // Skip if already in a group
+      if (assignedToGroup.has(record2.id)) continue;
+
+      // Skip if all checked fields are empty
+      const hasData2 = fieldsToCheck.some(f => {
+        const val = record2[f];
+        return val !== null && val !== undefined && String(val).trim() !== '';
+      });
+      if (!hasData2) continue;
+
+      // Calculate similarity
+      const similarity = calculateRecordSimilarity(
+        record1,
+        record2,
+        fieldInfo,
+        {
+          textThreshold: fuzzyConfig.textThreshold,
+          dateTolerance: fuzzyConfig.dateTolerance,
+        }
+      );
+
+      // If similarity meets threshold, add to group
+      if (similarity >= threshold) {
+        currentGroup.push(record2.id);
+        assignedToGroup.add(record2.id);
+      }
+    }
+
+    // If group has more than one record, it's a duplicate group
+    if (currentGroup.length > 1) {
+      duplicateGroups.push(currentGroup);
+      assignedToGroup.add(record1.id);
     }
   }
 
-  for (const [, ids] of seen) {
-    if (ids.length > 1) {
-      issues.push({
-        id: generateId(),
-        checkType: 'duplicate',
-        category: 'duplicate',
-        severity: 'error',
-        recordIds: ids,
-        message: `${ids.length} duplicate records found`,
-        details: undefined,
-      });
-    }
+  // Create issues for each duplicate group
+  for (const group of duplicateGroups) {
+    const isFuzzy = fuzzyConfig.enabled && fuzzyConfig.textThreshold < 1.0;
+    issues.push({
+      id: generateId(),
+      checkType: 'duplicate',
+      category: 'duplicate',
+      severity: isFuzzy ? 'warning' : 'error',
+      recordIds: group,
+      message: isFuzzy
+        ? `${group.length} similar records found (${Math.round(fuzzyConfig.textThreshold * 100)}% match)`
+        : `${group.length} duplicate records found`,
+      details: isFuzzy
+        ? `Fuzzy matching with ${Math.round(fuzzyConfig.textThreshold * 100)}% threshold${fuzzyConfig.dateTolerance > 0 ? `, ±${fuzzyConfig.dateTolerance} day date tolerance` : ''}`
+        : undefined,
+    });
   }
 
   return issues;
@@ -217,7 +277,7 @@ export function runDataQualityChecks(
 
   // Duplicate check
   if (enabledChecks.includes('duplicate') && config.duplicateFields.length > 0) {
-    issues.push(...checkDuplicates(records, config.duplicateFields, columns));
+    issues.push(...checkDuplicates(records, config.duplicateFields, columns, config.fuzzyMatching));
   }
 
   // Date order checks

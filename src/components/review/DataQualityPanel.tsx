@@ -193,9 +193,105 @@ export function DataQualityPanel({
               <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
                 Duplicate Detection
               </h4>
-              <p className="text-xs text-gray-500">
-                Automatically checks for exact duplicate records across all fields.
+              <p className="text-xs text-gray-500 mb-3">
+                Find duplicate or similar records. Enable fuzzy matching to catch typos and variations.
               </p>
+
+              {/* Fuzzy Matching Toggle */}
+              <label className="flex items-center gap-2 mb-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.fuzzyMatching.enabled}
+                  onChange={(e) => onConfigChange({
+                    ...config,
+                    fuzzyMatching: { ...config.fuzzyMatching, enabled: e.target.checked },
+                  })}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="text-xs font-medium text-gray-700">Enable fuzzy matching</span>
+                <span className="text-xs text-gray-400">(catches typos & similar names)</span>
+              </label>
+
+              {/* Fuzzy Matching Options */}
+              {config.fuzzyMatching.enabled && (
+                <div className="ml-5 space-y-3 p-3 bg-white rounded border border-gray-200">
+                  {/* Text Similarity Threshold */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-gray-600">
+                        Text similarity threshold
+                      </label>
+                      <span className="text-xs font-bold text-blue-600">
+                        {Math.round(config.fuzzyMatching.textThreshold * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="50"
+                      max="100"
+                      value={config.fuzzyMatching.textThreshold * 100}
+                      onChange={(e) => onConfigChange({
+                        ...config,
+                        fuzzyMatching: {
+                          ...config.fuzzyMatching,
+                          textThreshold: Number(e.target.value) / 100,
+                        },
+                      })}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>More matches (50%)</span>
+                      <span>Exact (100%)</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {config.fuzzyMatching.textThreshold >= 0.95
+                        ? 'Very strict: Only near-exact matches'
+                        : config.fuzzyMatching.textThreshold >= 0.85
+                        ? 'Recommended: Catches common typos (e.g., "John" ≈ "Jon")'
+                        : config.fuzzyMatching.textThreshold >= 0.75
+                        ? 'Moderate: More variations detected'
+                        : 'Loose: May include false positives'}
+                    </p>
+                  </div>
+
+                  {/* Date Tolerance */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-medium text-gray-600">
+                        Date tolerance
+                      </label>
+                      <span className="text-xs font-bold text-blue-600">
+                        {config.fuzzyMatching.dateTolerance === 0
+                          ? 'Exact'
+                          : `±${config.fuzzyMatching.dateTolerance} day${config.fuzzyMatching.dateTolerance !== 1 ? 's' : ''}`}
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="7"
+                      value={config.fuzzyMatching.dateTolerance}
+                      onChange={(e) => onConfigChange({
+                        ...config,
+                        fuzzyMatching: {
+                          ...config.fuzzyMatching,
+                          dateTolerance: Number(e.target.value),
+                        },
+                      })}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                    />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1">
+                      <span>Exact match</span>
+                      <span>±7 days</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {config.fuzzyMatching.dateTolerance === 0
+                        ? 'Dates must match exactly'
+                        : `Dates within ${config.fuzzyMatching.dateTolerance} day${config.fuzzyMatching.dateTolerance !== 1 ? 's' : ''} are considered matching`}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Date Order Rules */}

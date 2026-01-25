@@ -82,9 +82,22 @@ export interface NumericRangeRule {
   max: number;          // Maximum acceptable value
 }
 
+export interface FuzzyMatchingConfig {
+  enabled: boolean;
+  // Similarity threshold for text fields (0-1, where 1 is exact match)
+  // Default: 0.85 (85% similarity)
+  textThreshold: number;
+  // Date tolerance in days (0 = exact match)
+  // Default: 0
+  dateTolerance: number;
+}
+
 export interface DataQualityConfig {
   // Duplicate detection: which fields to check
   duplicateFields: string[];
+
+  // Fuzzy matching settings for duplicate detection
+  fuzzyMatching: FuzzyMatchingConfig;
 
   // Date order rules
   dateOrderRules: DateOrderRule[];
