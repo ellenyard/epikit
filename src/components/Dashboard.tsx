@@ -110,7 +110,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Try Demo Dataset</h3>
             <p className="text-sm text-gray-600">
-              Explore with a sample foodborne outbreak investigation from Toledo, Ohio
+              Explore with a sample foodborne outbreak investigation
             </p>
           </button>
         </div>
