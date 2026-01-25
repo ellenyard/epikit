@@ -466,44 +466,6 @@ export function DataQualityPanel({
               )}
             </div>
 
-            {/* Missing Value Checks */}
-            <div>
-              <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-                Missing Value Checks
-              </h4>
-              <p className="text-xs text-gray-500 mb-3">
-                Select fields to check for missing or empty values:
-              </p>
-
-              <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded p-2 bg-white">
-                {columns.map(col => (
-                  <label key={col.key} className="flex items-center gap-2 text-xs hover:bg-gray-50 p-1 rounded cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={config.missingValueFields.includes(col.key)}
-                      onChange={(e) => {
-                        const newFields = e.target.checked
-                          ? [...config.missingValueFields, col.key]
-                          : config.missingValueFields.filter(f => f !== col.key);
-                        onConfigChange({
-                          ...config,
-                          missingValueFields: newFields,
-                        });
-                      }}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-gray-700">{col.label}</span>
-                    <span className="text-gray-400 text-xs">({col.type})</span>
-                  </label>
-                ))}
-              </div>
-
-              {config.missingValueFields.length > 0 && (
-                <p className="text-xs text-gray-600 mt-2">
-                  Checking {config.missingValueFields.length} field{config.missingValueFields.length !== 1 ? 's' : ''} for missing values
-                </p>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -536,7 +498,7 @@ export function DataQualityPanel({
 
       {/* Issues List */}
       <div className="flex-1 overflow-auto">
-        {(['completeness', 'duplicate', 'temporal', 'range'] as CategoryKey[]).map(category => {
+        {(['duplicate', 'temporal', 'range'] as CategoryKey[]).map(category => {
           const categoryIssues = groupedIssues[category];
           if (categoryIssues.length === 0) return null;
 

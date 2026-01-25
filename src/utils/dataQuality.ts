@@ -44,7 +44,7 @@ export function getDefaultConfig(): DataQualityConfig {
     checkFutureDates: false,
     numericRangeRules: [],
     missingValueFields: [],
-    enabledChecks: ['duplicate', 'date_order', 'numeric_range', 'missing_values'],
+    enabledChecks: ['duplicate', 'date_order', 'numeric_range'],
   };
 }
 
