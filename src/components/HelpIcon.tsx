@@ -1,7 +1,16 @@
+/**
+ * HelpIcon Component
+ *
+ * A reusable help icon (question mark in circle) that displays a tooltip
+ * on hover/focus and optionally triggers a click handler. Used throughout
+ * the app to provide contextual help and explanations.
+ */
 import React, { useState } from 'react';
 
 interface HelpIconProps {
+  /** The tooltip text to display on hover */
   tooltip: string;
+  /** Optional click handler for additional help actions */
   onClick?: () => void;
 }
 

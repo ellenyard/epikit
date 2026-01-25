@@ -1,3 +1,11 @@
+/**
+ * Collect Component
+ *
+ * Provides the data collection interface for entering case data using
+ * custom forms created in the Form Builder. Users can select from
+ * available forms and enter data which is then stored as records
+ * in the associated dataset.
+ */
 import { useState } from 'react';
 import type { FormDefinition } from '../../types/form';
 import { DataEntryForm } from './DataEntryForm';

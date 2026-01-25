@@ -90,52 +90,6 @@ export function jaroWinklerSimilarity(
 }
 
 /**
- * Calculate simple Levenshtein (edit) distance between two strings
- * Returns the number of single-character edits needed to transform s1 into s2
- */
-export function levenshteinDistance(s1: string, s2: string): number {
-  const str1 = s1.toLowerCase().trim();
-  const str2 = s2.toLowerCase().trim();
-
-  if (str1 === str2) return 0;
-  if (str1.length === 0) return str2.length;
-  if (str2.length === 0) return str1.length;
-
-  const matrix: number[][] = [];
-
-  // Initialize matrix
-  for (let i = 0; i <= str1.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= str2.length; j++) {
-    matrix[0][j] = j;
-  }
-
-  // Fill matrix
-  for (let i = 1; i <= str1.length; i++) {
-    for (let j = 1; j <= str2.length; j++) {
-      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      matrix[i][j] = Math.min(
-        matrix[i - 1][j] + 1, // deletion
-        matrix[i][j - 1] + 1, // insertion
-        matrix[i - 1][j - 1] + cost // substitution
-      );
-    }
-  }
-
-  return matrix[str1.length][str2.length];
-}
-
-/**
- * Calculate Levenshtein similarity as a ratio (0 to 1)
- */
-export function levenshteinSimilarity(s1: string, s2: string): number {
-  const maxLen = Math.max(s1.length, s2.length);
-  if (maxLen === 0) return 1;
-  return 1 - levenshteinDistance(s1, s2) / maxLen;
-}
-
-/**
  * Check if two dates are within a specified number of days of each other
  *
  * @param date1 First date (string or Date)
@@ -173,6 +127,7 @@ function parseDate(value: unknown): Date | null {
 
 /**
  * Calculate similarity between two values, handling different types
+ * (Internal utility - not exported)
  *
  * @param val1 First value
  * @param val2 Second value
@@ -180,7 +135,7 @@ function parseDate(value: unknown): Date | null {
  * @param options Configuration options
  * @returns Similarity score (0 to 1) or null if comparison not possible
  */
-export function calculateFieldSimilarity(
+function calculateFieldSimilarity(
   val1: unknown,
   val2: unknown,
   fieldType: 'text' | 'date' | 'number' | 'boolean',
