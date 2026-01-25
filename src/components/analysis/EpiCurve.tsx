@@ -80,6 +80,60 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     description: '',
   });
 
+  // Click-to-add annotation state
+  const [clickAddPosition, setClickAddPosition] = useState<{ x: number; y: number; date: string } | null>(null);
+
+  // Manual date range override
+  const [useManualDateRange, setUseManualDateRange] = useState(false);
+  const [manualStartDate, setManualStartDate] = useState('');
+  const [manualEndDate, setManualEndDate] = useState('');
+
+  // Persistence key for this dataset
+  const persistenceKey = `epikit_epicurve_${dataset.id}`;
+
+  // Load persisted annotations on mount or dataset change
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(persistenceKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.annotations && Array.isArray(parsed.annotations)) {
+          // Restore dates from ISO strings
+          const restoredAnnotations = parsed.annotations.map((a: Annotation & { date: string; endDate?: string }) => ({
+            ...a,
+            date: new Date(a.date),
+            endDate: a.endDate ? new Date(a.endDate) : undefined,
+          }));
+          setAnnotations(restoredAnnotations);
+        }
+        if (parsed.manualStartDate) setManualStartDate(parsed.manualStartDate);
+        if (parsed.manualEndDate) setManualEndDate(parsed.manualEndDate);
+        if (parsed.useManualDateRange !== undefined) setUseManualDateRange(parsed.useManualDateRange);
+      }
+    } catch (e) {
+      console.error('Failed to load epi curve settings:', e);
+    }
+  }, [persistenceKey]);
+
+  // Save annotations and date range to localStorage when they change
+  useEffect(() => {
+    try {
+      const toSave = {
+        annotations: annotations.map(a => ({
+          ...a,
+          date: a.date.toISOString(),
+          endDate: a.endDate?.toISOString(),
+        })),
+        manualStartDate,
+        manualEndDate,
+        useManualDateRange,
+      };
+      localStorage.setItem(persistenceKey, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('Failed to save epi curve settings:', e);
+    }
+  }, [persistenceKey, annotations, manualStartDate, manualEndDate, useManualDateRange]);
+
   // Exposure window estimation
   const [selectedPathogen, setSelectedPathogen] = useState<string>('');
   const [showExposureWindow, setShowExposureWindow] = useState(false);
@@ -201,6 +255,44 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     return exposureWindowDates;
   }, [exposureWindowDates, curveData.bins]);
 
+  // Apply manual date range filter to curve data
+  const displayData: EpiCurveData = useMemo(() => {
+    if (!useManualDateRange || !manualStartDate || !manualEndDate) {
+      return curveData;
+    }
+
+    const startDate = parseLocalDate(manualStartDate);
+    const endDate = parseLocalDate(manualEndDate);
+    endDate.setHours(23, 59, 59, 999); // Include entire end day
+
+    // Filter bins to only those that overlap with the manual range
+    const filteredBins = curveData.bins.filter(bin => {
+      return bin.endDate >= startDate && bin.startDate <= endDate;
+    });
+
+    if (filteredBins.length === 0) {
+      return {
+        ...curveData,
+        bins: [],
+        maxCount: 0,
+        dateRange: { start: startDate, end: endDate },
+      };
+    }
+
+    // Recalculate max count for filtered bins
+    const maxCount = Math.max(...filteredBins.map(b => b.total), 0);
+
+    return {
+      ...curveData,
+      bins: filteredBins,
+      maxCount,
+      dateRange: {
+        start: startDate,
+        end: endDate,
+      },
+    };
+  }, [curveData, useManualDateRange, manualStartDate, manualEndDate]);
+
   // Helper to get default date from dataset range
   const getDefaultAnnotationDate = (): string => {
     if (curveData.bins.length === 0) {
@@ -277,6 +369,62 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     setShowAnnotationForm(false);
   };
 
+  // Handle click on chart to add annotation
+  const handleChartClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!chartBodyRef.current || displayData.bins.length === 0) return;
+
+    const rect = chartBodyRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left + chartBodyRef.current.scrollLeft;
+
+    // Calculate which date was clicked
+    const totalWidth = displayData.bins.length * barWidth;
+    const fraction = Math.max(0, Math.min(1, clickX / totalWidth));
+
+    // Convert to date
+    const startTime = displayData.dateRange.start.getTime();
+    const endTime = displayData.dateRange.end.getTime();
+    const clickTime = startTime + fraction * (endTime - startTime);
+    const clickDate = new Date(clickTime);
+    const dateString = clickDate.toISOString().split('T')[0];
+
+    // Position popup near click
+    setClickAddPosition({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+      date: dateString,
+    });
+  };
+
+  // Save annotation from click-to-add popup
+  const saveClickAnnotation = () => {
+    if (!clickAddPosition || !newAnnotation.type) return;
+
+    const annotation: Annotation = {
+      id: crypto.randomUUID(),
+      type: newAnnotation.type,
+      category: getAnnotationCategory(newAnnotation.type),
+      date: parseLocalDate(clickAddPosition.date),
+      label: newAnnotation.label || getDefaultLabelForType(newAnnotation.type),
+      description: newAnnotation.description || undefined,
+      color: getAnnotationColor(newAnnotation.type),
+      source: 'manual',
+    };
+
+    if (newAnnotation.endDate) {
+      annotation.endDate = parseLocalDate(newAnnotation.endDate);
+    }
+
+    setAnnotations([...annotations, annotation]);
+    setClickAddPosition(null);
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+  };
+
+  // Cancel click-to-add
+  const cancelClickAdd = () => {
+    setClickAddPosition(null);
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+  };
+
   // Helper to get default label for annotation type
   const getDefaultLabelForType = (type: AnnotationType): string => {
     for (const category of Object.values(ANNOTATION_CATEGORIES)) {
@@ -320,25 +468,25 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     return Math.min(80, 60 + (7 - binCount) * 3); // Cap at 80px for very few bins
   };
 
-  const barWidth = getOptimalBarWidth(curveData.bins.length);
+  const barWidth = getOptimalBarWidth(displayData.bins.length);
   const chartHeight = 300;
   // Y-axis max should be at least 1 above the highest bar, rounded up to a nice number
-  const yAxisMax = Math.max(curveData.maxCount + 1, Math.ceil((curveData.maxCount + 1) / 5) * 5);
+  const yAxisMax = Math.max(displayData.maxCount + 1, Math.ceil((displayData.maxCount + 1) / 5) * 5);
 
   // Determine if x-axis labels should be rotated based on available space
   // Estimate label width: assume ~7px per character on average for the label text
   const shouldRotateLabels = useMemo(() => {
-    if (curveData.bins.length === 0) return false;
+    if (displayData.bins.length === 0) return false;
 
     // Sample a few labels to estimate average width
-    const sampleLabels = curveData.bins.slice(0, Math.min(5, curveData.bins.length));
+    const sampleLabels = displayData.bins.slice(0, Math.min(5, displayData.bins.length));
     const avgLabelLength = sampleLabels.reduce((sum, bin) => sum + bin.label.length, 0) / sampleLabels.length;
     const estimatedLabelWidth = avgLabelLength * 7; // ~7px per character
 
     // If bar width is less than estimated label width + padding, rotate labels
     // Add 10px padding for comfortable spacing
     return barWidth < (estimatedLabelWidth + 10);
-  }, [curveData.bins, barWidth]);
+  }, [displayData.bins, barWidth]);
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col lg:flex-row ${isResizing ? 'select-none' : ''}`}>
@@ -636,6 +784,53 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               </label>
             </div>
 
+            {/* Date Range */}
+            <div className="space-y-3 pt-3 border-t border-gray-200">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">X-Axis Date Range</p>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useManualDateRange}
+                  onChange={(e) => setUseManualDateRange(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-gray-700">Use custom date range</span>
+              </label>
+              {useManualDateRange && (
+                <div className="space-y-2 ml-6">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                    <input
+                      type="date"
+                      value={manualStartDate}
+                      onChange={(e) => setManualStartDate(e.target.value)}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={manualEndDate}
+                      onChange={(e) => setManualEndDate(e.target.value)}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (curveData.bins.length > 0) {
+                        setManualStartDate(curveData.dateRange.start.toISOString().split('T')[0]);
+                        setManualEndDate(curveData.dateRange.end.toISOString().split('T')[0]);
+                      }
+                    }}
+                    className="text-xs text-gray-600 hover:text-gray-900 underline"
+                  >
+                    Reset to data range
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Labels */}
             <div className="space-y-3 pt-3 border-t border-gray-200">
               <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart Labels</p>
@@ -741,21 +936,21 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       {/* Right Panel - Chart */}
       <div className="flex-1 overflow-auto p-4 lg:p-6">
         {/* Chart */}
-        {curveData.bins.length > 0 ? (
+        {displayData.bins.length > 0 ? (
           <div>
             <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-4">
               {/* Title */}
               <h4 className="text-center text-lg font-semibold text-gray-900 mb-4">{chartTitle}</h4>
 
               {/* Legend for Stratified Charts */}
-              {stratifyBy && curveData.strataKeys.length > 0 && (
+              {stratifyBy && displayData.strataKeys.length > 0 && (
                 <div className="flex flex-wrap justify-center gap-4 mb-4 pb-3 border-b border-gray-200">
-                  {curveData.strataKeys.map((strataKey, strataIndex) => (
+                  {displayData.strataKeys.map((strataKey, strataIndex) => (
                     <div key={strataKey} className="flex items-center gap-2">
                       <div
                         className="w-4 h-4 rounded"
                         style={{
-                          backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
+                          backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, displayData.strataKeys),
                         }}
                       />
                       <span className="text-sm text-gray-700 font-medium">{strataKey}</span>
@@ -784,8 +979,13 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                 </div>
 
                 {/* Chart Body */}
-                <div ref={chartBodyRef} className="flex-1 overflow-x-auto">
-                  <div className="relative" style={{ width: curveData.bins.length * barWidth }}>
+                <div
+                  ref={chartBodyRef}
+                  className="flex-1 overflow-x-auto cursor-crosshair"
+                  onClick={handleChartClick}
+                  title="Click to add annotation"
+                >
+                  <div className="relative" style={{ width: displayData.bins.length * barWidth }}>
                     {/* Grid Lines */}
                     {showGridLines && (
                       <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
@@ -799,7 +999,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     {exposureWindow && (
                       <ExposureWindowShading
                         exposureWindow={exposureWindow}
-                        bins={curveData.bins}
+                        bins={displayData.bins}
                         barWidth={barWidth}
                         chartHeight={chartHeight}
                       />
@@ -810,7 +1010,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                       <AnnotationMarker
                         key={ann.id}
                         annotation={ann}
-                        bins={curveData.bins}
+                        bins={displayData.bins}
                         barWidth={barWidth}
                         chartHeight={chartHeight}
                       />
@@ -818,16 +1018,16 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
 
                     {/* Bars */}
                     <div className="flex items-end" style={{ height: chartHeight }}>
-                      {curveData.bins.map((bin, binIndex) => (
+                      {displayData.bins.map((bin, binIndex) => (
                         <div
                           key={binIndex}
                           className="flex flex-col justify-end relative"
                           style={{ width: barWidth }}
                         >
-                          {stratifyBy && curveData.strataKeys.length > 0 ? (
+                          {stratifyBy && displayData.strataKeys.length > 0 ? (
                             // Stacked bars
                             <div className="flex flex-col-reverse">
-                              {curveData.strataKeys.map((strataKey, strataIndex) => {
+                              {displayData.strataKeys.map((strataKey, strataIndex) => {
                                 const count = bin.strata.get(strataKey)?.length || 0;
                                 if (count === 0) return null;
                                 const height = (count / yAxisMax) * chartHeight;
@@ -837,7 +1037,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                                     className="mx-0.5 hover:opacity-80 transition-opacity"
                                     style={{
                                       height,
-                                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, curveData.strataKeys),
+                                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, displayData.strataKeys),
                                     }}
                                     title={`${bin.label}: ${strataKey} (${count})`}
                                   />
@@ -872,7 +1072,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
 
                     {/* X-Axis Labels */}
                     <div className="flex">
-                      {curveData.bins.map((bin, index) => (
+                      {displayData.bins.map((bin, index) => (
                         <div
                           key={index}
                           className="relative"
@@ -901,6 +1101,67 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                         </div>
                       ))}
                     </div>
+
+                    {/* Click-to-add annotation popup */}
+                    {clickAddPosition && (
+                      <div
+                        className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-3 w-64"
+                        style={{
+                          left: Math.min(clickAddPosition.x, displayData.bins.length * barWidth - 270),
+                          top: Math.min(clickAddPosition.y, chartHeight - 200),
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-gray-700">Add Annotation</span>
+                          <button
+                            onClick={cancelClickAdd}
+                            className="text-gray-400 hover:text-gray-600"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="text-xs text-gray-500 mb-2">
+                          Date: {new Date(clickAddPosition.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </div>
+                        <div className="space-y-2">
+                          <select
+                            value={newAnnotation.type}
+                            onChange={(e) => setNewAnnotation({ ...newAnnotation, type: e.target.value as AnnotationType })}
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                          >
+                            {Object.entries(ANNOTATION_CATEGORIES).map(([categoryKey, category]) => (
+                              <optgroup key={categoryKey} label={category.label}>
+                                {category.types.map(t => (
+                                  <option key={t.value} value={t.value}>{t.label}</option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                          <input
+                            type="text"
+                            value={newAnnotation.label}
+                            onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
+                            placeholder="Label (optional)"
+                            className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={saveClickAnnotation}
+                              className="flex-1 px-3 py-1.5 text-sm font-medium text-white bg-gray-700 rounded hover:bg-gray-800"
+                            >
+                              Add
+                            </button>
+                            <button
+                              onClick={cancelClickAdd}
+                              className="px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 rounded hover:bg-gray-200"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -925,7 +1186,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     <p className="font-medium mb-1">Calculation Method:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2">
                       <li>
-                        <strong>First case date:</strong> {curveData.bins.filter(b => b.total > 0)[0]?.startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                        <strong>First case date:</strong> {displayData.bins.filter(b => b.total > 0)[0]?.startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                       </li>
                       <li>
                         <strong>Selected pathogen:</strong> {exposureWindow.pathogen}
