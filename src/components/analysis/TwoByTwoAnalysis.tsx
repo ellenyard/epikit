@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
-import { calculateTwoByTwo, calculateGroupComparison } from '../../utils/statistics';
-import type { TwoByTwoResults, GroupComparisonResults } from '../../utils/statistics';
+import { calculateTwoByTwo, calculateCrossTabulation } from '../../utils/statistics';
+import type { TwoByTwoResults, CrossTabResults } from '../../utils/statistics';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
 import { TabHeader, HelpPanel, ResultsActions, ExportIcons } from '../shared';
 
@@ -32,8 +32,9 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   // For each exposure, store which value means "exposed" (default to "Yes")
   const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>({});
 
-  // Group comparison variable (single variable with 2+ groups)
+  // Compare Proportions: characteristic (rows) and column (groups) variables
   const [groupVar, setGroupVar] = useState<string>('');
+  const [colVar, setColVar] = useState<string>('');
 
   // Get columns suitable for case definition (categorical columns)
   const caseDefinitionColumns = useMemo(() => {
@@ -259,31 +260,33 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     return dataset.records.filter(isCase).length;
   }, [dataset.records, outcomeVar, caseValues]);
 
-  // Calculate group comparison results (for group-comparison study design)
-  const groupComparisonResults: GroupComparisonResults | null = useMemo(() => {
-    if (studyDesign !== 'group-comparison' || !outcomeVar || caseValues.size === 0 || !groupVar) {
+  // Calculate cross-tabulation results (for group-comparison study design)
+  const crossTabResults: CrossTabResults | null = useMemo(() => {
+    if (studyDesign !== 'group-comparison' || !colVar || !groupVar) {
       return null;
     }
 
-    const data: { group: string; hasOutcome: boolean }[] = [];
+    const data: { rowValue: string; colValue: string }[] = [];
 
     dataset.records.forEach((record: CaseRecord) => {
-      const groupValue = record[groupVar];
-      // Skip records with missing group values
-      if (groupValue === null || groupValue === undefined || groupValue === '') {
+      const rowValue = record[groupVar];
+      const colValue = record[colVar];
+      // Skip records with missing values
+      if (rowValue === null || rowValue === undefined || rowValue === '' ||
+          colValue === null || colValue === undefined || colValue === '') {
         return;
       }
 
       data.push({
-        group: String(groupValue),
-        hasOutcome: isCase(record),
+        rowValue: String(rowValue),
+        colValue: String(colValue),
       });
     });
 
     if (data.length === 0) return null;
 
-    return calculateGroupComparison(data);
-  }, [studyDesign, dataset.records, outcomeVar, caseValues, groupVar]);
+    return calculateCrossTabulation(data);
+  }, [studyDesign, dataset.records, colVar, groupVar]);
 
   const formatNumber = (n: number, decimals: number = 2): string => {
     if (!isFinite(n)) return 'Undefined';
@@ -571,105 +574,133 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         </p>
       </div>
 
-      {/* Outcome Variable */}
-      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h4 className="text-sm font-semibold text-gray-900 mb-3">
-          {studyDesign === 'group-comparison' ? 'Column (Groups)' : 'Outcome Variable'}
-        </h4>
-        <p className="text-xs text-gray-600 mb-3">
-          {studyDesign === 'group-comparison' ? (
-            <><strong>Select the variable that defines your column categories</strong> (e.g., severity, outcome status). Then choose which values represent the outcome of interest. The table will show proportions with vs. without this outcome across groups.</>
-          ) : (
-            <><strong>Select the variable that defines your outcome of interest</strong> (e.g., illness status, case status). Then choose which values represent a "case" (e.g., "Yes", "Confirmed", "Probable"). The remaining values will be treated as non-cases or controls.</>
-          )}
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Variable
-            </label>
-            <select
-              value={outcomeVar}
-              onChange={(e) => {
-                setOutcomeVar(e.target.value);
-                setCaseValues(new Set());
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
-            >
-              <option value="">Select variable...</option>
-              {caseDefinitionColumns.map(col => (
-                <option key={col.key} value={col.key}>{col.label}</option>
-              ))}
-            </select>
-          </div>
-          {outcomeVar && outcomeValues.length > 0 && (
+      {/* Outcome Variable - for Cohort/Case-Control only */}
+      {studyDesign !== 'group-comparison' && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-900 mb-3">Outcome Variable</h4>
+          <p className="text-xs text-gray-600 mb-3">
+            <strong>Select the variable that defines your outcome of interest</strong> (e.g., illness status, case status). Then choose which values represent a "case" (e.g., "Yes", "Confirmed", "Probable"). The remaining values will be treated as non-cases or controls.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Values that count as a case
+                Variable
               </label>
-              <div className="flex flex-wrap gap-2">
-                {outcomeValues.map(value => (
-                  <label
-                    key={value}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
-                      caseValues.has(value)
-                        ? 'bg-gray-700 text-white'
-                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={caseValues.has(value)}
-                      onChange={(e) => {
-                        const newSet = new Set(caseValues);
-                        if (e.target.checked) {
-                          newSet.add(value);
-                        } else {
-                          newSet.delete(value);
-                        }
-                        setCaseValues(newSet);
-                      }}
-                      className="sr-only"
-                    />
-                    {value}
-                  </label>
+              <select
+                value={outcomeVar}
+                onChange={(e) => {
+                  setOutcomeVar(e.target.value);
+                  setCaseValues(new Set());
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+              >
+                <option value="">Select variable...</option>
+                {caseDefinitionColumns.map(col => (
+                  <option key={col.key} value={col.key}>{col.label}</option>
                 ))}
-              </div>
+              </select>
             </div>
-          )}
-        </div>
-        {outcomeVar && caseValues.size > 0 && (
-          <div className="mt-3 space-y-2">
-            <div className="text-sm text-gray-700">
-              <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
-              ({formatPercent((totalCases / dataset.records.length) * 100, dataset.records.length)}%)
-            </div>
-            {/* Case/Control mapping display for Cohort and Case-Control */}
-            {studyDesign !== 'group-comparison' && outcomeValues.length > 0 && (
-              <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
-                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Value Mapping</div>
-                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Case:' : 'Ill:'}</span>
-                    <span className="text-gray-600">{Array.from(caseValues).join(', ')}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Control:' : 'Not Ill:'}</span>
-                    <span className="text-gray-600">
-                      {outcomeValues.filter(v => !caseValues.has(v)).join(', ') || '(none)'}
-                    </span>
-                  </div>
+            {outcomeVar && outcomeValues.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Values that count as a case
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {outcomeValues.map(value => (
+                    <label
+                      key={value}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
+                        caseValues.has(value)
+                          ? 'bg-gray-700 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={caseValues.has(value)}
+                        onChange={(e) => {
+                          const newSet = new Set(caseValues);
+                          if (e.target.checked) {
+                            newSet.add(value);
+                          } else {
+                            newSet.delete(value);
+                          }
+                          setCaseValues(newSet);
+                        }}
+                        className="sr-only"
+                      />
+                      {value}
+                    </label>
+                  ))}
                 </div>
               </div>
             )}
           </div>
-        )}
-        {outcomeVar && caseValues.size === 0 && (
-          <div className="mt-3 text-sm text-gray-600">
-            Please select which values count as cases
+          {outcomeVar && caseValues.size > 0 && (
+            <div className="mt-3 space-y-2">
+              <div className="text-sm text-gray-700">
+                <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
+                ({formatPercent((totalCases / dataset.records.length) * 100, dataset.records.length)}%)
+              </div>
+              {/* Case/Control mapping display */}
+              {outcomeValues.length > 0 && (
+                <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Value Mapping</div>
+                  <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Case:' : 'Ill:'}</span>
+                      <span className="text-gray-600">{Array.from(caseValues).join(', ')}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Control:' : 'Not Ill:'}</span>
+                      <span className="text-gray-600">
+                        {outcomeValues.filter(v => !caseValues.has(v)).join(', ') || '(none)'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {outcomeVar && caseValues.size === 0 && (
+            <div className="mt-3 text-sm text-gray-600">
+              Please select which values count as cases
           </div>
         )}
-      </div>
+        </div>
+      )}
+
+      {/* Column (Groups) Variable - for Compare Proportions only */}
+      {studyDesign === 'group-comparison' && (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-900 mb-3">Column (Groups)</h4>
+          <p className="text-xs text-gray-600 mb-3">
+            <strong>Select the variable for column groups</strong> (e.g., severity, outcome status). All values of this variable will be displayed as columns in the table.
+          </p>
+          <select
+            value={colVar}
+            onChange={(e) => setColVar(e.target.value)}
+            className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+          >
+            <option value="">Select column variable...</option>
+            {caseDefinitionColumns
+              .filter(col => col.key !== groupVar) // Exclude row variable
+              .map(col => {
+                const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
+                return (
+                  <option key={col.key} value={col.key}>
+                    {col.label} ({uniqueValues} groups)
+                  </option>
+                );
+              })}
+          </select>
+          {colVar && (
+            <div className="mt-3 text-sm text-gray-600">
+              Column groups: {Array.from(new Set(dataset.records.map(r => r[colVar]).filter(v => v !== null && v !== undefined && v !== ''))).sort().join(', ')}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Exposure Selection (for cohort/case-control) */}
       {outcomeVar && caseValues.size > 0 && studyDesign !== 'group-comparison' && (
@@ -730,31 +761,33 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       )}
 
       {/* Characteristic Variable Selection (for group-comparison) */}
-      {outcomeVar && caseValues.size > 0 && studyDesign === 'group-comparison' && (
+      {colVar && studyDesign === 'group-comparison' && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-900 mb-3">Characteristic (Rows)</h4>
           <p className="text-xs text-gray-600 mb-3">
             <strong>Select the characteristic to compare across</strong> (e.g., age group, sex, region).
-            The analysis will compare the proportion with the outcome across all values of this characteristic.
+            The analysis will compare proportions across all values of this characteristic.
           </p>
           <select
             value={groupVar}
             onChange={(e) => setGroupVar(e.target.value)}
             className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
           >
-            <option value="">Select group variable...</option>
-            {exposureColumns.map(col => {
-              const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
-              return (
-                <option key={col.key} value={col.key}>
-                  {col.label} ({uniqueValues} groups)
-                </option>
-              );
-            })}
+            <option value="">Select row variable...</option>
+            {caseDefinitionColumns
+              .filter(col => col.key !== colVar) // Exclude column variable
+              .map(col => {
+                const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
+                return (
+                  <option key={col.key} value={col.key}>
+                    {col.label} ({uniqueValues} groups)
+                  </option>
+                );
+              })}
           </select>
           {groupVar && (
             <div className="mt-3 text-sm text-gray-600">
-              Groups: {Array.from(new Set(dataset.records.map(r => r[groupVar]).filter(v => v !== null && v !== undefined && v !== ''))).sort().join(', ')}
+              Row groups: {Array.from(new Set(dataset.records.map(r => r[groupVar]).filter(v => v !== null && v !== undefined && v !== ''))).sort().join(', ')}
             </div>
           )}
         </div>
@@ -836,50 +869,45 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       )}
 
       {/* Results for Compare Proportions */}
-      {groupComparisonResults && studyDesign === 'group-comparison' && (
+      {crossTabResults && studyDesign === 'group-comparison' && (
         <div className="space-y-4">
-          <h4 className="text-sm font-semibold text-gray-900">Proportion Comparison Results</h4>
+          <h4 className="text-sm font-semibold text-gray-900">Cross-Tabulation Results</h4>
 
-          {/* Group Comparison Table */}
+          {/* Cross-Tab Table */}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      {dataset.columns.find(c => c.key === groupVar)?.label || 'Group'}
+                      {dataset.columns.find(c => c.key === groupVar)?.label || 'Characteristic'}
                     </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      With Outcome
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Without Outcome
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    {crossTabResults.columnValues.map(colValue => (
+                      <th key={colValue} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        {colValue}
+                      </th>
+                    ))}
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-l border-gray-200">
                       Total
-                    </th>
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Proportion (%)
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {groupComparisonResults.rows.map((row) => (
-                    <tr key={row.groupValue}>
+                  {crossTabResults.rows.map((row) => (
+                    <tr key={row.rowValue}>
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        {row.groupValue}
+                        {row.rowValue}
                       </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-900">
-                        {row.outcomeYes}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-900">
-                        {row.outcomeNo}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center text-gray-900">
+                      {crossTabResults.columnValues.map(colValue => (
+                        <td key={colValue} className="px-4 py-3 text-sm text-center text-gray-900">
+                          {row.counts[colValue]}
+                          <span className="text-gray-500 text-xs ml-1">
+                            ({row.total > 0 ? formatPercent((row.counts[colValue] / row.total) * 100, crossTabResults.grandTotal) : 0}%)
+                          </span>
+                        </td>
+                      ))}
+                      <td className="px-4 py-3 text-sm text-center text-gray-900 border-l border-gray-200">
                         {row.total}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-center font-medium text-gray-900">
-                        {formatPercent(row.proportion * 100, groupComparisonResults.grandTotal)}%
                       </td>
                     </tr>
                   ))}
@@ -888,21 +916,23 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     <td className="px-4 py-3 text-sm text-gray-900">
                       Total
                     </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-900">
-                      {groupComparisonResults.totalOutcomeYes}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-900">
-                      {groupComparisonResults.totalOutcomeNo}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-900">
-                      {groupComparisonResults.grandTotal}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-gray-900">
-                      {formatPercent((groupComparisonResults.totalOutcomeYes / groupComparisonResults.grandTotal) * 100, groupComparisonResults.grandTotal)}%
+                    {crossTabResults.columnValues.map(colValue => (
+                      <td key={colValue} className="px-4 py-3 text-sm text-center text-gray-900">
+                        {crossTabResults.columnTotals[colValue]}
+                        <span className="text-gray-500 text-xs ml-1">
+                          ({crossTabResults.grandTotal > 0 ? formatPercent((crossTabResults.columnTotals[colValue] / crossTabResults.grandTotal) * 100, crossTabResults.grandTotal) : 0}%)
+                        </span>
+                      </td>
+                    ))}
+                    <td className="px-4 py-3 text-sm text-center text-gray-900 border-l border-gray-200">
+                      {crossTabResults.grandTotal}
                     </td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
+              Row percentages shown in parentheses
             </div>
           </div>
 
@@ -912,19 +942,19 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-2xl font-bold text-gray-900">
-                  {formatNumber(groupComparisonResults.chiSquare.chiSquare)}
+                  {formatNumber(crossTabResults.chiSquare.chiSquare)}
                 </p>
                 <p className="text-xs text-gray-500">Chi-Square</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-gray-900">
-                  {groupComparisonResults.chiSquare.degreesOfFreedom}
+                  {crossTabResults.chiSquare.degreesOfFreedom}
                 </p>
                 <p className="text-xs text-gray-500">Degrees of Freedom</p>
               </div>
               <div>
-                <p className={`text-2xl font-bold ${groupComparisonResults.chiSquare.pValue < 0.05 ? 'text-green-600' : 'text-gray-900'}`}>
-                  {groupComparisonResults.chiSquare.pValue < 0.001 ? '< 0.001' : formatNumber(groupComparisonResults.chiSquare.pValue, 3)}
+                <p className={`text-2xl font-bold ${crossTabResults.chiSquare.pValue < 0.05 ? 'text-green-600' : 'text-gray-900'}`}>
+                  {crossTabResults.chiSquare.pValue < 0.001 ? '< 0.001' : formatNumber(crossTabResults.chiSquare.pValue, 3)}
                 </p>
                 <p className="text-xs text-gray-500">p-value</p>
               </div>
@@ -935,17 +965,17 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
             <p className="text-sm text-gray-700 leading-relaxed">
-              The chi-square test examines whether the outcome proportions differ significantly across the {groupComparisonResults.rows.length} groups.
-              {groupComparisonResults.chiSquare.pValue < 0.05 ? (
+              The chi-square test examines whether there is a significant association between {dataset.columns.find(c => c.key === groupVar)?.label || 'the row variable'} and {dataset.columns.find(c => c.key === colVar)?.label || 'the column variable'}.
+              {crossTabResults.chiSquare.pValue < 0.05 ? (
                 <span>
-                  {' '}The p-value ({groupComparisonResults.chiSquare.pValue < 0.001 ? '< 0.001' : formatNumber(groupComparisonResults.chiSquare.pValue, 3)}) is less than 0.05,
-                  indicating a <strong>statistically significant difference</strong> in outcome proportions between groups.
-                  This suggests the outcome is not equally distributed across the groups.
+                  {' '}The p-value ({crossTabResults.chiSquare.pValue < 0.001 ? '< 0.001' : formatNumber(crossTabResults.chiSquare.pValue, 3)}) is less than 0.05,
+                  indicating a <strong>statistically significant association</strong> between the variables.
+                  The distribution of column values differs across the row categories.
                 </span>
               ) : (
                 <span>
-                  {' '}The p-value ({formatNumber(groupComparisonResults.chiSquare.pValue, 3)}) is greater than 0.05,
-                  indicating <strong>no statistically significant difference</strong> in outcome proportions between groups.
+                  {' '}The p-value ({formatNumber(crossTabResults.chiSquare.pValue, 3)}) is greater than 0.05,
+                  indicating <strong>no statistically significant association</strong> between the variables.
                   The observed differences could be due to chance.
                 </span>
               )}
@@ -972,13 +1002,19 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         </div>
       )}
 
-      {outcomeVar && caseValues.size > 0 && studyDesign === 'group-comparison' && !groupVar && (
+      {studyDesign === 'group-comparison' && colVar && !groupVar && (
         <div className="text-center py-8 text-gray-400">
-          Select a group variable to see the comparison
+          Select a characteristic (row variable) to see the comparison
         </div>
       )}
 
-      {(!outcomeVar || caseValues.size === 0) && (
+      {studyDesign === 'group-comparison' && !colVar && (
+        <div className="text-center py-8 text-gray-400">
+          Select a column variable to begin
+        </div>
+      )}
+
+      {studyDesign !== 'group-comparison' && (!outcomeVar || caseValues.size === 0) && (
         <div className="text-center py-8 text-gray-400">
           Define the outcome variable above to begin analysis
         </div>

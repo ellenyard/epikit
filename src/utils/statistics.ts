@@ -567,3 +567,110 @@ function calculateChiSquareRC(
 
   return { chiSquare, degreesOfFreedom: df, pValue };
 }
+
+/**
+ * Cross-tabulation result for R×C table
+ */
+export interface CrossTabRow {
+  rowValue: string;
+  counts: Record<string, number>; // column value -> count
+  total: number;
+}
+
+export interface CrossTabResults {
+  rows: CrossTabRow[];
+  columnValues: string[];
+  columnTotals: Record<string, number>;
+  grandTotal: number;
+  chiSquare: ChiSquareResult;
+}
+
+/**
+ * Calculate cross-tabulation for R×C contingency table
+ * (R row values × C column values)
+ */
+export function calculateCrossTabulation(
+  data: { rowValue: string; colValue: string }[]
+): CrossTabResults {
+  // Get unique column values (sorted)
+  const columnValuesSet = new Set<string>();
+  data.forEach(d => columnValuesSet.add(d.colValue));
+  const columnValues = Array.from(columnValuesSet).sort();
+
+  // Count by row and column
+  const rowCounts = new Map<string, Record<string, number>>();
+
+  data.forEach(({ rowValue, colValue }) => {
+    if (!rowCounts.has(rowValue)) {
+      // Initialize with 0 for all columns
+      const counts: Record<string, number> = {};
+      columnValues.forEach(cv => counts[cv] = 0);
+      rowCounts.set(rowValue, counts);
+    }
+    rowCounts.get(rowValue)![colValue]++;
+  });
+
+  // Build rows (sorted by row value)
+  const rows: CrossTabRow[] = [];
+  const sortedRowValues = Array.from(rowCounts.keys()).sort();
+
+  for (const rowValue of sortedRowValues) {
+    const counts = rowCounts.get(rowValue)!;
+    const total = Object.values(counts).reduce((sum, c) => sum + c, 0);
+    rows.push({ rowValue, counts, total });
+  }
+
+  // Calculate column totals
+  const columnTotals: Record<string, number> = {};
+  columnValues.forEach(cv => {
+    columnTotals[cv] = rows.reduce((sum, row) => sum + row.counts[cv], 0);
+  });
+
+  const grandTotal = rows.reduce((sum, row) => sum + row.total, 0);
+
+  // Calculate chi-square for R×C table
+  const chiSquare = calculateChiSquareRxC(rows, columnValues, columnTotals, grandTotal);
+
+  return {
+    rows,
+    columnValues,
+    columnTotals,
+    grandTotal,
+    chiSquare,
+  };
+}
+
+/**
+ * Calculate chi-square statistic for R×C table
+ */
+function calculateChiSquareRxC(
+  rows: CrossTabRow[],
+  columnValues: string[],
+  columnTotals: Record<string, number>,
+  grandTotal: number
+): ChiSquareResult {
+  if (grandTotal === 0 || rows.length < 2 || columnValues.length < 2) {
+    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1 };
+  }
+
+  let chiSquare = 0;
+
+  for (const row of rows) {
+    for (const colValue of columnValues) {
+      const observed = row.counts[colValue];
+      const expected = (row.total * columnTotals[colValue]) / grandTotal;
+
+      if (expected > 0) {
+        chiSquare += Math.pow(observed - expected, 2) / expected;
+      }
+    }
+  }
+
+  // Degrees of freedom for R×C table: (R-1) × (C-1)
+  const df = (rows.length - 1) * (columnValues.length - 1);
+
+  // Calculate p-value
+  const pValue = 1 - chiSquareCDF(chiSquare, df);
+
+  return { chiSquare, degreesOfFreedom: df, pValue };
+}
