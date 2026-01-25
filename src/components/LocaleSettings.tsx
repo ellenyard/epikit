@@ -1,3 +1,13 @@
+/**
+ * LocaleSettings Component
+ *
+ * Provides a modal interface for users to select their preferred locale
+ * for number formatting. This affects how decimal separators and thousand
+ * separators are displayed throughout the application, as well as how
+ * numbers are parsed during CSV import.
+ *
+ * Supported locales: en-US, fr-FR, es-ES, de-DE, pt-BR, ar-SA
+ */
 import { useLocale } from '../contexts/LocaleContext';
 import type { SupportedLocale } from '../contexts/LocaleContext';
 

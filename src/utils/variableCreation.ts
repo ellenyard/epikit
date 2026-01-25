@@ -3,14 +3,20 @@ import type { LocaleConfig } from '../contexts/LocaleContext';
 import { parseFlexibleNumber } from './localeNumbers';
 
 /**
- * Converts a label to a valid variable name
- * e.g., "Age Group" -> "age_group"
+ * Converts a label to a valid variable name for analysis variables.
+ * Converts all non-alphanumeric characters to underscores to preserve word boundaries.
+ * e.g., "Age Group" -> "age_group", "Patient's Age" -> "patient_s_age"
+ *
+ * Note: FormBuilder.tsx and FieldEditor.tsx have a separate implementation
+ * that removes special characters instead of converting them. This is intentional
+ * as form field names have different requirements than analysis variable names.
  */
 export function toVariableName(label: string): string {
   return label
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
+    .replace(/^_+|_+$/g, '')
+    || 'variable';
 }
 
 /**

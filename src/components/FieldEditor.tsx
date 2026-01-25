@@ -1,7 +1,12 @@
 import type { FormItem, FormField, LayoutElement, FieldOption, SkipLogic, FieldWidth } from '../types/form';
 import { isFormField, isLayoutElement } from '../types/form';
 
-// Convert a label to a valid variable name
+/**
+ * Convert a label to a valid form field variable name.
+ * Removes special characters entirely (rather than converting to underscores)
+ * to produce cleaner field names for form data collection.
+ * e.g., "Patient's Name" -> "patients_name"
+ */
 function toVariableName(label: string): string {
   return label
     .toLowerCase()

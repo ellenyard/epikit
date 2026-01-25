@@ -100,28 +100,51 @@ The built files will be in the `dist/` directory.
 ```
 src/
 ├── components/
-│   ├── analysis/
-│   │   ├── Analysis.tsx        # Main analysis view
-│   │   ├── LineListing.tsx     # Case data table
-│   │   ├── EpiCurve.tsx        # Epidemic curve
-│   │   ├── SpotMap.tsx         # Geographic mapping
-│   │   ├── TwoByTwoAnalysis.tsx # 2x2 tables
-│   │   ├── DescriptiveStats.tsx # Statistics
-│   │   └── DataImport.tsx      # CSV import
-│   ├── FieldPalette.tsx        # Form builder palette
+│   ├── analysis/               # Analysis tools
+│   │   ├── AnalysisWorkflow.tsx    # Main analysis container
+│   │   ├── VariableExplorer.tsx    # Single variable exploration
+│   │   ├── TableBuilder.tsx        # Frequency & cross-tabulation tables
+│   │   ├── TwoByTwoAnalysis.tsx    # 2x2 tables & measures of association
+│   │   ├── EpiCurve.tsx            # Epidemic curve visualization
+│   │   ├── SpotMap.tsx             # Geographic mapping
+│   │   ├── LineListing.tsx         # Case data table
+│   │   ├── AttackRates.tsx         # Attack rate calculations
+│   │   ├── DataImport.tsx          # CSV/Excel import
+│   │   └── ...
+│   ├── review/                 # Data review & cleaning
+│   │   ├── Review.tsx              # Main review container
+│   │   ├── DataQualityPanel.tsx    # Duplicate/date/range checks
+│   │   ├── CreateVariableModal.tsx # Variable creation
+│   │   ├── EditLogPanel.tsx        # Edit history tracking
+│   │   └── ...
+│   ├── collect/                # Data collection
+│   │   ├── Collect.tsx             # Form-based data entry
+│   │   └── DataEntryForm.tsx       # Entry form renderer
+│   ├── tutorials/              # Interactive tutorials
+│   │   ├── EpiCurveTutorial.tsx
+│   │   ├── SpotMapTutorial.tsx
+│   │   ├── TwoByTwoTutorial.tsx
+│   │   └── ...
+│   ├── shared/                 # Reusable UI components
+│   │   ├── ContextualSidebar.tsx
+│   │   ├── HelpPanel.tsx
+│   │   └── ...
 │   ├── FormBuilder.tsx         # Form designer
 │   ├── FormCanvas.tsx          # Form drop zone
 │   ├── FormPreview.tsx         # Form testing
 │   └── ...
-├── hooks/
-│   └── useDataset.ts           # Dataset state management
 ├── types/
 │   ├── form.ts                 # Form type definitions
 │   └── analysis.ts             # Analysis type definitions
 └── utils/
     ├── csvParser.ts            # CSV import/export
+    ├── excelParser.ts          # Excel file parsing
     ├── statistics.ts           # Statistical calculations
-    └── epiCurve.ts             # Epi curve utilities
+    ├── epiCurve.ts             # Epi curve utilities
+    ├── dataQuality.ts          # Data quality checks
+    ├── stringSimilarity.ts     # Fuzzy matching algorithms
+    ├── persistence.ts          # localStorage management
+    └── localeNumbers.ts        # International number formats
 ```
 
 ## Contributing
