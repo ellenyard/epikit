@@ -573,9 +573,15 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
       {/* Outcome Variable */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <h4 className="text-sm font-semibold text-gray-900 mb-3">Outcome Variable</h4>
+        <h4 className="text-sm font-semibold text-gray-900 mb-3">
+          {studyDesign === 'group-comparison' ? 'Column (Groups)' : 'Outcome Variable'}
+        </h4>
         <p className="text-xs text-gray-600 mb-3">
-          <strong>Select the variable that defines your outcome of interest</strong> (e.g., illness status, case status). Then choose which values represent a "case" (e.g., "Yes", "Confirmed", "Probable"). The remaining values will be treated as non-cases or controls.
+          {studyDesign === 'group-comparison' ? (
+            <><strong>Select the variable that defines your column categories</strong> (e.g., severity, outcome status). Then choose which values represent the outcome of interest. The table will show proportions with vs. without this outcome across groups.</>
+          ) : (
+            <><strong>Select the variable that defines your outcome of interest</strong> (e.g., illness status, case status). Then choose which values represent a "case" (e.g., "Yes", "Confirmed", "Probable"). The remaining values will be treated as non-cases or controls.</>
+          )}
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -633,9 +639,29 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           )}
         </div>
         {outcomeVar && caseValues.size > 0 && (
-          <div className="mt-3 text-sm text-gray-700">
-            <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
-            ({formatPercent((totalCases / dataset.records.length) * 100, dataset.records.length)}%)
+          <div className="mt-3 space-y-2">
+            <div className="text-sm text-gray-700">
+              <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
+              ({formatPercent((totalCases / dataset.records.length) * 100, dataset.records.length)}%)
+            </div>
+            {/* Case/Control mapping display for Cohort and Case-Control */}
+            {studyDesign !== 'group-comparison' && outcomeValues.length > 0 && (
+              <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+                <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Value Mapping</div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Case:' : 'Ill:'}</span>
+                    <span className="text-gray-600">{Array.from(caseValues).join(', ')}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Control:' : 'Not Ill:'}</span>
+                    <span className="text-gray-600">
+                      {outcomeValues.filter(v => !caseValues.has(v)).join(', ') || '(none)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
         {outcomeVar && caseValues.size === 0 && (
@@ -703,13 +729,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         </div>
       )}
 
-      {/* Group Variable Selection (for group-comparison) */}
+      {/* Characteristic Variable Selection (for group-comparison) */}
       {outcomeVar && caseValues.size > 0 && studyDesign === 'group-comparison' && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
-          <h4 className="text-sm font-semibold text-gray-900 mb-3">Group Variable</h4>
+          <h4 className="text-sm font-semibold text-gray-900 mb-3">Characteristic (Rows)</h4>
           <p className="text-xs text-gray-600 mb-3">
-            <strong>Select the variable that defines your comparison groups</strong> (e.g., age group, sex, region).
-            The analysis will compare the proportion with the outcome across all groups.
+            <strong>Select the characteristic to compare across</strong> (e.g., age group, sex, region).
+            The analysis will compare the proportion with the outcome across all values of this characteristic.
           </p>
           <select
             value={groupVar}
