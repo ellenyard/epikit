@@ -20,6 +20,8 @@ import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
+import { addVariableToDataset } from './utils/variableCreation';
+import type { VariableConfig } from './types/analysis';
 
 type Module = 'dashboard' | 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'analysis';
 type FormView = 'builder' | 'preview';
@@ -351,6 +353,68 @@ function App() {
     setActiveModule(module as Module);
   }, []);
 
+  // Handle variable creation from Analysis workflow
+  const handleCreateVariable = useCallback((config: VariableConfig, values: unknown[]) => {
+    if (!activeDataset) return;
+
+    const updatedDataset = addVariableToDataset(activeDataset, config, values);
+    updateDataset(activeDataset.id, {
+      columns: updatedDataset.columns,
+      records: updatedDataset.records,
+    });
+
+    // Add entry to edit log
+    addEditLogEntry({
+      id: crypto.randomUUID(),
+      datasetId: activeDataset.id,
+      recordId: 'system',
+      recordIdentifier: 'System',
+      columnKey: config.name,
+      columnLabel: config.label,
+      oldValue: null,
+      newValue: `Created variable: ${config.label}`,
+      reason: `New ${config.method} variable created from ${config.sourceColumn || 'scratch'}`,
+      initials: 'SYS',
+      timestamp: new Date().toISOString(),
+    });
+  }, [activeDataset, updateDataset, addEditLogEntry]);
+
+  // Handle bulk record updates from Analysis workflow (for Fix Values)
+  const handleUpdateRecords = useCallback((updates: Array<{ recordId: string; field: string; value: unknown }>) => {
+    if (!activeDataset) return;
+
+    // Group updates and apply them
+    const updatedRecords = activeDataset.records.map(record => {
+      const recordUpdates = updates.filter(u => u.recordId === record.id);
+      if (recordUpdates.length === 0) return record;
+
+      const newRecord = { ...record };
+      recordUpdates.forEach(update => {
+        newRecord[update.field] = update.value;
+      });
+      return newRecord;
+    });
+
+    updateDataset(activeDataset.id, { records: updatedRecords });
+
+    // Log the bulk update
+    const fieldName = updates[0]?.field;
+    const column = activeDataset.columns.find(c => c.key === fieldName);
+    addEditLogEntry({
+      id: crypto.randomUUID(),
+      datasetId: activeDataset.id,
+      recordId: 'bulk',
+      recordIdentifier: 'Bulk Update',
+      columnKey: fieldName || '',
+      columnLabel: column?.label || fieldName || '',
+      oldValue: null,
+      newValue: `${updates.length} records updated`,
+      reason: 'Bulk value fix/recode from Variable Explorer',
+      initials: 'SYS',
+      timestamp: new Date().toISOString(),
+    });
+  }, [activeDataset, updateDataset, addEditLogEntry]);
+
   // Check if current module needs dataset selector
   const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'analysis'].includes(activeModule);
 
@@ -570,7 +634,11 @@ function App() {
           ) : activeModule === 'spotmap' ? (
             <SpotMap dataset={activeDataset} />
           ) : activeModule === 'analysis' ? (
-            <AnalysisWorkflow dataset={activeDataset} />
+            <AnalysisWorkflow
+              dataset={activeDataset}
+              onCreateVariable={handleCreateVariable}
+              onUpdateRecords={handleUpdateRecords}
+            />
           ) : null
         ) : (
           // No dataset selected - show prompt

@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
-import type { Dataset } from '../../types/analysis';
+import type { Dataset, VariableConfig } from '../../types/analysis';
 import { calculateDescriptiveStats, calculateFrequency } from '../../utils/statistics';
 import type { DescriptiveStats, FrequencyItem } from '../../utils/statistics';
+import { CreateVariableModal } from '../review/CreateVariableModal';
 
 interface VariableExplorerProps {
   dataset: Dataset;
@@ -10,6 +11,9 @@ interface VariableExplorerProps {
   // Optional controlled state for persistence
   selectedVar?: string;
   onSelectedVarChange?: (varKey: string) => void;
+  // Callbacks for variable operations
+  onCreateVariable?: (config: VariableConfig, values: unknown[]) => void;
+  onUpdateRecords?: (updates: Array<{ recordId: string; field: string; value: unknown }>) => void;
 }
 
 interface HistogramBin {
@@ -17,6 +21,13 @@ interface HistogramBin {
   binEnd: number;
   count: number;
   label: string;
+}
+
+interface ValueMapping {
+  originalValue: string;
+  newValue: string;
+  count: number;
+  selected: boolean;
 }
 
 /**
@@ -28,6 +39,8 @@ export function VariableExplorer({
   onRunTwoByTwo,
   selectedVar: controlledSelectedVar,
   onSelectedVarChange,
+  onCreateVariable,
+  onUpdateRecords,
 }: VariableExplorerProps) {
   // Use controlled state if provided, otherwise use local state
   const [internalSelectedVar, setInternalSelectedVar] = useState<string>('');
@@ -36,6 +49,9 @@ export function VariableExplorer({
 
   const [binWidth, setBinWidth] = useState<number | null>(null);
   const [showRecodeModal, setShowRecodeModal] = useState(false);
+  const [showCreateVariableModal, setShowCreateVariableModal] = useState(false);
+  const [showFixValuesModal, setShowFixValuesModal] = useState(false);
+  const [valueMappings, setValueMappings] = useState<ValueMapping[]>([]);
 
   const selectedColumn = dataset.columns.find(c => c.key === selectedVar);
 
@@ -131,6 +147,81 @@ export function VariableExplorer({
     if (n === null || n === undefined || isNaN(n)) return '-';
     return n.toFixed(decimals);
   };
+
+  // Initialize value mappings when opening Fix Values modal
+  const handleOpenFixValues = () => {
+    const mappings: ValueMapping[] = frequency.map(item => ({
+      originalValue: item.value,
+      newValue: item.value,
+      count: item.count,
+      selected: false,
+    }));
+    setValueMappings(mappings);
+    setShowFixValuesModal(true);
+    setShowRecodeModal(false);
+  };
+
+  // Handle selecting values to combine
+  const handleToggleValueSelection = (originalValue: string) => {
+    setValueMappings(prev => prev.map(m =>
+      m.originalValue === originalValue ? { ...m, selected: !m.selected } : m
+    ));
+  };
+
+  // Combine selected values into the first selected value
+  const handleCombineSelected = () => {
+    const selected = valueMappings.filter(m => m.selected);
+    if (selected.length < 2) return;
+
+    const targetValue = selected[0].newValue;
+    setValueMappings(prev => prev.map(m =>
+      m.selected ? { ...m, newValue: targetValue, selected: false } : m
+    ));
+  };
+
+  // Set new value for a specific original value
+  const handleSetNewValue = (originalValue: string, newValue: string) => {
+    setValueMappings(prev => prev.map(m =>
+      m.originalValue === originalValue ? { ...m, newValue } : m
+    ));
+  };
+
+  // Apply the value mappings to the dataset
+  const handleApplyFixValues = () => {
+    if (!onUpdateRecords || !selectedVar) return;
+
+    // Build a map of original -> new values (only for changed values)
+    const changedMappings = valueMappings.filter(m => m.originalValue !== m.newValue);
+    if (changedMappings.length === 0) {
+      setShowFixValuesModal(false);
+      return;
+    }
+
+    const valueMap = new Map(changedMappings.map(m => [m.originalValue, m.newValue]));
+
+    // Create updates for all affected records
+    const updates: Array<{ recordId: string; field: string; value: unknown }> = [];
+    dataset.records.forEach(record => {
+      const currentValue = String(record[selectedVar] ?? '');
+      if (valueMap.has(currentValue)) {
+        updates.push({
+          recordId: record.id,
+          field: selectedVar,
+          value: valueMap.get(currentValue),
+        });
+      }
+    });
+
+    if (updates.length > 0) {
+      onUpdateRecords(updates);
+    }
+
+    setShowFixValuesModal(false);
+  };
+
+  // Count how many values have been changed
+  const changedValueCount = valueMappings.filter(m => m.originalValue !== m.newValue).length;
+  const selectedValueCount = valueMappings.filter(m => m.selected).length;
 
   return (
     <div className="p-6 space-y-6">
@@ -512,48 +603,197 @@ export function VariableExplorer({
         </div>
       </div>
 
-      {/* Recode Modal */}
+      {/* Recode Options Modal */}
       {showRecodeModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
             <div className="px-6 py-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold text-gray-900">Recode Variable</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {selectedColumn?.label}
+              </p>
             </div>
             <div className="p-6 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                <p className="text-sm text-amber-800">
-                  <strong>Coming Soon:</strong> Variable recoding functionality will be available in a future update.
+              <p className="text-sm text-gray-600">
+                Choose how you want to recode this variable:
+              </p>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowRecodeModal(false);
+                    setShowCreateVariableModal(true);
+                  }}
+                  disabled={!onCreateVariable}
+                  className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Create New Variable</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Create age groups, categories, or calculated fields. Original variable is preserved.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={handleOpenFixValues}
+                  disabled={!onUpdateRecords}
+                  className="w-full p-4 text-left border border-gray-200 rounded-lg hover:border-green-300 hover:bg-green-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-green-100 rounded-lg">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">Fix Values in Place</p>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Combine inconsistent values (e.g., "yes", "Yes", "YES" → "Yes"). Modifies original data.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {(!onCreateVariable || !onUpdateRecords) && (
+                <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                  Some options are disabled. Variable operations require dataset edit permissions.
                 </p>
-              </div>
-              <div className="flex gap-2">
-                <button className="flex-1 px-3 py-2 text-sm font-medium bg-blue-100 text-blue-700 rounded">Create Groups</button>
-                <button className="flex-1 px-3 py-2 text-sm font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200">Fix Values</button>
-                <button className="flex-1 px-3 py-2 text-sm font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200">Custom</button>
-              </div>
-              <p className="text-sm text-gray-600">Define cut points to create categories:</p>
-              <div className="space-y-3 opacity-60">
-                <div className="flex items-center gap-3">
-                  <input type="text" defaultValue="0-17" disabled className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50" />
-                  <span className="text-gray-500">-&gt;</span>
-                  <input type="text" defaultValue="Child" disabled className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <input type="text" defaultValue="18-64" disabled className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50" />
-                  <span className="text-gray-500">-&gt;</span>
-                  <input type="text" defaultValue="Adult" disabled className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50" />
-                </div>
-                <div className="flex items-center gap-3">
-                  <input type="text" defaultValue="65+" disabled className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50" />
-                  <span className="text-gray-500">-&gt;</span>
-                  <input type="text" defaultValue="Senior" disabled className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm bg-gray-50" />
-                </div>
-              </div>
+              )}
             </div>
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button onClick={() => setShowRecodeModal(false)} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg">Close</button>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowRecodeModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Fix Values Modal */}
+      {showFixValuesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">Fix Values</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                {selectedColumn?.label} - Remap or combine values
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Tip:</strong> Select multiple values and click "Combine Selected" to merge them into one.
+                  Or edit the "New Value" directly to remap individual values.
+                </p>
+              </div>
+
+              {selectedValueCount >= 2 && (
+                <button
+                  onClick={handleCombineSelected}
+                  className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700"
+                >
+                  Combine {selectedValueCount} Selected → "{valueMappings.find(m => m.selected)?.newValue}"
+                </button>
+              )}
+
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase w-10">
+                        <span className="sr-only">Select</span>
+                      </th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Original Value</th>
+                      <th className="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase w-10">→</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">New Value</th>
+                      <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Count</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {valueMappings.map((mapping) => (
+                      <tr
+                        key={mapping.originalValue}
+                        className={`${mapping.selected ? 'bg-blue-50' : ''} ${mapping.originalValue !== mapping.newValue ? 'bg-green-50' : ''}`}
+                      >
+                        <td className="px-4 py-2">
+                          <input
+                            type="checkbox"
+                            checked={mapping.selected}
+                            onChange={() => handleToggleValueSelection(mapping.originalValue)}
+                            className="rounded border-gray-300"
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-gray-900 font-mono">{mapping.originalValue}</td>
+                        <td className="px-4 py-2 text-center text-gray-400">→</td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="text"
+                            value={mapping.newValue}
+                            onChange={(e) => handleSetNewValue(mapping.originalValue, e.target.value)}
+                            className={`w-full px-2 py-1 text-sm border rounded font-mono ${
+                              mapping.originalValue !== mapping.newValue
+                                ? 'border-green-300 bg-green-50'
+                                : 'border-gray-300'
+                            }`}
+                          />
+                        </td>
+                        <td className="px-4 py-2 text-right text-gray-500">{mapping.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {changedValueCount > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-sm text-amber-800">
+                    <strong>{changedValueCount} value(s)</strong> will be changed. This will modify the original data.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowFixValuesModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleApplyFixValues}
+                disabled={changedValueCount === 0}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                Apply Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Variable Modal (from Review module) */}
+      {onCreateVariable && (
+        <CreateVariableModal
+          isOpen={showCreateVariableModal}
+          onClose={() => setShowCreateVariableModal(false)}
+          existingColumns={dataset.columns}
+          records={dataset.records}
+          onCreateVariable={onCreateVariable}
+        />
       )}
     </div>
   );
