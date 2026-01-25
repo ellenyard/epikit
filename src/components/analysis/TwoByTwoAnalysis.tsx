@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
-import { calculateTwoByTwo } from '../../utils/statistics';
-import type { TwoByTwoResults } from '../../utils/statistics';
+import { calculateTwoByTwo, calculateGroupComparison } from '../../utils/statistics';
+import type { TwoByTwoResults, GroupComparisonResults } from '../../utils/statistics';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
 import { TabHeader, HelpPanel, ResultsActions, ExportIcons } from '../shared';
 
@@ -10,7 +10,7 @@ interface TwoByTwoAnalysisProps {
   initialExposure?: string;
 }
 
-type StudyDesign = 'cohort' | 'case-control';
+type StudyDesign = 'cohort' | 'case-control' | 'group-comparison';
 
 interface ExposureResult {
   exposureVar: string;
@@ -27,10 +27,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   const [outcomeVar, setOutcomeVar] = useState<string>('');
   const [caseValues, setCaseValues] = useState<Set<string>>(new Set());
 
-  // Multi-exposure selection
+  // Multi-exposure selection (for cohort/case-control)
   const [selectedExposures, setSelectedExposures] = useState<string[]>([]);
   // For each exposure, store which value means "exposed" (default to "Yes")
   const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>({});
+
+  // Group comparison variable (single variable with 2+ groups)
+  const [groupVar, setGroupVar] = useState<string>('');
 
   // Get columns suitable for case definition (categorical columns)
   const caseDefinitionColumns = useMemo(() => {
@@ -255,6 +258,32 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   const totalCases = useMemo(() => {
     return dataset.records.filter(isCase).length;
   }, [dataset.records, outcomeVar, caseValues]);
+
+  // Calculate group comparison results (for group-comparison study design)
+  const groupComparisonResults: GroupComparisonResults | null = useMemo(() => {
+    if (studyDesign !== 'group-comparison' || !outcomeVar || caseValues.size === 0 || !groupVar) {
+      return null;
+    }
+
+    const data: { group: string; hasOutcome: boolean }[] = [];
+
+    dataset.records.forEach((record: CaseRecord) => {
+      const groupValue = record[groupVar];
+      // Skip records with missing group values
+      if (groupValue === null || groupValue === undefined || groupValue === '') {
+        return;
+      }
+
+      data.push({
+        group: String(groupValue),
+        hasOutcome: isCase(record),
+      });
+    });
+
+    if (data.length === 0) return null;
+
+    return calculateGroupComparison(data);
+  }, [studyDesign, dataset.records, outcomeVar, caseValues, groupVar]);
 
   const formatNumber = (n: number, decimals: number = 2): string => {
     if (!isFinite(n)) return 'Undefined';
@@ -499,8 +528,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
       {/* Study Design Selector */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-3">Study Design</label>
-        <div className="flex gap-6">
+        <label className="block text-sm font-medium text-gray-700 mb-3">Analysis Type</label>
+        <div className="flex flex-wrap gap-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="radio"
@@ -510,7 +539,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
               onChange={() => setStudyDesign('cohort')}
               className="w-4 h-4 text-gray-700 focus:ring-gray-500"
             />
-            <span className="text-sm text-gray-900">Retrospective Cohort Investigation</span>
+            <span className="text-sm text-gray-900">Cohort (Attack Rates)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -521,9 +550,25 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
               onChange={() => setStudyDesign('case-control')}
               className="w-4 h-4 text-gray-700 focus:ring-gray-500"
             />
-            <span className="text-sm text-gray-900">Case-Control Investigation</span>
+            <span className="text-sm text-gray-900">Case-Control (Odds Ratios)</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="studyDesign"
+              value="group-comparison"
+              checked={studyDesign === 'group-comparison'}
+              onChange={() => setStudyDesign('group-comparison')}
+              className="w-4 h-4 text-gray-700 focus:ring-gray-500"
+            />
+            <span className="text-sm text-gray-900">Compare Proportions</span>
           </label>
         </div>
+        <p className="mt-2 text-xs text-gray-500">
+          {studyDesign === 'cohort' && 'Compare attack rates between exposed and unexposed groups.'}
+          {studyDesign === 'case-control' && 'Compare odds of exposure between cases and controls.'}
+          {studyDesign === 'group-comparison' && 'Compare outcome proportions across multiple groups (e.g., age groups, regions).'}
+        </p>
       </div>
 
       {/* Outcome Variable */}
@@ -600,8 +645,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         )}
       </div>
 
-      {/* Exposure Selection */}
-      {outcomeVar && caseValues.size > 0 && (
+      {/* Exposure Selection (for cohort/case-control) */}
+      {outcomeVar && caseValues.size > 0 && studyDesign !== 'group-comparison' && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-900 mb-3">Exposure Variables</h4>
           <p className="text-xs text-gray-600 mb-3">
@@ -658,8 +703,39 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         </div>
       )}
 
-      {/* Results */}
-      {exposureResults.length > 0 && (
+      {/* Group Variable Selection (for group-comparison) */}
+      {outcomeVar && caseValues.size > 0 && studyDesign === 'group-comparison' && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-900 mb-3">Group Variable</h4>
+          <p className="text-xs text-gray-600 mb-3">
+            <strong>Select the variable that defines your comparison groups</strong> (e.g., age group, sex, region).
+            The analysis will compare the proportion with the outcome across all groups.
+          </p>
+          <select
+            value={groupVar}
+            onChange={(e) => setGroupVar(e.target.value)}
+            className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-500 focus:border-gray-500"
+          >
+            <option value="">Select group variable...</option>
+            {exposureColumns.map(col => {
+              const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
+              return (
+                <option key={col.key} value={col.key}>
+                  {col.label} ({uniqueValues} groups)
+                </option>
+              );
+            })}
+          </select>
+          {groupVar && (
+            <div className="mt-3 text-sm text-gray-600">
+              Groups: {Array.from(new Set(dataset.records.map(r => r[groupVar]).filter(v => v !== null && v !== undefined && v !== ''))).sort().join(', ')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Results for Cohort/Case-Control */}
+      {exposureResults.length > 0 && studyDesign !== 'group-comparison' && (
         <div className="space-y-4">
           <h4 className="text-sm font-semibold text-gray-900">Summary Table</h4>
           {renderSummaryTable()}
@@ -733,15 +809,152 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         </div>
       )}
 
-      {outcomeVar && caseValues.size > 0 && selectedExposures.length === 0 && (
+      {/* Results for Compare Proportions */}
+      {groupComparisonResults && studyDesign === 'group-comparison' && (
+        <div className="space-y-4">
+          <h4 className="text-sm font-semibold text-gray-900">Proportion Comparison Results</h4>
+
+          {/* Group Comparison Table */}
+          <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {dataset.columns.find(c => c.key === groupVar)?.label || 'Group'}
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      With Outcome
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Without Outcome
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total
+                    </th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Proportion (%)
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {groupComparisonResults.rows.map((row) => (
+                    <tr key={row.groupValue}>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
+                        {row.groupValue}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-900">
+                        {row.outcomeYes}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-900">
+                        {row.outcomeNo}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center text-gray-900">
+                        {row.total}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-center font-medium text-gray-900">
+                        {formatPercent(row.proportion * 100, groupComparisonResults.grandTotal)}%
+                      </td>
+                    </tr>
+                  ))}
+                  {/* Total row */}
+                  <tr className="bg-gray-50 font-medium">
+                    <td className="px-4 py-3 text-sm text-gray-900">
+                      Total
+                    </td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-900">
+                      {groupComparisonResults.totalOutcomeYes}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-900">
+                      {groupComparisonResults.totalOutcomeNo}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-900">
+                      {groupComparisonResults.grandTotal}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-center text-gray-900">
+                      {formatPercent((groupComparisonResults.totalOutcomeYes / groupComparisonResults.grandTotal) * 100, groupComparisonResults.grandTotal)}%
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Chi-Square Results */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h5 className="text-sm font-semibold text-gray-900 mb-3">Statistical Test</h5>
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {formatNumber(groupComparisonResults.chiSquare.chiSquare)}
+                </p>
+                <p className="text-xs text-gray-500">Chi-Square</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-gray-900">
+                  {groupComparisonResults.chiSquare.degreesOfFreedom}
+                </p>
+                <p className="text-xs text-gray-500">Degrees of Freedom</p>
+              </div>
+              <div>
+                <p className={`text-2xl font-bold ${groupComparisonResults.chiSquare.pValue < 0.05 ? 'text-green-600' : 'text-gray-900'}`}>
+                  {groupComparisonResults.chiSquare.pValue < 0.001 ? '< 0.001' : formatNumber(groupComparisonResults.chiSquare.pValue, 3)}
+                </p>
+                <p className="text-xs text-gray-500">p-value</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Interpretation */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
+            <p className="text-sm text-gray-700 leading-relaxed">
+              The chi-square test examines whether the outcome proportions differ significantly across the {groupComparisonResults.rows.length} groups.
+              {groupComparisonResults.chiSquare.pValue < 0.05 ? (
+                <span>
+                  {' '}The p-value ({groupComparisonResults.chiSquare.pValue < 0.001 ? '< 0.001' : formatNumber(groupComparisonResults.chiSquare.pValue, 3)}) is less than 0.05,
+                  indicating a <strong>statistically significant difference</strong> in outcome proportions between groups.
+                  This suggests the outcome is not equally distributed across the groups.
+                </span>
+              ) : (
+                <span>
+                  {' '}The p-value ({formatNumber(groupComparisonResults.chiSquare.pValue, 3)}) is greater than 0.05,
+                  indicating <strong>no statistically significant difference</strong> in outcome proportions between groups.
+                  The observed differences could be due to chance.
+                </span>
+              )}
+            </p>
+          </div>
+
+          {/* Results Actions */}
+          <ResultsActions
+            actions={[
+              {
+                label: 'Export Dataset CSV',
+                onClick: exportDatasetCSV,
+                icon: ExportIcons.csv,
+                variant: 'secondary',
+              },
+            ]}
+          />
+        </div>
+      )}
+
+      {outcomeVar && caseValues.size > 0 && studyDesign !== 'group-comparison' && selectedExposures.length === 0 && (
         <div className="text-center py-8 text-gray-400">
           Select one or more exposure variables to see the analysis
         </div>
       )}
 
+      {outcomeVar && caseValues.size > 0 && studyDesign === 'group-comparison' && !groupVar && (
+        <div className="text-center py-8 text-gray-400">
+          Select a group variable to see the comparison
+        </div>
+      )}
+
       {(!outcomeVar || caseValues.size === 0) && (
         <div className="text-center py-8 text-gray-400">
-          Define the case definition above to begin analysis
+          Define the outcome variable above to begin analysis
         </div>
       )}
 
