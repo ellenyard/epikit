@@ -123,7 +123,11 @@ export function ContextualSidebar({
         style={{
           width: `${width}px`,
           zIndex,
-          transform: isOpen ? 'translateX(0)' : undefined,
+          transform: isOpen
+            ? 'translateX(0)'
+            : position === 'right'
+            ? 'translateX(100%)'
+            : 'translateX(-100%)',
         }}
       >
         {/* Resize Handle */}
