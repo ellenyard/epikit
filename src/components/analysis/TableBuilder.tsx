@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Dataset } from '../../types/analysis';
+import { calculateCrossTabulation } from '../../utils/statistics';
+import type { CrossTabResults } from '../../utils/statistics';
 
 interface TableBuilderProps {
   dataset: Dataset;
@@ -282,6 +284,42 @@ export function TableBuilder({
       crossTabs,
     };
   }, [rowVars, colVar, dataset, getUniqueValues]);
+
+  // Calculate chi-square for each cross-tab
+  const chiSquareResults = useMemo(() => {
+    if (!crossTabData || rowVars.length === 0 || !colVar) return null;
+
+    const results: Map<string, CrossTabResults> = new Map();
+
+    for (const ct of crossTabData.crossTabs) {
+      // Build data for chi-square calculation
+      const data: { rowValue: string; colValue: string }[] = [];
+
+      for (const record of dataset.records) {
+        const rowVal = record[ct.rowVar];
+        const colVal = record[colVar];
+
+        if (rowVal === null || rowVal === undefined || String(rowVal).trim() === '') continue;
+        if (colVal === null || colVal === undefined || String(colVal).trim() === '') continue;
+
+        data.push({
+          rowValue: String(rowVal),
+          colValue: String(colVal),
+        });
+      }
+
+      if (data.length > 0) {
+        results.set(ct.rowVar, calculateCrossTabulation(data));
+      }
+    }
+
+    return results;
+  }, [crossTabData, rowVars, colVar, dataset.records]);
+
+  const formatNumber = (n: number, decimals: number = 2): string => {
+    if (!isFinite(n)) return 'N/A';
+    return n.toFixed(decimals);
+  };
 
   // Export to CSV
   const exportToCSV = useCallback(() => {
@@ -649,6 +687,40 @@ export function TableBuilder({
                         <p className="text-xs text-gray-500 mt-3">
                           Note: Column percentages shown. Excludes {ct.excludedCount} records with missing values.
                         </p>
+                      )}
+
+                      {/* Chi-Square Results */}
+                      {chiSquareResults?.get(ct.rowVar) && (
+                        <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                          <h5 className="text-sm font-semibold text-gray-900 mb-3">Chi-Square Test</h5>
+                          <div className="grid grid-cols-3 gap-4 text-center">
+                            <div>
+                              <p className="text-xl font-bold text-gray-900">
+                                {formatNumber(chiSquareResults.get(ct.rowVar)!.chiSquare.chiSquare)}
+                              </p>
+                              <p className="text-xs text-gray-500">χ² Statistic</p>
+                            </div>
+                            <div>
+                              <p className="text-xl font-bold text-gray-900">
+                                {chiSquareResults.get(ct.rowVar)!.chiSquare.degreesOfFreedom}
+                              </p>
+                              <p className="text-xs text-gray-500">df</p>
+                            </div>
+                            <div>
+                              <p className={`text-xl font-bold ${chiSquareResults.get(ct.rowVar)!.chiSquare.pValue < 0.05 ? 'text-green-600' : 'text-gray-900'}`}>
+                                {chiSquareResults.get(ct.rowVar)!.chiSquare.pValue < 0.001
+                                  ? '< 0.001'
+                                  : formatNumber(chiSquareResults.get(ct.rowVar)!.chiSquare.pValue, 3)}
+                              </p>
+                              <p className="text-xs text-gray-500">p-value</p>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-xs text-gray-600">
+                            {chiSquareResults.get(ct.rowVar)!.chiSquare.pValue < 0.05
+                              ? 'The association between these variables is statistically significant (p < 0.05).'
+                              : 'No statistically significant association detected (p ≥ 0.05).'}
+                          </p>
+                        </div>
                       )}
                     </div>
                   ))}
