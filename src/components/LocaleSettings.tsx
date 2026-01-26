@@ -173,16 +173,16 @@ export function LocaleSettings({ isOpen, onClose }: LocaleSettingsProps) {
               </div>
             </div>
 
-            {/* R Integration Notice */}
+            {/* CSV Export Notice */}
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
               <h3 className="text-sm font-medium text-amber-900 mb-2 flex items-center">
                 <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                R &amp; Excel Compatibility
+                CSV Export Note
               </h3>
               <p className="text-sm text-amber-800">
-                CSV exports always use period (.) as the decimal separator for compatibility with R and other statistical software, regardless of your display preference.
+                CSV exports always use period (.) as the decimal separator for compatibility with statistical software, regardless of your display preference.
               </p>
             </div>
 
