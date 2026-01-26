@@ -13,6 +13,7 @@ import type { FormField, FormItem, FieldType, LayoutElementType, LayoutElement }
 import { FieldPalette } from './FieldPalette';
 import { FormCanvas } from './FormCanvas';
 import { FieldEditor } from './FieldEditor';
+import { formTemplates } from '../data/demoData';
 
 const defaultFieldLabels: Record<FieldType, string> = {
   text: 'Text Question',
@@ -59,6 +60,23 @@ export function FormBuilder({ onPreview, onExport, onSave, initialItems, initial
   const [activeId, setActiveId] = useState<string | null>(null);
   const [formName, setFormName] = useState(initialFormName || 'Untitled Form');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [showTemplates, setShowTemplates] = useState(false);
+
+  // Load a template by generating new IDs for all items
+  const loadTemplate = (templateId: string) => {
+    const template = formTemplates.find(t => t.id === templateId);
+    if (!template) return;
+
+    // Clone items with new IDs to avoid conflicts
+    const clonedItems = template.items.map(item => ({
+      ...item,
+      id: uuidv4(),
+    }));
+
+    setItems(clonedItems);
+    setFormName(template.name);
+    setShowTemplates(false);
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -203,6 +221,12 @@ export function FormBuilder({ onPreview, onExport, onSave, initialItems, initial
             </div>
             <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               <button
+                onClick={() => setShowTemplates(true)}
+                className="px-3 sm:px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Templates
+              </button>
+              <button
                 onClick={() => onPreview(items)}
                 disabled={items.length === 0}
                 className="px-3 sm:px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -331,6 +355,70 @@ export function FormBuilder({ onPreview, onExport, onSave, initialItems, initial
           </div>
         )}
       </DragOverlay>
+
+      {/* Template Selector Modal */}
+      {showTemplates && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Form Templates</h2>
+                <p className="text-sm text-gray-500">Start with a pre-built form for common investigations</p>
+              </div>
+              <button
+                onClick={() => setShowTemplates(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {items.length > 0 && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <p className="text-sm text-amber-800">
+                    Loading a template will replace your current form fields.
+                  </p>
+                </div>
+              )}
+              <div className="grid gap-4">
+                {formTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => loadTemplate(template.id)}
+                    className="text-left p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900">{template.name}</h3>
+                        <p className="text-sm text-gray-500 mt-1">{template.description}</p>
+                        <p className="text-xs text-gray-400 mt-2">{template.items.length} fields</p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              {formTemplates.length === 0 && (
+                <p className="text-center text-gray-500 py-8">No templates available yet.</p>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 p-4 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => setShowTemplates(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </DndContext>
   );
 }

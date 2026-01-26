@@ -3,6 +3,7 @@ import type { Dataset, VariableConfig } from '../../types/analysis';
 import { calculateDescriptiveStats, calculateFrequency } from '../../utils/statistics';
 import type { DescriptiveStats, FrequencyItem } from '../../utils/statistics';
 import { CreateVariableModal } from '../review/CreateVariableModal';
+import { StatTooltip, statDefinitions } from '../shared';
 
 interface VariableExplorerProps {
   dataset: Dataset;
@@ -456,17 +457,26 @@ export function VariableExplorer({
                 <div className="grid grid-cols-3 gap-2">
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
                     <p className="text-xl font-bold text-blue-900">{formatNumber(numericStats.mean)}</p>
-                    <p className="text-xs text-blue-700">Mean</p>
+                    <div className="flex items-center justify-center gap-1">
+                      <p className="text-xs text-blue-700">Mean</p>
+                      <StatTooltip {...statDefinitions.mean} />
+                    </div>
                   </div>
                   <div className="text-center p-3 bg-green-50 rounded-lg">
                     <p className="text-xl font-bold text-green-900">{formatNumber(numericStats.median)}</p>
-                    <p className="text-xs text-green-700">Median</p>
+                    <div className="flex items-center justify-center gap-1">
+                      <p className="text-xs text-green-700">Median</p>
+                      <StatTooltip {...statDefinitions.median} />
+                    </div>
                   </div>
                   <div className="text-center p-3 bg-purple-50 rounded-lg">
                     <p className="text-xl font-bold text-purple-900">
                       {numericStats.mode !== null ? formatNumber(numericStats.mode) : '-'}
                     </p>
-                    <p className="text-xs text-purple-700">Mode</p>
+                    <div className="flex items-center justify-center gap-1">
+                      <p className="text-xs text-purple-700">Mode</p>
+                      <StatTooltip {...statDefinitions.mode} />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -477,23 +487,38 @@ export function VariableExplorer({
                 <div className="flex justify-between text-sm mb-3">
                   <div className="text-center">
                     <p className="font-semibold text-gray-900">{formatNumber(numericStats.min)}</p>
-                    <p className="text-xs text-gray-500">Min</p>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <p className="text-xs text-gray-500">Min</p>
+                      <StatTooltip {...statDefinitions.min} />
+                    </div>
                   </div>
                   <div className="text-center">
                     <p className="font-semibold text-gray-900">{formatNumber(numericStats.q1)}</p>
-                    <p className="text-xs text-gray-500">Q1</p>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <p className="text-xs text-gray-500">Q1</p>
+                      <StatTooltip {...statDefinitions.q1} />
+                    </div>
                   </div>
                   <div className="text-center">
                     <p className="font-semibold text-blue-600">{formatNumber(numericStats.median)}</p>
-                    <p className="text-xs text-gray-500">Median</p>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <p className="text-xs text-gray-500">Median</p>
+                      <StatTooltip {...statDefinitions.median} />
+                    </div>
                   </div>
                   <div className="text-center">
                     <p className="font-semibold text-gray-900">{formatNumber(numericStats.q3)}</p>
-                    <p className="text-xs text-gray-500">Q3</p>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <p className="text-xs text-gray-500">Q3</p>
+                      <StatTooltip {...statDefinitions.q3} />
+                    </div>
                   </div>
                   <div className="text-center">
                     <p className="font-semibold text-gray-900">{formatNumber(numericStats.max)}</p>
-                    <p className="text-xs text-gray-500">Max</p>
+                    <div className="flex items-center justify-center gap-0.5">
+                      <p className="text-xs text-gray-500">Max</p>
+                      <StatTooltip {...statDefinitions.max} />
+                    </div>
                   </div>
                 </div>
                 {/* Box plot visualization */}
@@ -534,19 +559,31 @@ export function VariableExplorer({
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">Dispersion</h4>
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="text-gray-500">Std Dev</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-gray-500">Std Dev</p>
+                      <StatTooltip {...statDefinitions.stdDev} />
+                    </div>
                     <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.stdDev)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Variance</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-gray-500">Variance</p>
+                      <StatTooltip {...statDefinitions.variance} />
+                    </div>
                     <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.variance)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">Range</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-gray-500">Range</p>
+                      <StatTooltip {...statDefinitions.range} />
+                    </div>
                     <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.range)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-500">IQR</p>
+                    <div className="flex items-center gap-1">
+                      <p className="text-gray-500">IQR</p>
+                      <StatTooltip {...statDefinitions.iqr} />
+                    </div>
                     <p className="text-lg font-semibold text-gray-900">{formatNumber(numericStats.iqr)}</p>
                   </div>
                 </div>

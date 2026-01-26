@@ -1,3 +1,32 @@
+/**
+ * AnalysisWorkflow Component
+ *
+ * The main analysis interface following an "Explore -> Build -> Test" workflow.
+ * This mirrors the natural progression of an epidemiological investigation:
+ *
+ * 1. EXPLORE: Examine individual variables
+ *    - View distributions (histograms, frequency tables)
+ *    - Check for missing values and data quality
+ *    - Recode or fix values if needed
+ *
+ * 2. BUILD TABLES: Create publication-ready tables
+ *    - One-way frequency tables (single variable)
+ *    - Two-way cross-tabulations (row × column)
+ *    - Export to CSV for reports
+ *
+ * 3. TEST (2×2): Hypothesis testing
+ *    - Calculate odds ratios, risk ratios
+ *    - Chi-square and Fisher's exact tests
+ *    - Confidence intervals
+ *
+ * State Persistence:
+ * - Each dataset has its own saved state (selected variables, active tab)
+ * - State is saved to localStorage and restored when switching datasets
+ *
+ * Cross-Tab Communication:
+ * - "Build table with this variable" in Explorer -> pre-populates Table Builder
+ * - "Run 2×2 with this exposure" in Explorer -> pre-populates 2×2 Analysis
+ */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Dataset, VariableConfig } from '../../types/analysis';
 import { VariableExplorer } from './VariableExplorer';
@@ -6,12 +35,16 @@ import { TwoByTwoAnalysis } from './TwoByTwoAnalysis';
 
 interface AnalysisWorkflowProps {
   dataset: Dataset;
+  /** Callback when user creates a new variable (passed up to App.tsx) */
   onCreateVariable?: (config: VariableConfig, values: unknown[]) => void;
+  /** Callback for bulk record updates (e.g., recoding values) */
   onUpdateRecords?: (updates: Array<{ recordId: string; field: string; value: unknown }>) => void;
 }
 
+/** The three workflow steps */
 type SubTab = 'explore' | 'build' | 'test';
 
+/** State that gets persisted to localStorage per dataset */
 interface PersistedState {
   activeSubTab: SubTab;
   explorerSelectedVar: string;
@@ -19,8 +52,10 @@ interface PersistedState {
   tableBuilderColVar: string;
 }
 
+// Each dataset gets its own localStorage key for persistence
 const STORAGE_KEY_PREFIX = 'epikit_analysis_workflow_';
 
+/** Load saved workflow state for a specific dataset */
 function loadWorkflowState(datasetId: string): PersistedState | null {
   try {
     const saved = localStorage.getItem(STORAGE_KEY_PREFIX + datasetId);
@@ -30,6 +65,7 @@ function loadWorkflowState(datasetId: string): PersistedState | null {
   }
 }
 
+/** Save workflow state for a specific dataset */
 function saveWorkflowState(datasetId: string, state: PersistedState): void {
   try {
     localStorage.setItem(STORAGE_KEY_PREFIX + datasetId, JSON.stringify(state));
@@ -38,25 +74,23 @@ function saveWorkflowState(datasetId: string, state: PersistedState): void {
   }
 }
 
-/**
- * AnalysisWorkflow: Parent container for the "Explore -> Build -> Test" workflow
- *
- * Follows the natural investigation progression:
- * - Variable Explorer: Quick exploration of individual variables
- * - Table Builder: Create report-ready tables (1-way and cross-tabs)
- * - 2x2 Analysis: Test hypotheses with measures of association
- */
 export function AnalysisWorkflow({ dataset, onCreateVariable, onUpdateRecords }: AnalysisWorkflowProps) {
-  // Track previous dataset ID to detect actual changes
+  // -------------------------------------------------------------------------
+  // STATE MANAGEMENT
+  // State is persisted per-dataset so users can switch between datasets
+  // without losing their place in each one's analysis.
+  // -------------------------------------------------------------------------
+
+  // Track previous dataset ID to detect actual changes (vs re-renders)
   const prevDatasetIdRef = useRef<string>(dataset.id);
 
-  // Load persisted state for this dataset
+  // Which workflow step is currently active
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(() => {
     const saved = loadWorkflowState(dataset.id);
     return saved?.activeSubTab || 'explore';
   });
 
-  // Persisted state for child components
+  // Persisted state for child components - lifted here for cross-tab sharing
   const [explorerSelectedVar, setExplorerSelectedVar] = useState<string>(() => {
     const saved = loadWorkflowState(dataset.id);
     return saved?.explorerSelectedVar || '';
@@ -72,7 +106,11 @@ export function AnalysisWorkflow({ dataset, onCreateVariable, onUpdateRecords }:
     return saved?.tableBuilderColVar || '';
   });
 
-  // State for cross-tab communication (not persisted)
+  // -------------------------------------------------------------------------
+  // CROSS-TAB COMMUNICATION
+  // These handle the "quick action" buttons that jump between tabs with
+  // pre-selected variables. Not persisted since they're transient.
+  // -------------------------------------------------------------------------
   const [preSelectedRowVars, setPreSelectedRowVars] = useState<string[]>([]);
   const [preSelectedExposure, setPreSelectedExposure] = useState<string | undefined>();
 
