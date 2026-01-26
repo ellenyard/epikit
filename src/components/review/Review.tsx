@@ -33,7 +33,7 @@ import { LineListing } from '../analysis/LineListing';
 import { EditLogPanel } from './EditLogPanel';
 import { DataQualityPanel } from './DataQualityPanel';
 import { CreateVariableModal } from './CreateVariableModal';
-import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig, FilterCondition, NumericRangeRule } from '../../types/analysis';
+import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, DataQualityConfig, VariableConfig, FilterCondition } from '../../types/analysis';
 import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
 import { addVariableToDataset } from '../../utils/variableCreation';
 import { ReviewCleanTutorial } from '../tutorials/ReviewCleanTutorial';
@@ -94,64 +94,13 @@ export function Review({
   const currentEditLog = activeDatasetId ? getEditLogForDataset(activeDatasetId) : [];
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
 
-  // Clear issues and auto-detect numeric range rules when dataset changes
+  // Clear issues when dataset changes
   useEffect(() => {
     if (activeDataset) {
       setDataQualityIssues([]);
       setSelectedIssue(null);
-
-      // Auto-detect common numeric fields and add default range rules
-      const defaultRanges: Record<string, { min: number; max: number }> = {
-        age: { min: 0, max: 120 },
-        temperature: { min: 35, max: 43 }, // Celsius body temp
-        temp: { min: 35, max: 43 },
-        weight: { min: 0, max: 500 }, // kg
-        height: { min: 0, max: 300 }, // cm
-        bmi: { min: 10, max: 60 },
-        pulse: { min: 20, max: 250 },
-        heart_rate: { min: 20, max: 250 },
-        systolic: { min: 50, max: 250 },
-        diastolic: { min: 30, max: 150 },
-        respiratory_rate: { min: 5, max: 60 },
-        oxygen_saturation: { min: 50, max: 100 },
-        spo2: { min: 50, max: 100 },
-      };
-
-      const autoRules: NumericRangeRule[] = [];
-
-      for (const col of activeDataset.columns) {
-        if (col.type === 'number') {
-          const keyLower = col.key.toLowerCase().replace(/[_-]/g, '');
-
-          // Check if column name matches any default range
-          for (const [pattern, range] of Object.entries(defaultRanges)) {
-            if (keyLower === pattern || keyLower.includes(pattern)) {
-              autoRules.push({
-                id: `auto-${col.key}`,
-                field: col.key,
-                fieldLabel: col.label,
-                min: range.min,
-                max: range.max,
-              });
-              break; // Only add one rule per column
-            }
-          }
-        }
-      }
-
-      // Update config with auto-detected rules (preserve any user-added rules)
-      if (autoRules.length > 0) {
-        setDataQualityConfig(prev => ({
-          ...prev,
-          numericRangeRules: [
-            ...autoRules,
-            // Keep any user rules that aren't auto-detected fields
-            ...prev.numericRangeRules.filter(r => !r.id.startsWith('auto-')),
-          ],
-        }));
-      }
     }
-  }, [activeDataset?.id, activeDataset?.columns]);
+  }, [activeDataset?.id]);
 
   // Get highlighted record IDs from active issues
   const highlightedRecordIds = useMemo(() => {
