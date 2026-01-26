@@ -1,3 +1,39 @@
+/**
+ * Data Quality Checks for Epidemiological Data
+ *
+ * This module provides configurable data quality validation for outbreak
+ * investigation data. Quality checks are essential for ensuring data
+ * integrity before analysis.
+ *
+ * AVAILABLE CHECKS:
+ *
+ * 1. DUPLICATE DETECTION
+ *    - Exact matching on selected fields
+ *    - Fuzzy matching for typos (configurable threshold, e.g., 85%)
+ *    - Date tolerance for near-duplicate dates
+ *
+ * 2. DATE ORDER VALIDATION
+ *    - Ensures temporal sequences are logical
+ *    - e.g., onset_date must be before hospitalization_date
+ *    - Configurable field pairs with labels
+ *
+ * 3. NUMERIC RANGE CHECKS
+ *    - Validates values fall within expected bounds
+ *    - e.g., age must be 0-120
+ *    - Configurable min/max per field
+ *
+ * 4. MISSING VALUE CHECKS
+ *    - Identifies records with blank required fields
+ *    - Groups by field for easier remediation
+ *
+ * USAGE:
+ * 1. Configure checks via DataQualityConfig
+ * 2. Call runDataQualityChecks() with records and config
+ * 3. Display issues in UI (grouped by category)
+ * 4. Users can dismiss reviewed issues
+ *
+ * Used by: Review.tsx, DataQualityPanel.tsx
+ */
 import type {
   CaseRecord,
   DataColumn,
@@ -8,6 +44,10 @@ import type {
   FuzzyMatchingConfig,
 } from '../types/analysis';
 import { calculateRecordSimilarity } from './stringSimilarity';
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
 
 // Generate unique ID for issues
 function generateId(): string {
@@ -31,7 +71,11 @@ function isEmpty(value: unknown): boolean {
   return false;
 }
 
-// Default configuration
+// =============================================================================
+// CONFIGURATION
+// =============================================================================
+
+/** Returns the default configuration with all check types enabled but empty rules */
 export function getDefaultConfig(): DataQualityConfig {
   return {
     duplicateFields: [],
@@ -48,7 +92,15 @@ export function getDefaultConfig(): DataQualityConfig {
   };
 }
 
-// Check for duplicates using fuzzy matching
+// =============================================================================
+// DUPLICATE DETECTION
+// Identifies exact and near-duplicate records using fuzzy string matching
+// =============================================================================
+
+/**
+ * Check for duplicate records using configurable fuzzy matching.
+ * Groups similar records together rather than creating pairwise issues.
+ */
 function checkDuplicates(
   records: CaseRecord[],
   fields: string[],
@@ -156,7 +208,15 @@ function checkDuplicates(
   return issues;
 }
 
-// Check date order rules
+// =============================================================================
+// DATE ORDER VALIDATION
+// Ensures dates occur in expected temporal sequence
+// =============================================================================
+
+/**
+ * Check that date fields follow logical temporal order.
+ * e.g., symptom onset should occur before hospitalization
+ */
 function checkDateOrder(
   records: CaseRecord[],
   rules: DateOrderRule[]
@@ -187,7 +247,14 @@ function checkDateOrder(
   return issues;
 }
 
-// Check numeric ranges
+// =============================================================================
+// NUMERIC RANGE VALIDATION
+// Flags values outside expected bounds (e.g., age 0-120)
+// =============================================================================
+
+/**
+ * Check that numeric values fall within specified min/max bounds.
+ */
 function checkNumericRanges(
   records: CaseRecord[],
   rules: NumericRangeRule[]
@@ -218,7 +285,15 @@ function checkNumericRanges(
   return issues;
 }
 
-// Check for missing values
+// =============================================================================
+// MISSING VALUE DETECTION
+// Identifies records with blank/null values in specified fields
+// =============================================================================
+
+/**
+ * Check for missing values in specified fields.
+ * Groups all records with missing data by field.
+ */
 function checkMissingValues(
   records: CaseRecord[],
   fields: string[],
@@ -266,7 +341,15 @@ function checkMissingValues(
   return issues;
 }
 
-// Main function to run all enabled checks
+// =============================================================================
+// MAIN CHECK RUNNER
+// Orchestrates all enabled checks and aggregates issues
+// =============================================================================
+
+/**
+ * Run all enabled data quality checks based on configuration.
+ * Returns a flat array of issues that can be grouped by category for display.
+ */
 export function runDataQualityChecks(
   records: CaseRecord[],
   columns: DataColumn[],
@@ -298,7 +381,12 @@ export function runDataQualityChecks(
   return issues;
 }
 
-// Get human-readable check name
+// =============================================================================
+// DISPLAY UTILITIES
+// Human-readable names and grouping for UI presentation
+// =============================================================================
+
+/** Get human-readable name for a check type */
 export function getCheckName(checkType: string): string {
   const names: Record<string, string> = {
     duplicate: 'Duplicates',
@@ -310,7 +398,7 @@ export function getCheckName(checkType: string): string {
   return names[checkType] || checkType;
 }
 
-// Get category display name
+/** Get display name for an issue category */
 export function getCategoryName(category: DataQualityIssue['category']): string {
   const names: Record<DataQualityIssue['category'], string> = {
     duplicate: 'Duplicates',
@@ -321,7 +409,7 @@ export function getCategoryName(category: DataQualityIssue['category']): string 
   return names[category] || category;
 }
 
-// Group issues by category
+/** Group issues by category for organized display in the UI */
 export function groupIssuesByCategory(
   issues: DataQualityIssue[]
 ): Record<DataQualityIssue['category'], DataQualityIssue[]> {

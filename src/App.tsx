@@ -1,3 +1,29 @@
+/**
+ * EpiKit - Main Application Component
+ *
+ * This is the root component of EpiKit, an epidemiology toolkit designed for
+ * FETP (Field Epidemiology Training Program) residents to analyze outbreak data.
+ *
+ * Application Structure:
+ * - Dashboard: Landing page with quick actions and dataset overview
+ * - Forms: Build custom data collection forms (drag-and-drop builder)
+ * - Collect: Enter data using built forms
+ * - Review/Clean: Data quality checks, editing, and variable creation
+ * - Epi Curve: Epidemic curve visualization with stratification
+ * - Spot Map: Geographic visualization using Leaflet/OpenStreetMap
+ * - Analysis: Variable exploration, frequency tables, and 2x2 analysis
+ *
+ * Data Flow:
+ * 1. Forms created in Form Builder generate form definitions
+ * 2. Data collected via Collect module creates records in datasets
+ * 3. Data can also be imported via CSV/Excel in any analysis module
+ * 4. All data persisted to localStorage and can be exported as project files
+ *
+ * State Management:
+ * - Uses React useState/useCallback for local state
+ * - Persists to localStorage on every change (auto-save)
+ * - Edit log tracks all data modifications for audit trail
+ */
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { FormItem, FormDefinition } from './types/form';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
@@ -24,11 +50,21 @@ import { addVariableToDataset } from './utils/variableCreation';
 import { exportProject, downloadProject, parseProjectFile } from './utils/persistence';
 import type { VariableConfig } from './types/analysis';
 
+/** Available navigation modules in the app */
 type Module = 'dashboard' | 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'analysis';
+
+/** Form builder can be in builder or preview mode */
 type FormView = 'builder' | 'preview';
 
-// Create demo dataset
+// =============================================================================
+// DEMO DATA SETUP
+// These functions create the sample foodborne outbreak dataset that ships with
+// the app. Users can explore features without importing their own data first.
+// =============================================================================
+
 const DEMO_DATASET_ID = 'demo-outbreak-2024';
+
+/** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({
   id: DEMO_DATASET_ID,
   name: 'Foodborne Outbreak Investigation - Submissions',
@@ -50,8 +86,17 @@ const createDemoFormDefinition = (): FormDefinition => ({
   updatedAt: new Date().toISOString(),
 });
 
+// =============================================================================
+// MAIN APPLICATION COMPONENT
+// =============================================================================
+
 function App() {
+  // Locale settings for number formatting (decimal/thousand separators)
   const { config: localeConfig } = useLocale();
+
+  // ---------------------------------------------------------------------------
+  // UI STATE - Controls which module/modal is currently visible
+  // ---------------------------------------------------------------------------
   const [activeModule, setActiveModule] = useState<Module>('dashboard');
   const [formView, setFormView] = useState<FormView>('builder');
   const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
@@ -64,24 +109,33 @@ function App() {
   const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form definitions state (saved forms available for data collection)
+  // ---------------------------------------------------------------------------
+  // FORM DEFINITIONS STATE
+  // Saved forms that can be used for data collection. Persisted to localStorage.
+  // ---------------------------------------------------------------------------
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => {
     const saved = localStorage.getItem('epikit_formDefinitions');
     return saved ? JSON.parse(saved) : [createDemoFormDefinition()];
   });
 
-  // Current form being edited in the builder
+  // Which form is currently being edited in the Form Builder
   const [currentFormId, setCurrentFormId] = useState<string | null>(() => {
     const saved = localStorage.getItem('epikit_currentFormId');
     return saved || DEMO_FORM_ID;
   });
   const [currentFormName] = useState('Foodborne Outbreak Investigation');
 
-  // Dataset state (shared between Collect and Analysis)
+  // ---------------------------------------------------------------------------
+  // DATASET STATE
+  // Core data storage - shared across Collect, Review, and Analysis modules.
+  // Each dataset has columns (schema) and records (rows of data).
+  // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
     const saved = localStorage.getItem('epikit_datasets');
     return saved ? JSON.parse(saved) : [createDemoDataset()];
   });
+
+  // Which dataset is currently selected for viewing/editing
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(() => {
     const saved = localStorage.getItem('epikit_activeDatasetId');
     return saved || DEMO_DATASET_ID;
@@ -176,7 +230,13 @@ function App() {
     }
   }, [formDefinitions, datasets]);
 
-  // Dataset management functions for Analysis module
+  // ---------------------------------------------------------------------------
+  // DATASET CRUD OPERATIONS
+  // These functions manage datasets and are passed to child components.
+  // All changes trigger auto-save to localStorage via useEffect hooks.
+  // ---------------------------------------------------------------------------
+
+  /** Create a new dataset (from CSV import or form submissions) */
   const createDataset = useCallback((name: string, columns: DataColumn[], records: CaseRecord[], source: 'import' | 'form' = 'import') => {
     const newDataset: Dataset = {
       id: crypto.randomUUID(),
@@ -192,12 +252,14 @@ function App() {
     return newDataset;
   }, []);
 
+  /** Update dataset metadata or replace columns/records */
   const updateDataset = useCallback((id: string, updates: Partial<Dataset>) => {
     setDatasets(prev => prev.map(d =>
       d.id === id ? { ...d, ...updates, updatedAt: new Date().toISOString() } : d
     ));
   }, []);
 
+  /** Delete a dataset and clear selection if it was active */
   const deleteDataset = useCallback((id: string) => {
     setDatasets(prev => prev.filter(d => d.id !== id));
     if (activeDatasetId === id) {
@@ -205,6 +267,7 @@ function App() {
     }
   }, [activeDatasetId]);
 
+  /** Add a new record to a dataset (from form submission or manual entry) */
   const addRecord = useCallback((datasetId: string, record: Omit<CaseRecord, 'id'>) => {
     const newRecord: CaseRecord = { ...record, id: crypto.randomUUID() };
     setDatasets(prev => prev.map(d =>
@@ -235,13 +298,20 @@ function App() {
     ));
   }, []);
 
-  // Edit log state and functions
+  // ---------------------------------------------------------------------------
+  // EDIT LOG - AUDIT TRAIL
+  // Tracks all data modifications for transparency and reproducibility.
+  // Each entry records: what changed, old/new values, reason, and who made it.
+  // ---------------------------------------------------------------------------
   const [editLog, setEditLog] = useState<EditLogEntry[]>(() => {
     const saved = localStorage.getItem('epikit_editLog');
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Auto-save to localStorage whenever data changes
+  // ---------------------------------------------------------------------------
+  // AUTO-SAVE TO LOCALSTORAGE
+  // All state changes are automatically persisted so users don't lose work.
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     localStorage.setItem('epikit_formDefinitions', JSON.stringify(formDefinitions));
   }, [formDefinitions]);
@@ -418,7 +488,13 @@ function App() {
     });
   }, [activeDataset, updateDataset, addEditLogEntry]);
 
-  // Project save handler
+  // ---------------------------------------------------------------------------
+  // PROJECT SAVE/LOAD
+  // Users can export entire project (datasets, forms, edit log) as JSON file
+  // and reload it later. Useful for sharing or backing up work.
+  // ---------------------------------------------------------------------------
+
+  /** Export all project data to a downloadable JSON file */
   const handleSaveProject = useCallback(() => {
     const project = exportProject(
       datasets,

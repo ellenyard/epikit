@@ -3,7 +3,7 @@ import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
-import { TabHeader, HelpPanel, ResultsActions, ExportIcons } from '../shared';
+import { TabHeader, HelpPanel, ResultsActions, ExportIcons, StatTooltip, statDefinitions } from '../shared';
 
 interface TwoByTwoAnalysisProps {
   dataset: Dataset;
@@ -340,14 +340,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                       <div className="flex items-center justify-center gap-1">
                         <span>Attack Rate</span>
-                        <div className="group relative">
-                          <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                          </svg>
-                          <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
-                            CDC Definition: The proportion of exposed persons who became ill during the outbreak period. Calculated as: (# Ill among Exposed / Total Exposed) × 100. In outbreak settings, attack rate is often used as a synonym for risk.
-                          </div>
-                        </div>
+                        <StatTooltip {...statDefinitions.attackRate} />
                       </div>
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -359,31 +352,20 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                       <div className="flex items-center justify-center gap-1">
                         <span>Attack Rate</span>
-                        <div className="group relative">
-                          <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                          </svg>
-                          <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
-                            CDC Definition: The proportion of unexposed persons who became ill during the outbreak period. Calculated as: (# Ill among Unexposed / Total Unexposed) × 100. In outbreak settings, attack rate is often used as a synonym for risk.
-                          </div>
-                        </div>
+                        <StatTooltip {...statDefinitions.attackRate} />
                       </div>
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                       <div className="flex items-center justify-center gap-1">
                         <span>ARR</span>
-                        <div className="group relative">
-                          <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                          </svg>
-                          <div className="invisible group-hover:visible absolute z-10 w-72 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-32">
-                            CDC Definition: Attack Rate Ratio (also called Risk Ratio or Relative Risk) compares the risk of illness between exposed and unexposed groups. Calculated as: Attack Rate (Exposed) / Attack Rate (Unexposed). An ARR &gt; 1.0 indicates increased risk for the exposed group; ARR &lt; 1.0 suggests the exposure may be protective.
-                          </div>
-                        </div>
+                        <StatTooltip {...statDefinitions.riskRatio} />
                       </div>
                     </th>
                     <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      95% CI
+                      <div className="flex items-center justify-center gap-1">
+                        <span>95% CI</span>
+                        <StatTooltip {...statDefinitions.confidenceInterval} />
+                      </div>
                     </th>
                   </tr>
                 </>
@@ -395,34 +377,32 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
                       <span>CASES (n={exposureResults.length > 0 ? exposureResults[0].results.totalDisease : 0})</span>
-                      <div className="group relative">
-                        <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                        <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
-                          The number and percentage of cases with each exposure level. The percentage represents the proportion of all cases that were exposed.
-                        </div>
-                      </div>
+                      <StatTooltip
+                        term="Cases"
+                        definition="The number and percentage of cases with each exposure level. The percentage represents the proportion of all cases that were exposed."
+                      />
                     </div>
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
                       <span>CONTROLS (n={exposureResults.length > 0 ? exposureResults[0].results.totalNoDisease : 0})</span>
-                      <div className="group relative">
-                        <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600 cursor-help" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                        </svg>
-                        <div className="invisible group-hover:visible absolute z-10 w-64 p-2 mt-1 text-xs font-normal normal-case bg-gray-900 text-white rounded shadow-lg -left-28">
-                          The number and percentage of controls with each exposure level. The percentage represents the proportion of all controls that were exposed.
-                        </div>
-                      </div>
+                      <StatTooltip
+                        term="Controls"
+                        definition="The number and percentage of controls with each exposure level. The percentage represents the proportion of all controls that were exposed."
+                      />
                     </div>
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    OR
+                    <div className="flex items-center justify-center gap-1">
+                      <span>OR</span>
+                      <StatTooltip {...statDefinitions.oddsRatio} />
+                    </div>
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    95% CI
+                    <div className="flex items-center justify-center gap-1">
+                      <span>95% CI</span>
+                      <StatTooltip {...statDefinitions.confidenceInterval} />
+                    </div>
                   </th>
                 </tr>
               )}

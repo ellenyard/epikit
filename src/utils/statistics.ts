@@ -1,4 +1,55 @@
-// Statistical calculations for epidemiological analysis
+/**
+ * Statistical Calculations for Epidemiological Analysis
+ *
+ * This module provides the core statistical functions used throughout EpiKit.
+ * All calculations follow standard epidemiological methods and formulas.
+ *
+ * CONTENTS:
+ *
+ * 1. TWO-BY-TWO TABLE ANALYSIS (lines ~38-96)
+ *    - Risk Ratio (Relative Risk) with 95% CI
+ *    - Odds Ratio with 95% CI (Woolf method, 0.5 correction for zeros)
+ *    - Risk Difference with 95% CI
+ *    - Attributable Risk Percent
+ *    - Chi-square test (Yates' correction)
+ *    - Fisher's exact test (for small samples, n≤100)
+ *
+ * 2. CONFIDENCE INTERVAL CALCULATIONS (lines ~98-151)
+ *    - Log-based methods for ratio measures (RR, OR)
+ *    - Standard error methods for difference measures
+ *
+ * 3. STATISTICAL DISTRIBUTION FUNCTIONS (lines ~153-254)
+ *    - Chi-square CDF (for p-value calculation)
+ *    - Gamma function approximations
+ *    - Log-gamma (Lanczos approximation)
+ *
+ * 4. FISHER'S EXACT TEST (lines ~256-297)
+ *    - Hypergeometric distribution
+ *    - Two-tailed exact test
+ *
+ * 5. DESCRIPTIVE STATISTICS (lines ~299-407)
+ *    - Mean, median, mode
+ *    - Standard deviation, variance
+ *    - Quartiles, IQR
+ *    - Five-number summary
+ *
+ * 6. FREQUENCY DISTRIBUTIONS (lines ~409-447)
+ *    - Count and percent for categorical variables
+ *    - Cumulative frequencies
+ *
+ * 7. CHI-SQUARE FOR R×C TABLES (lines ~449-676)
+ *    - Group comparisons (R×2)
+ *    - Full cross-tabulations (R×C)
+ *
+ * References:
+ * - Rothman KJ, Greenland S, Lash TL. Modern Epidemiology. 3rd ed.
+ * - CDC. Principles of Epidemiology in Public Health Practice. 3rd ed.
+ */
+
+// =============================================================================
+// TWO-BY-TWO TABLE ANALYSIS
+// The classic 2×2 contingency table for exposure-outcome relationships
+// =============================================================================
 
 export interface TwoByTwoTable {
   a: number; // Exposed + Disease
@@ -95,6 +146,11 @@ export function calculateTwoByTwo(table: TwoByTwoTable): TwoByTwoResults {
   };
 }
 
+// =============================================================================
+// CONFIDENCE INTERVAL CALCULATIONS
+// Uses log-based methods for ratio measures (RR, OR) and SE for differences
+// =============================================================================
+
 function calculateRiskRatioCI(a: number, b: number, c: number, d: number): [number, number] {
   const totalExposed = a + b;
   const totalUnexposed = c + d;
@@ -175,7 +231,11 @@ function calculateChiSquare(a: number, b: number, c: number, d: number, n: numbe
   return { chiSquare, pValue };
 }
 
-// Chi-square CDF approximation
+// =============================================================================
+// STATISTICAL DISTRIBUTION FUNCTIONS
+// Chi-square CDF via incomplete gamma function (Lanczos approximation)
+// =============================================================================
+
 function chiSquareCDF(x: number, df: number): number {
   if (x <= 0) return 0;
   return gammaCDF(x / 2, df / 2);
@@ -253,7 +313,12 @@ function logGamma(x: number): number {
   return -tmp + Math.log(2.5066282746310005 * sum / x);
 }
 
-// Fisher's exact test (two-tailed)
+// =============================================================================
+// FISHER'S EXACT TEST
+// Exact test for 2×2 tables using hypergeometric distribution
+// Recommended when any expected cell count < 5 or total n ≤ 100
+// =============================================================================
+
 function calculateFisherExact(a: number, b: number, c: number, d: number): number {
   const n = a + b + c + d;
   const rowTotals = [a + b, c + d];
@@ -296,7 +361,11 @@ function logFactorial(n: number): number {
   return logGamma(n + 1);
 }
 
-// Descriptive statistics
+// =============================================================================
+// DESCRIPTIVE STATISTICS
+// Central tendency, dispersion, and distribution measures for numeric variables
+// =============================================================================
+
 export interface DescriptiveStats {
   count: number;
   missing: number;
@@ -406,7 +475,11 @@ function calculateMode(values: number[]): number | null {
   return maxCount > 1 ? mode : null;
 }
 
-// Frequency distribution
+// =============================================================================
+// FREQUENCY DISTRIBUTIONS
+// Counts and percentages for categorical variables
+// =============================================================================
+
 export interface FrequencyItem {
   value: string;
   count: number;
@@ -445,6 +518,12 @@ export function calculateFrequency(values: unknown[]): FrequencyItem[] {
 
   return items;
 }
+
+// =============================================================================
+// CHI-SQUARE FOR R×C CONTINGENCY TABLES
+// Extended chi-square tests for tables larger than 2×2
+// Includes group comparison (R×2) and full cross-tabulation (R×C)
+// =============================================================================
 
 /**
  * Chi-square test for R×C contingency tables (Group Comparison)

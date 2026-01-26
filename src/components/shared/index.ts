@@ -6,3 +6,4 @@ export { TabHeader } from './TabHeader';
 export { HelpPanel } from './HelpPanel';
 export { AdvancedOptions } from './AdvancedOptions';
 export { ResultsActions, ExportIcons } from './ResultsActions';
+export { StatTooltip, statDefinitions } from './StatTooltip';

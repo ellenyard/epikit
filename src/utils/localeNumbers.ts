@@ -66,7 +66,7 @@ export function formatLocaleNumber(
   }
 
   // Use Intl.NumberFormat for proper locale formatting
-  const formatter = new Intl.NumberFormat(config.locale, {
+  const formatter = new Intl.NumberFormat(config.intlLocale, {
     minimumFractionDigits: decimals !== undefined ? decimals : 0,
     maximumFractionDigits: decimals !== undefined ? decimals : 20,
     useGrouping: true,
