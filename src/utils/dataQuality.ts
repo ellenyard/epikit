@@ -261,12 +261,22 @@ function checkNumericRanges(
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
+  // Debug logging
+  console.log('[DataQuality] checkNumericRanges called with', rules.length, 'rules');
+
   for (const rule of rules) {
+    console.log('[DataQuality] Checking rule:', rule.field, 'range:', rule.min, '-', rule.max);
+    let checkedCount = 0;
+    let outOfRangeCount = 0;
+
     for (const record of records) {
       const value = record[rule.field];
       if (!isEmpty(value)) {
+        checkedCount++;
         const numValue = Number(value);
         if (!isNaN(numValue) && (numValue < rule.min || numValue > rule.max)) {
+          outOfRangeCount++;
+          console.log('[DataQuality] OUT OF RANGE: record', record.id, 'has', rule.field, '=', numValue);
           issues.push({
             id: generateId(),
             checkType: 'numeric_range',
@@ -280,6 +290,7 @@ function checkNumericRanges(
         }
       }
     }
+    console.log('[DataQuality] Checked', checkedCount, 'records, found', outOfRangeCount, 'out of range');
   }
 
   return issues;
@@ -369,6 +380,8 @@ export function runDataQualityChecks(
   }
 
   // Numeric range checks
+  console.log('[DataQuality] numeric_range enabled:', enabledChecks.includes('numeric_range'));
+  console.log('[DataQuality] numericRangeRules count:', config.numericRangeRules.length);
   if (enabledChecks.includes('numeric_range') && config.numericRangeRules.length > 0) {
     issues.push(...checkNumericRanges(records, config.numericRangeRules));
   }
