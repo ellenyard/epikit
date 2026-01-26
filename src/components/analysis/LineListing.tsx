@@ -336,7 +336,7 @@ export function LineListing({
                           if (e.key === 'Escape') cancelEdit();
                         }}
                         autoFocus
-                        className="w-full px-2 py-1 text-sm border border-blue-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full min-w-[80px] px-2 py-1 text-sm text-gray-900 bg-white border border-blue-500 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 shadow-sm"
                       />
                     ) : (
                       <span className="block truncate max-w-xs" title={String(record[col.key] ?? '')}>

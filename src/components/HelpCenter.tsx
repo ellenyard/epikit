@@ -533,7 +533,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'attack-rate',
                     question: 'How do I calculate attack rates?',
-                    answer: 'Use the 2×2 Tables module. Select your exposure variable (e.g., "ate potato salad") and outcome variable (e.g., "became ill"). The table will automatically calculate attack rates for exposed and unexposed groups, plus risk ratio and statistical significance.'
+                    answer: 'Go to the Analysis module and select the "Test" tab. Choose your exposure variable (e.g., "ate potato salad") and outcome variable (e.g., "became ill"). The 2×2 table will automatically calculate attack rates for exposed and unexposed groups, plus risk ratio and statistical significance.'
                   },
                   {
                     id: 'case-status',
@@ -543,7 +543,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'data-quality',
                     question: 'What data quality checks does EpiKit perform?',
-                    answer: 'EpiKit checks for duplicate records (based on ID fields), missing values, date order issues (e.g., onset before exposure), and outliers in numeric fields. Review these in the Data Quality panel before conducting your analysis.'
+                    answer: 'EpiKit can check for duplicate records (with fuzzy matching for typos), date order issues (e.g., onset date before exposure date), and numeric range violations (e.g., age outside 0-120). Configure these checks in the Data Quality panel in the Review/Clean module, then click "Run Checks" to identify issues.'
                   },
                   {
                     id: 'create-variable',
