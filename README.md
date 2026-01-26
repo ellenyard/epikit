@@ -156,5 +156,4 @@ MIT License - see LICENSE file for details.
 
 ## Acknowledgments
 
-- Inspired by CDC's Epi Info
-- Built with support from epidemiologists at CDC
+- Developed by Ellen Yard
