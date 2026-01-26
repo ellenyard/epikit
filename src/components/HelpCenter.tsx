@@ -184,25 +184,26 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                 </section>
 
                 <section>
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">3. Generate Visualizations</h4>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">3. Generate Visualizations & Statistics</h4>
                   <div className="prose prose-sm text-gray-600">
                     <p className="mb-3">Use the analysis modules to explore your data:</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Epi Curve</h5>
-                        <p className="text-xs">Visualize temporal distribution of cases</p>
+                        <p className="text-xs">Visualize temporal distribution of cases to identify outbreak patterns</p>
                       </div>
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Spot Map</h5>
-                        <p className="text-xs">Map geographic distribution of cases</p>
+                        <p className="text-xs">Map geographic distribution to identify spatial clusters</p>
                       </div>
-                      <div className="border border-gray-200 rounded p-3">
-                        <h5 className="font-medium text-gray-800 mb-1">Descriptive Tables</h5>
-                        <p className="text-xs">Frequency tables, cross-tabs, and statistics</p>
-                      </div>
-                      <div className="border border-gray-200 rounded p-3">
-                        <h5 className="font-medium text-gray-800 mb-1">2×2 Tables</h5>
-                        <p className="text-xs">Calculate attack rates and risk ratios</p>
+                      <div className="border border-gray-200 rounded p-3 md:col-span-2">
+                        <h5 className="font-medium text-gray-800 mb-1">Analysis</h5>
+                        <p className="text-xs mb-2">Three-step workflow for descriptive and analytical epidemiology:</p>
+                        <ul className="text-xs space-y-1 ml-3">
+                          <li><strong>Explore:</strong> Single-variable analysis with histograms and descriptive statistics</li>
+                          <li><strong>Build Tables:</strong> Create frequency tables and cross-tabulations</li>
+                          <li><strong>Test:</strong> 2×2 tables for attack rates, risk ratios, and odds ratios</li>
+                        </ul>
                       </div>
                     </div>
                   </div>
@@ -833,27 +834,42 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                 <section>
                   <h4 className="text-lg font-semibold text-gray-800 mb-3">Additional Resources</h4>
                   <div className="bg-gray-50 border border-gray-200 rounded-lg p-5">
-                    <ul className="space-y-2 text-sm text-gray-700">
+                    <ul className="space-y-3 text-sm text-gray-700">
                       <li className="flex items-start">
-                        <svg className="w-4 h-4 text-blue-500 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
                           <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
                         </svg>
-                        <span><strong>HIPAA:</strong> U.S. Department of Health & Human Services - HIPAA Privacy Rule</span>
+                        <div>
+                          <strong>CDC FETP Training Materials:</strong>
+                          <p className="text-xs text-gray-600 mt-0.5">Field Epidemiology Training Program resources available on CDC Library Stacks (stacks.cdc.gov)</p>
+                        </div>
                       </li>
                       <li className="flex items-start">
-                        <svg className="w-4 h-4 text-blue-500 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
                           <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
                         </svg>
-                        <span><strong>CDC:</strong> Guidelines for outbreak investigation and data management</span>
+                        <div>
+                          <strong>Principles of Epidemiology in Public Health Practice:</strong>
+                          <p className="text-xs text-gray-600 mt-0.5">CDC's self-study course covering outbreak investigation methods (SS1978)</p>
+                        </div>
                       </li>
                       <li className="flex items-start">
-                        <svg className="w-4 h-4 text-blue-500 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-4 h-4 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
                           <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
                         </svg>
-                        <span>Consult your organization's IRB or data privacy officer for specific requirements</span>
+                        <div>
+                          <strong>HIPAA Privacy Rule:</strong>
+                          <p className="text-xs text-gray-600 mt-0.5">U.S. Department of Health & Human Services guidance on protected health information</p>
+                        </div>
+                      </li>
+                      <li className="flex items-start">
+                        <svg className="w-4 h-4 text-gray-400 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                        </svg>
+                        <span>Consult your organization's IRB or data privacy officer for specific de-identification requirements</span>
                       </li>
                     </ul>
                   </div>
