@@ -1623,13 +1623,13 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
             borderRight: `1px dashed ${annotation.color}`,
           }}
         />
-        {/* Label above chart */}
+        {/* Label inside chart at top */}
         <div
-          className="absolute text-xs font-medium whitespace-nowrap"
+          className="absolute text-xs font-medium whitespace-nowrap bg-white/80 px-1 rounded"
           style={{
             color: annotation.color,
-            top: -18,
-            left: 2,
+            top: 4,
+            left: 4,
           }}
         >
           {annotation.label}
@@ -1638,7 +1638,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
     );
   }
 
-  // Single date annotation - dashed vertical line with label above
+  // Single date annotation - dashed vertical line with label inside chart
   return (
     <div
       className="absolute top-0 pointer-events-none"
@@ -1653,14 +1653,13 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
           transform: 'translateX(-50%)',
         }}
       />
-      {/* Label above chart */}
+      {/* Label inside chart at top */}
       <div
-        className="absolute text-xs font-medium whitespace-nowrap"
+        className="absolute text-xs font-medium whitespace-nowrap bg-white/80 px-1 rounded"
         style={{
           color: annotation.color,
-          top: -18,
-          left: 2,
-          transform: 'translateX(-50%)',
+          top: 4,
+          left: 4,
         }}
       >
         {annotation.label}
