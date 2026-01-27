@@ -154,12 +154,67 @@ export const PATHOGEN_INCUBATION: Record<string, { min: number; max: number; typ
 // Internal alias for parseLocalDate
 const parseDate = parseLocalDate;
 
+/**
+ * Parses a time string (e.g., "14:00", "2:30 PM") and returns hours and minutes.
+ * Returns null if the time string is invalid or empty.
+ */
+function parseTimeString(timeStr: string | null | undefined): { hours: number; minutes: number } | null {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+
+  const trimmed = timeStr.trim();
+  if (!trimmed) return null;
+
+  // Try 24-hour format first: "14:00", "14:30", "9:00"
+  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return { hours, minutes };
+    }
+  }
+
+  // Try 12-hour format: "2:30 PM", "11:00 AM"
+  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const isPM = match12[3].toUpperCase() === 'PM';
+
+    if (hours >= 1 && hours <= 12 && minutes >= 0 && minutes <= 59) {
+      if (isPM && hours !== 12) hours += 12;
+      if (!isPM && hours === 12) hours = 0;
+      return { hours, minutes };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Combines a date value with an optional time value into a full Date object.
+ * If time is not provided or invalid, defaults to midnight (00:00).
+ */
+function combineDateAndTime(dateVal: unknown, timeVal: unknown): Date {
+  const date = parseDate(String(dateVal));
+
+  if (timeVal) {
+    const time = parseTimeString(String(timeVal));
+    if (time) {
+      date.setHours(time.hours, time.minutes, 0, 0);
+    }
+  }
+
+  return date;
+}
+
 export function processEpiCurveData(
   records: CaseRecord[],
   dateColumn: string,
   binSize: BinSize,
   stratifyBy?: string,
-  annotations?: Annotation[]
+  annotations?: Annotation[],
+  timeColumn?: string
 ): EpiCurveData {
   // Filter records with valid dates
   const validRecords = records.filter(r => {
@@ -173,8 +228,13 @@ export function processEpiCurveData(
     return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
   }
 
-  // Get date range
-  const dates = validRecords.map(r => parseDate(String(r[dateColumn])));
+  // Get date range (combining with time if available for sub-daily bins)
+  const dates = validRecords.map(r => {
+    if (timeColumn) {
+      return combineDateAndTime(r[dateColumn], r[timeColumn]);
+    }
+    return parseDate(String(r[dateColumn]));
+  });
   const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
   const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
 
@@ -233,7 +293,9 @@ export function processEpiCurveData(
     const currentEnd = getNextBinStart(currentStart, binSize);
 
     const binCases = validRecords.filter(r => {
-      const caseDate = parseDate(String(r[dateColumn]));
+      const caseDate = timeColumn
+        ? combineDateAndTime(r[dateColumn], r[timeColumn])
+        : parseDate(String(r[dateColumn]));
       return caseDate >= currentStart && caseDate < currentEnd;
     });
 

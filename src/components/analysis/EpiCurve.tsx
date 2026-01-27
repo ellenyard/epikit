@@ -52,6 +52,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
 
   // Configuration state
   const [dateColumn, setDateColumn] = useState<string>('');
+  const [timeColumn, setTimeColumn] = useState<string>('');
   const [binSize, setBinSize] = useState<BinSize>('daily');
   const [stratifyBy, setStratifyBy] = useState<string>('');
   const [colorScheme, setColorScheme] = useState<ColorScheme>('default');
@@ -153,12 +154,42 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     [dataset.columns]
   );
 
+  // Find potential time columns (text columns with "time" in the name)
+  const timeColumns = useMemo(
+    () => dataset.columns.filter(c =>
+      c.type === 'text' && c.key.toLowerCase().includes('time')
+    ),
+    [dataset.columns]
+  );
+
+  // Check if using sub-daily bin size
+  const isSubDailyBin = binSize === 'hourly' || binSize === '6hour' || binSize === '12hour';
+
   // Auto-select first date column
   useEffect(() => {
     if (!dateColumn && dateColumns.length > 0) {
       setDateColumn(dateColumns[0].key);
     }
   }, [dateColumns, dateColumn]);
+
+  // Auto-select matching time column when date column changes
+  useEffect(() => {
+    if (dateColumn && timeColumns.length > 0) {
+      // Try to find a time column that matches the date column name
+      // e.g., "onset_date" -> "onset_time"
+      const baseName = dateColumn.replace(/_?date$/i, '');
+      const matchingTimeCol = timeColumns.find(c =>
+        c.key.toLowerCase().includes(baseName.toLowerCase()) &&
+        c.key.toLowerCase().includes('time')
+      );
+      if (matchingTimeCol) {
+        setTimeColumn(matchingTimeCol.key);
+      } else if (!timeColumn) {
+        // Default to first time column if no match
+        setTimeColumn(timeColumns[0].key);
+      }
+    }
+  }, [dateColumn, timeColumns, timeColumn]);
 
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
@@ -301,8 +332,8 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       });
     }
 
-    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, dateRangeAnnotations);
-  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, outbreakStartDate, detectionDate, notificationDate, responseCompleteDate]);
+    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, dateRangeAnnotations, isSubDailyBin ? timeColumn || undefined : undefined);
+  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, outbreakStartDate, detectionDate, notificationDate, responseCompleteDate, isSubDailyBin, timeColumn]);
 
   // Calculate exposure window for display (after curveData is available)
   // Uses epidemiological method: earliest case - max incubation to earliest case - min incubation
@@ -758,6 +789,29 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               <option value="weekly-iso">Weekly (ISO)</option>
             </select>
           </div>
+
+          {/* Time Column - only show for sub-daily bins */}
+          {isSubDailyBin && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Time Column</label>
+              {timeColumns.length > 0 ? (
+                <select
+                  value={timeColumn}
+                  onChange={(e) => setTimeColumn(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                >
+                  <option value="">None (use midnight)</option>
+                  {timeColumns.map(col => (
+                    <option key={col.key} value={col.key}>{col.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs text-gray-500 italic py-2">
+                  No time columns found. Cases will be placed at midnight.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Stratify By */}
           <div>
