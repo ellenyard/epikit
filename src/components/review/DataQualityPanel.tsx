@@ -83,6 +83,11 @@ export function DataQualityPanel({
   const dateColumns = columns.filter(c => c.type === 'date');
   const numericColumns = columns.filter(c => c.type === 'number');
 
+  // Debug logging
+  console.log('[DataQualityPanel] Total columns:', columns.length);
+  console.log('[DataQualityPanel] Column types:', columns.map(c => ({ key: c.key, type: c.type })));
+  console.log('[DataQualityPanel] Numeric columns:', numericColumns.length);
+
   const addDateOrderRule = () => {
     if (!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate) return;
 
@@ -114,13 +119,24 @@ export function DataQualityPanel({
   };
 
   const addNumericRangeRule = () => {
-    if (!newNumericField) return;
+    console.log('[DataQualityPanel] addNumericRangeRule called');
+    console.log('[DataQualityPanel] newNumericField:', newNumericField);
+
+    if (!newNumericField) {
+      console.log('[DataQualityPanel] No field selected, returning');
+      return;
+    }
 
     const fieldCol = columns.find(c => c.key === newNumericField);
     const min = Number(newNumericMin);
     const max = Number(newNumericMax);
 
-    if (isNaN(min) || isNaN(max) || min >= max) return;
+    console.log('[DataQualityPanel] min:', min, 'max:', max);
+
+    if (isNaN(min) || isNaN(max) || min >= max) {
+      console.log('[DataQualityPanel] Invalid min/max, returning');
+      return;
+    }
 
     const newRule: NumericRangeRule = {
       id: Math.random().toString(36).substring(2, 11),
@@ -130,10 +146,16 @@ export function DataQualityPanel({
       max,
     };
 
-    onConfigChange({
+    console.log('[DataQualityPanel] Created rule:', newRule);
+    console.log('[DataQualityPanel] Current rules count:', config.numericRangeRules.length);
+
+    const newConfig = {
       ...config,
       numericRangeRules: [...config.numericRangeRules, newRule],
-    });
+    };
+
+    console.log('[DataQualityPanel] New config rules count:', newConfig.numericRangeRules.length);
+    onConfigChange(newConfig);
 
     setNewNumericField('');
     setNewNumericMin('0');
@@ -365,12 +387,13 @@ export function DataQualityPanel({
                     <button
                       onClick={addDateOrderRule}
                       disabled={!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate}
-                      className="p-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                      className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                       title="Add date order rule"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
+                      Add
                     </button>
                   </div>
                 </div>
@@ -454,12 +477,13 @@ export function DataQualityPanel({
                       <button
                         onClick={addNumericRangeRule}
                         disabled={!newNumericField || Number(newNumericMin) >= Number(newNumericMax)}
-                        className="p-1.5 text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                         title="Add numeric range rule"
                       >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                         </svg>
+                        Add
                       </button>
                     </div>
                   )}

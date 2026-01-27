@@ -141,8 +141,48 @@ export function VariableExplorer({
   // Calculate frequency distribution
   const frequency: FrequencyItem[] = useMemo(() => {
     if (!selectedVar) return [];
-    return calculateFrequency(values);
-  }, [values, selectedVar]);
+    const freq = calculateFrequency(values);
+
+    // Helper to recalculate cumulative counts after re-sorting
+    const recalculateCumulative = (items: FrequencyItem[]): FrequencyItem[] => {
+      let cumCount = 0;
+      const total = items.reduce((sum, item) => sum + item.count, 0);
+      return items.map(item => {
+        cumCount += item.count;
+        return {
+          ...item,
+          cumCount,
+          cumPercent: (cumCount / total) * 100,
+        };
+      });
+    };
+
+    // If column has a defined value order (e.g., from recoded variable), use it
+    if (selectedColumn?.valueOrder && selectedColumn.valueOrder.length > 0) {
+      const orderMap = new Map(selectedColumn.valueOrder.map((v, i) => [v, i]));
+      const sorted = [...freq].sort((a, b) => {
+        const orderA = orderMap.get(a.value) ?? Infinity;
+        const orderB = orderMap.get(b.value) ?? Infinity;
+        return orderA - orderB;
+      });
+      return recalculateCumulative(sorted);
+    }
+
+    // For numeric columns, sort by value in numeric order instead of by count
+    if (selectedColumn?.type === 'number') {
+      const sorted = [...freq].sort((a, b) => {
+        const numA = parseFloat(a.value);
+        const numB = parseFloat(b.value);
+        if (isNaN(numA) && isNaN(numB)) return 0;
+        if (isNaN(numA)) return 1;
+        if (isNaN(numB)) return -1;
+        return numA - numB;
+      });
+      return recalculateCumulative(sorted);
+    }
+
+    return freq;
+  }, [values, selectedVar, selectedColumn?.type, selectedColumn?.valueOrder]);
 
   const formatNumber = (n: number, decimals: number = 2): string => {
     if (n === null || n === undefined || isNaN(n)) return '-';

@@ -7,6 +7,8 @@ export interface DataColumn {
   key: string;
   label: string;
   type: 'text' | 'number' | 'date' | 'boolean' | 'categorical';
+  /** Optional ordered list of values for display in frequency tables (e.g., age groups in order) */
+  valueOrder?: string[];
 }
 
 export interface Dataset {
