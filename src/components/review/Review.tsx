@@ -58,6 +58,7 @@ export function Review({
   datasets,
   activeDatasetId,
   updateDataset,
+  deleteDataset,
   updateRecord,
   deleteRecord,
   addRecord,
@@ -74,6 +75,10 @@ export function Review({
   const [showFilters, setShowFilters] = useState(false);
   const [showAddRow, setShowAddRow] = useState(false);
   const [showMobilePanel, setShowMobilePanel] = useState(false);
+  const [showDatasetMenu, setShowDatasetMenu] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
 
   // ---------------------------------------------------------------------------
   // DATA QUALITY STATE
@@ -195,6 +200,125 @@ export function Review({
 
   return (
     <div className="h-full flex flex-col bg-white">
+      {/* Dataset Header with name and actions menu */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200">
+        <div className="flex items-center gap-2 min-w-0">
+          {isRenaming ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (renameValue.trim()) {
+                  updateDataset(activeDataset.id, { name: renameValue.trim() });
+                }
+                setIsRenaming(false);
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                className="px-2 py-1 text-lg font-semibold border border-blue-400 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+                onBlur={() => {
+                  if (renameValue.trim()) {
+                    updateDataset(activeDataset.id, { name: renameValue.trim() });
+                  }
+                  setIsRenaming(false);
+                }}
+              />
+            </form>
+          ) : (
+            <h1 className="text-lg font-semibold text-gray-900 truncate">{activeDataset.name}</h1>
+          )}
+          <span className="text-sm text-gray-500">
+            ({activeDataset.records.length} records)
+          </span>
+        </div>
+
+        {/* Dataset Actions Menu */}
+        <div className="relative">
+          <button
+            onClick={() => setShowDatasetMenu(!showDatasetMenu)}
+            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Dataset actions"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+            </svg>
+          </button>
+
+          {showDatasetMenu && (
+            <>
+              {/* Backdrop to close menu */}
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setShowDatasetMenu(false)}
+              />
+              {/* Menu dropdown */}
+              <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                <button
+                  onClick={() => {
+                    setRenameValue(activeDataset.name);
+                    setIsRenaming(true);
+                    setShowDatasetMenu(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Rename Dataset
+                </button>
+                <hr className="my-1 border-gray-200" />
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(true);
+                    setShowDatasetMenu(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Delete Dataset
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Dataset?</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete "<span className="font-medium">{activeDataset.name}</span>"?
+              This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  deleteDataset(activeDataset.id);
+                  setShowDeleteConfirm(false);
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Toolbar - visible only on small screens */}
       <div className="lg:hidden flex items-center justify-between gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
         <button
