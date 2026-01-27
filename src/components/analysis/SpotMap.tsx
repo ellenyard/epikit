@@ -1,8 +1,11 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap, ScaleControl } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 import html2canvas from 'html2canvas';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet.markercluster/dist/MarkerCluster.css';
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import { SpotMapTutorial } from '../tutorials/SpotMapTutorial';
 import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
 
@@ -122,6 +125,16 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // Privacy safeguards
   const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(true);
   const [jitterDistance, setJitterDistance] = useState<number>(500); // meters
+
+  // Map title and caption
+  const [mapTitle, setMapTitle] = useState<string>('');
+  const [mapCaption, setMapCaption] = useState<string>('');
+
+  // North arrow
+  const [showNorthArrow, setShowNorthArrow] = useState<boolean>(false);
+
+  // Point clustering
+  const [enableClustering, setEnableClustering] = useState<boolean>(false);
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
@@ -545,6 +558,57 @@ export function SpotMap({ dataset }: SpotMapProps) {
 
           {/* Advanced Options */}
           <AdvancedOptions>
+            {/* Map Title */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Map Title</label>
+              <input
+                type="text"
+                value={mapTitle}
+                onChange={(e) => setMapTitle(e.target.value)}
+                placeholder="e.g., Confirmed Legionellosis Cases by Residence"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              />
+            </div>
+
+            {/* Map Caption */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Caption</label>
+              <input
+                type="text"
+                value={mapCaption}
+                onChange={(e) => setMapCaption(e.target.value)}
+                placeholder="e.g., City Name, State — January 1-31, 2025 (N=47)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              />
+            </div>
+
+            {/* North Arrow Toggle */}
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showNorthArrow}
+                  onChange={(e) => setShowNorthArrow(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">Show north arrow</span>
+              </label>
+            </div>
+
+            {/* Clustering Toggle */}
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableClustering}
+                  onChange={(e) => setEnableClustering(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-sm text-gray-700">Cluster overlapping points</span>
+              </label>
+              <p className="text-xs text-gray-500 mt-1 ml-6">Groups nearby points at low zoom levels</p>
+            </div>
+
             {/* Color Scheme */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
@@ -609,9 +673,18 @@ export function SpotMap({ dataset }: SpotMapProps) {
       <div className="flex-1 relative min-h-[400px] lg:min-h-0">
         {latColumn && lngColumn ? (
           <div ref={mapContainerRef} className="h-full w-full relative">
+            {/* Map Title Overlay */}
+            {mapTitle && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] max-w-lg pointer-events-none">
+                <div className="bg-white/95 backdrop-blur-sm rounded-lg px-4 py-2 shadow-lg">
+                  <h2 className="text-sm font-semibold text-gray-900 text-center">{mapTitle}</h2>
+                </div>
+              </div>
+            )}
+
             {/* Privacy Warning Banner */}
             {obfuscateLocations && (
-              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] max-w-lg">
+              <div className={`absolute ${mapTitle ? 'top-16' : 'top-4'} left-1/2 -translate-x-1/2 z-[1000] max-w-lg`}>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 shadow-lg">
                   <p className="text-xs text-amber-900">
                     <span className="font-semibold">Privacy notice:</span> Map locations are jittered by {jitterDistance}m for display. Do not interpret as exact household locations.
@@ -625,6 +698,32 @@ export function SpotMap({ dataset }: SpotMapProps) {
               </div>
             )}
 
+            {/* Privacy Risk Warning (when obfuscation disabled) */}
+            {!obfuscateLocations && (
+              <div className={`absolute ${mapTitle ? 'top-16' : 'top-4'} left-1/2 -translate-x-1/2 z-[1000] max-w-lg`}>
+                <div className="bg-red-50 border border-red-300 rounded-lg px-4 py-2 shadow-lg">
+                  <p className="text-xs text-red-900">
+                    <span className="font-semibold">Privacy Risk:</span> Displaying exact locations may allow re-identification of individuals. Consider enabling location obfuscation before sharing this map.
+                    {missingRecordsCount > 0 && (
+                      <span className="block mt-1 text-red-800">
+                        {missingRecordsCount} record{missingRecordsCount !== 1 ? 's' : ''} missing lat/lon coordinates.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* North Arrow */}
+            {showNorthArrow && (
+              <div className="absolute top-4 right-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg p-2 shadow-lg pointer-events-none">
+                <svg width="24" height="32" viewBox="0 0 24 32">
+                  <polygon points="12,0 4,28 12,22 20,28" fill="#374151" />
+                  <text x="12" y="18" textAnchor="middle" fontSize="8" fontWeight="bold" fill="white">N</text>
+                </svg>
+              </div>
+            )}
+
             <MapContainer
               center={defaultCenter}
               zoom={defaultZoom}
@@ -634,47 +733,98 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 url={tileUrls[mapStyle].url}
                 attribution={tileUrls[mapStyle].attribution}
               />
+              <ScaleControl position="bottomleft" imperial={true} metric={true} />
 
               {filteredCases.length > 0 && <FitBounds cases={filteredCases} />}
 
-              {filteredCases.map((caseData, index) => (
-                <CircleMarker
-                  key={caseData.record.id || index}
-                  center={[caseData.displayLat, caseData.displayLng]}
-                  radius={markerSize}
-                  pathOptions={{
-                    fillColor: getMarkerColor(caseData.classification, colorScheme),
-                    fillOpacity: 0.7,
-                    color: '#fff',
-                    weight: 1,
-                  }}
+              {enableClustering ? (
+                <MarkerClusterGroup
+                  chunkedLoading
+                  showCoverageOnHover={false}
                 >
-                  <Popup>
-                    <div className="text-sm">
-                      <p className="font-semibold mb-2">Case Details</p>
-                      {dataset.columns.slice(0, 6).map(col => {
-                        const value = caseData.record[col.key];
-                        if (value === null || value === undefined) return null;
-                        return (
-                          <p key={col.key} className="text-gray-600">
-                            <span className="font-medium">{col.label}:</span> {String(value)}
+                  {filteredCases.map((caseData, index) => (
+                    <CircleMarker
+                      key={caseData.record.id || index}
+                      center={[caseData.displayLat, caseData.displayLng]}
+                      radius={markerSize}
+                      pathOptions={{
+                        fillColor: getMarkerColor(caseData.classification, colorScheme),
+                        fillOpacity: 0.7,
+                        color: '#fff',
+                        weight: 1,
+                      }}
+                    >
+                      <Popup>
+                        <div className="text-sm">
+                          <p className="font-semibold mb-2">Case Details</p>
+                          {dataset.columns.slice(0, 6).map(col => {
+                            const value = caseData.record[col.key];
+                            if (value === null || value === undefined) return null;
+                            return (
+                              <p key={col.key} className="text-gray-600">
+                                <span className="font-medium">{col.label}:</span> {String(value)}
+                              </p>
+                            );
+                          })}
+                          {!obfuscateLocations && (
+                            <p className="text-gray-500 mt-2 text-xs">
+                              Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
+                            </p>
+                          )}
+                        </div>
+                      </Popup>
+                    </CircleMarker>
+                  ))}
+                </MarkerClusterGroup>
+              ) : (
+                filteredCases.map((caseData, index) => (
+                  <CircleMarker
+                    key={caseData.record.id || index}
+                    center={[caseData.displayLat, caseData.displayLng]}
+                    radius={markerSize}
+                    pathOptions={{
+                      fillColor: getMarkerColor(caseData.classification, colorScheme),
+                      fillOpacity: 0.7,
+                      color: '#fff',
+                      weight: 1,
+                    }}
+                  >
+                    <Popup>
+                      <div className="text-sm">
+                        <p className="font-semibold mb-2">Case Details</p>
+                        {dataset.columns.slice(0, 6).map(col => {
+                          const value = caseData.record[col.key];
+                          if (value === null || value === undefined) return null;
+                          return (
+                            <p key={col.key} className="text-gray-600">
+                              <span className="font-medium">{col.label}:</span> {String(value)}
+                            </p>
+                          );
+                        })}
+                        {!obfuscateLocations && (
+                          <p className="text-gray-500 mt-2 text-xs">
+                            Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
                           </p>
-                        );
-                      })}
-                      {!obfuscateLocations && (
-                        <p className="text-gray-500 mt-2 text-xs">
-                          Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
-                        </p>
-                      )}
-                    </div>
-                  </Popup>
-                </CircleMarker>
-              ))}
+                        )}
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ))
+              )}
             </MapContainer>
+
+            {/* Map Caption Overlay */}
+            {mapCaption && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] max-w-lg pointer-events-none">
+                <div className="bg-white/95 backdrop-blur-sm rounded-lg px-4 py-2 shadow-lg">
+                  <p className="text-xs text-gray-700 text-center">{mapCaption}</p>
+                </div>
+              </div>
+            )}
 
             {/* Legend Overlay */}
             {classificationValues.length > 0 && colorScheme !== 'default' && (
-              <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-[1000]">
+              <div className={`absolute ${mapCaption ? 'bottom-16' : 'bottom-4'} left-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-[1000]`}>
                 <p className="text-xs font-semibold text-gray-700 mb-2">Legend</p>
                 <div className="space-y-1">
                   {classificationValues.map(value => (

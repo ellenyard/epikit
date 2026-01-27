@@ -227,6 +227,11 @@ export function addVariableToDataset(
     type: config.type,
   };
 
+  // If categories are defined, store the value order for frequency table display
+  if (config.categories && config.categories.length > 0) {
+    newColumn.valueOrder = config.categories.map(c => c.label);
+  }
+
   // Add column values to each record
   const updatedRecords = dataset.records.map((record, index) => ({
     ...record,
