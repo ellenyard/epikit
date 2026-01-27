@@ -32,28 +32,24 @@ export interface EpiCurveData {
   dateRange: { start: Date; end: Date };
 }
 
-// Annotation categories for timeline events
+// Annotation categories for timeline events (simplified for professional use)
 export type AnnotationCategory =
-  | 'investigation'       // Lab confirmation, traceback, interviews
-  | 'notification'        // Reports to health authorities
-  | 'control-measure'     // Recalls, closures, advisories
+  | '7-1-7'               // 7-1-7 response milestones
   | 'exposure'            // Suspected exposure events
-  | 'communication'       // Press releases, public notices
-  | 'custom';             // User-defined events
+  | 'response'            // Interventions and control measures
+  | 'data-note';          // Data quality notes (reporting lag, etc.)
 
 export type AnnotationType =
-  // Investigation events
-  | 'lab-confirmed' | 'traceback-started' | 'traceback-completed' | 'interviews-completed'
-  // Notifications
-  | 'notified-local' | 'notified-state' | 'notified-cdc'
-  // Control measures
-  | 'recall-issued' | 'facility-closed' | 'advisory-issued' | 'control-lifted'
+  // 7-1-7 milestones
+  | 'detection'           // Outbreak detected
+  | 'notification'        // Health authority notified
+  | 'response-complete'   // Early response actions completed
   // Exposure
-  | 'exposure'
-  // Communications
-  | 'press-release' | 'public-notice'
-  // Legacy/custom
-  | 'intervention' | 'custom';
+  | 'exposure'            // Suspected exposure period
+  // Response actions
+  | 'intervention'        // Any intervention or control measure
+  // Data notes
+  | 'data-note';          // Reporting lag, tentative data, etc.
 
 export interface Annotation {
   id: string;
@@ -68,62 +64,41 @@ export interface Annotation {
   linkedRecordIds?: string[]; // Link to specific case records
 }
 
-// Annotation category metadata for UI
+// Annotation category metadata for UI (simplified - professional epi curve style)
+// Colors are muted to not compete with case data (per CDC guidelines)
 export const ANNOTATION_CATEGORIES: Record<AnnotationCategory, {
   label: string;
   color: string;
-  types: { value: AnnotationType; label: string }[];
+  types: { value: AnnotationType; label: string; description?: string }[];
 }> = {
-  'investigation': {
-    label: 'Investigation',
-    color: '#8B5CF6',
+  '7-1-7': {
+    label: '7-1-7 Milestones',
+    color: '#6B7280',  // Muted gray - annotations should recede visually
     types: [
-      { value: 'lab-confirmed', label: 'Laboratory Confirmation' },
-      { value: 'traceback-started', label: 'Traceback Initiated' },
-      { value: 'traceback-completed', label: 'Traceback Completed' },
-      { value: 'interviews-completed', label: 'Interviews Completed' },
-    ]
-  },
-  'notification': {
-    label: 'Notifications',
-    color: '#0EA5E9',
-    types: [
-      { value: 'notified-local', label: 'Notified Local Health Dept' },
-      { value: 'notified-state', label: 'Notified State Health Dept' },
-      { value: 'notified-cdc', label: 'Notified CDC' },
-    ]
-  },
-  'control-measure': {
-    label: 'Control Measures',
-    color: '#059669',
-    types: [
-      { value: 'recall-issued', label: 'Product Recall Issued' },
-      { value: 'facility-closed', label: 'Facility Closed' },
-      { value: 'advisory-issued', label: 'Health Advisory Issued' },
-      { value: 'control-lifted', label: 'Control Measures Lifted' },
+      { value: 'detection', label: 'Outbreak Detected', description: 'Date outbreak was identified' },
+      { value: 'notification', label: 'Notification Sent', description: 'Date health authority was notified' },
+      { value: 'response-complete', label: 'Response Completed', description: 'Date early response actions were completed' },
     ]
   },
   'exposure': {
     label: 'Exposure Events',
-    color: '#DC2626',
+    color: '#9CA3AF',  // Light gray for exposure shading
     types: [
-      { value: 'exposure', label: 'Suspected Exposure' },
+      { value: 'exposure', label: 'Exposure Period', description: 'Suspected exposure time window' },
     ]
   },
-  'communication': {
-    label: 'Communications',
-    color: '#F59E0B',
+  'response': {
+    label: 'Response Actions',
+    color: '#6B7280',  // Muted gray
     types: [
-      { value: 'press-release', label: 'Press Release' },
-      { value: 'public-notice', label: 'Public Notice' },
+      { value: 'intervention', label: 'Intervention', description: 'Recall, closure, advisory, or other control measure' },
     ]
   },
-  'custom': {
-    label: 'Custom Event',
-    color: '#6B7280',
+  'data-note': {
+    label: 'Data Notes',
+    color: '#9CA3AF',  // Light gray
     types: [
-      { value: 'custom', label: 'Custom Event' },
-      { value: 'intervention', label: 'Intervention' },
+      { value: 'data-note', label: 'Data Note', description: 'Reporting lag, tentative data, or other data quality note' },
     ]
   },
 };
@@ -145,7 +120,7 @@ export function getAnnotationCategory(type: AnnotationType): AnnotationCategory 
       return category as AnnotationCategory;
     }
   }
-  return 'custom';
+  return 'data-note';  // Default fallback
 }
 
 // Common pathogens with incubation periods (in days)

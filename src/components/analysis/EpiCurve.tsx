@@ -138,6 +138,15 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   const [selectedPathogen, setSelectedPathogen] = useState<string>('');
   const [showExposureWindow, setShowExposureWindow] = useState(false);
 
+  // 7-1-7 Response Timeline
+  const [show717Panel, setShow717Panel] = useState(false);
+  const [outbreakStartDate, setOutbreakStartDate] = useState<string>('');
+  const [detectionDate, setDetectionDate] = useState<string>('');
+  const [notificationDate, setNotificationDate] = useState<string>('');
+  const [responseCompleteDate, setResponseCompleteDate] = useState<string>('');
+  const [show717OnChart, setShow717OnChart] = useState(true);
+  const [show717Metrics, setShow717Metrics] = useState(true);
+
   // Find date columns (memoized to prevent unnecessary re-renders)
   const dateColumns = useMemo(
     () => dataset.columns.filter(c => c.type === 'date' || c.key.toLowerCase().includes('date')),
@@ -229,11 +238,11 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
     }
 
-    // Include exposure window in annotations for date range calculation
-    const allAnnotations = [...annotations];
+    // Include exposure window and 7-1-7 dates in annotations for date range calculation
+    const dateRangeAnnotations: Annotation[] = [...annotations];
+
     if (exposureWindowDates) {
-      // Add synthetic annotation for exposure window to ensure it's included in the chart range
-      allAnnotations.push({
+      dateRangeAnnotations.push({
         id: '__exposure_window__',
         type: 'exposure',
         category: 'exposure',
@@ -245,8 +254,55 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       });
     }
 
-    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, allAnnotations);
-  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates]);
+    // Include 7-1-7 dates for date range calculation
+    const gray = '#6B7280';
+    if (outbreakStartDate) {
+      dateRangeAnnotations.push({
+        id: '__717_start_range__',
+        type: 'detection',
+        category: '7-1-7',
+        date: parseLocalDate(outbreakStartDate),
+        label: 'Start',
+        color: gray,
+        source: 'auto',
+      });
+    }
+    if (detectionDate) {
+      dateRangeAnnotations.push({
+        id: '__717_detection_range__',
+        type: 'detection',
+        category: '7-1-7',
+        date: parseLocalDate(detectionDate),
+        label: 'Detected',
+        color: gray,
+        source: 'auto',
+      });
+    }
+    if (notificationDate) {
+      dateRangeAnnotations.push({
+        id: '__717_notification_range__',
+        type: 'notification',
+        category: '7-1-7',
+        date: parseLocalDate(notificationDate),
+        label: 'Notified',
+        color: gray,
+        source: 'auto',
+      });
+    }
+    if (responseCompleteDate) {
+      dateRangeAnnotations.push({
+        id: '__717_response_range__',
+        type: 'response-complete',
+        category: '7-1-7',
+        date: parseLocalDate(responseCompleteDate),
+        label: 'Response',
+        color: gray,
+        source: 'auto',
+      });
+    }
+
+    return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, dateRangeAnnotations);
+  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, outbreakStartDate, detectionDate, notificationDate, responseCompleteDate]);
 
   // Calculate exposure window for display (after curveData is available)
   // Uses epidemiological method: earliest case - max incubation to earliest case - min incubation
@@ -254,6 +310,95 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     if (!exposureWindowDates || curveData.bins.length === 0) return null;
     return exposureWindowDates;
   }, [exposureWindowDates, curveData.bins]);
+
+  // Calculate 7-1-7 metrics
+  const metrics717 = useMemo(() => {
+    if (!outbreakStartDate) return null;
+
+    const start = parseLocalDate(outbreakStartDate);
+    const detection = detectionDate ? parseLocalDate(detectionDate) : null;
+    const notification = notificationDate ? parseLocalDate(notificationDate) : null;
+    const response = responseCompleteDate ? parseLocalDate(responseCompleteDate) : null;
+
+    const daysBetween = (d1: Date, d2: Date) => {
+      return Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+    };
+
+    return {
+      detectionDays: detection ? daysBetween(start, detection) : null,
+      notificationDays: detection && notification ? daysBetween(detection, notification) : null,
+      responseDays: notification && response ? daysBetween(notification, response) : null,
+      detectionMet: detection ? daysBetween(start, detection) <= 7 : null,
+      notificationMet: detection && notification ? daysBetween(detection, notification) <= 1 : null,
+      responseMet: notification && response ? daysBetween(notification, response) <= 7 : null,
+    };
+  }, [outbreakStartDate, detectionDate, notificationDate, responseCompleteDate]);
+
+  // Generate 7-1-7 annotations for the chart
+  const annotations717 = useMemo(() => {
+    if (!show717OnChart) return [];
+
+    const anns: Annotation[] = [];
+    const gray = '#6B7280';
+
+    if (outbreakStartDate) {
+      anns.push({
+        id: '__717_start__',
+        type: 'detection',
+        category: '7-1-7',
+        date: parseLocalDate(outbreakStartDate),
+        label: 'Start',
+        color: gray,
+        source: 'auto',
+      });
+    }
+
+    if (detectionDate) {
+      const dayLabel = metrics717 && metrics717.detectionDays !== null ? ` (Day ${metrics717.detectionDays})` : '';
+      anns.push({
+        id: '__717_detection__',
+        type: 'detection',
+        category: '7-1-7',
+        date: parseLocalDate(detectionDate),
+        label: `Detected${dayLabel}`,
+        color: gray,
+        source: 'auto',
+      });
+    }
+
+    if (notificationDate) {
+      const dayLabel = metrics717 && metrics717.notificationDays !== null ? ` (+${metrics717.notificationDays}d)` : '';
+      anns.push({
+        id: '__717_notification__',
+        type: 'notification',
+        category: '7-1-7',
+        date: parseLocalDate(notificationDate),
+        label: `Notified${dayLabel}`,
+        color: gray,
+        source: 'auto',
+      });
+    }
+
+    if (responseCompleteDate) {
+      const dayLabel = metrics717 && metrics717.responseDays !== null ? ` (+${metrics717.responseDays}d)` : '';
+      anns.push({
+        id: '__717_response__',
+        type: 'response-complete',
+        category: '7-1-7',
+        date: parseLocalDate(responseCompleteDate),
+        label: `Response${dayLabel}`,
+        color: gray,
+        source: 'auto',
+      });
+    }
+
+    return anns;
+  }, [show717OnChart, outbreakStartDate, detectionDate, notificationDate, responseCompleteDate, metrics717]);
+
+  // Combine manual annotations with 7-1-7 annotations
+  const allAnnotations = useMemo(() => {
+    return [...annotations, ...annotations717];
+  }, [annotations, annotations717]);
 
   // Apply manual date range filter to curve data
   const displayData: EpiCurveData = useMemo(() => {
@@ -679,7 +824,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                   />
                 </div>
-                {(newAnnotation.type === 'exposure' || newAnnotation.type === 'control-lifted') && (
+                {newAnnotation.type === 'exposure' && (
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">End Date (optional)</label>
                     <input
@@ -740,6 +885,112 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+
+          {/* 7-1-7 Response Timeline */}
+          <div className="border-t border-gray-200 pt-4">
+            <button
+              onClick={() => setShow717Panel(!show717Panel)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <span className="text-sm font-medium text-gray-700">7-1-7 Response Timeline</span>
+              <span className="text-gray-400">{show717Panel ? '−' : '+'}</span>
+            </button>
+
+            {show717Panel && (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-gray-500">
+                  Track outbreak response against the 7-1-7 targets: 7 days to detection, 1 day to notification, 7 days to response.
+                </p>
+
+                {/* Outbreak Start */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">
+                    Outbreak Start
+                    <span className="text-gray-400 ml-1">(first case or estimated emergence)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={outbreakStartDate}
+                    onChange={(e) => setOutbreakStartDate(e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                  />
+                </div>
+
+                {/* Detection Date */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Detection Date</label>
+                  <input
+                    type="date"
+                    value={detectionDate}
+                    onChange={(e) => setDetectionDate(e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                  />
+                  {metrics717 && metrics717.detectionDays !== null && (
+                    <div className={`text-xs mt-1 flex items-center gap-1 ${metrics717.detectionMet ? 'text-green-600' : 'text-amber-600'}`}>
+                      <span>{metrics717.detectionMet ? '✓' : '⚠'}</span>
+                      <span>{metrics717.detectionDays} days from start (target: ≤7)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Notification Date */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Notification Date</label>
+                  <input
+                    type="date"
+                    value={notificationDate}
+                    onChange={(e) => setNotificationDate(e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                  />
+                  {metrics717 && metrics717.notificationDays !== null && (
+                    <div className={`text-xs mt-1 flex items-center gap-1 ${metrics717.notificationMet ? 'text-green-600' : 'text-amber-600'}`}>
+                      <span>{metrics717.notificationMet ? '✓' : '⚠'}</span>
+                      <span>{metrics717.notificationDays} day{metrics717.notificationDays !== 1 ? 's' : ''} from detection (target: ≤1)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Response Complete Date */}
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">Response Complete Date</label>
+                  <input
+                    type="date"
+                    value={responseCompleteDate}
+                    onChange={(e) => setResponseCompleteDate(e.target.value)}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                  />
+                  {metrics717 && metrics717.responseDays !== null && (
+                    <div className={`text-xs mt-1 flex items-center gap-1 ${metrics717.responseMet ? 'text-green-600' : 'text-amber-600'}`}>
+                      <span>{metrics717.responseMet ? '✓' : '⚠'}</span>
+                      <span>{metrics717.responseDays} days from notification (target: ≤7)</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Display toggles */}
+                <div className="pt-2 border-t border-gray-200 space-y-2">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={show717OnChart}
+                      onChange={(e) => setShow717OnChart(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-gray-700">Show milestones on chart</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={show717Metrics}
+                      onChange={(e) => setShow717Metrics(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <span className="text-gray-700">Show metrics summary</span>
+                  </label>
+                </div>
               </div>
             )}
           </div>
@@ -1006,7 +1257,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     )}
 
                     {/* Annotations */}
-                    {annotations.map(ann => (
+                    {allAnnotations.map(ann => (
                       <AnnotationMarker
                         key={ann.id}
                         annotation={ann}
@@ -1172,6 +1423,36 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               </div>
             </div>
 
+            {/* 7-1-7 Metrics Summary */}
+            {show717Metrics && metrics717 && (metrics717.detectionDays !== null || metrics717.notificationDays !== null || metrics717.responseDays !== null) && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <h5 className="text-sm font-semibold text-gray-700 mb-2">7-1-7 Response Performance</h5>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  {metrics717.detectionDays !== null && (
+                    <div className={`flex items-center gap-1.5 ${metrics717.detectionMet ? 'text-green-700' : 'text-amber-700'}`}>
+                      <span className="font-medium">{metrics717.detectionMet ? '✓' : '⚠'}</span>
+                      <span>Detection: {metrics717.detectionDays} days</span>
+                      <span className="text-gray-400">(target ≤7)</span>
+                    </div>
+                  )}
+                  {metrics717.notificationDays !== null && (
+                    <div className={`flex items-center gap-1.5 ${metrics717.notificationMet ? 'text-green-700' : 'text-amber-700'}`}>
+                      <span className="font-medium">{metrics717.notificationMet ? '✓' : '⚠'}</span>
+                      <span>Notification: {metrics717.notificationDays} day{metrics717.notificationDays !== 1 ? 's' : ''}</span>
+                      <span className="text-gray-400">(target ≤1)</span>
+                    </div>
+                  )}
+                  {metrics717.responseDays !== null && (
+                    <div className={`flex items-center gap-1.5 ${metrics717.responseMet ? 'text-green-700' : 'text-amber-700'}`}>
+                      <span className="font-medium">{metrics717.responseMet ? '✓' : '⚠'}</span>
+                      <span>Response: {metrics717.responseDays} days</span>
+                      <span className="text-gray-400">(target ≤7)</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Exposure Window Explanation */}
             {exposureWindow && (
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1251,7 +1532,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   );
 }
 
-// Annotation marker component - displays as a flag
+// Annotation marker component - professional dashed line style (per CDC guidelines)
 function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
   annotation: Annotation;
   bins: EpiCurveData['bins'];
@@ -1261,7 +1542,6 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
   if (bins.length === 0) return null;
 
   // Find position by matching the annotation timestamp to bins
-  // This positions the flag at the exact date/time proportionally within the bin
   const annotationTime = annotation.date.getTime();
   const firstBinStart = bins[0].startDate.getTime();
   const lastBinEnd = bins[bins.length - 1].endDate.getTime();
@@ -1269,13 +1549,10 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
   let x: number = 0;
 
   if (annotationTime < firstBinStart) {
-    // Before first bin
     x = 0;
   } else if (annotationTime >= lastBinEnd) {
-    // After last bin
     x = bins.length * barWidth;
   } else {
-    // Find which bin contains this timestamp
     const binIndex = bins.findIndex(b =>
       annotationTime >= b.startDate.getTime() && annotationTime < b.endDate.getTime()
     );
@@ -1285,25 +1562,20 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
       const binStart = bin.startDate.getTime();
       const binEnd = bin.endDate.getTime();
       const binDuration = binEnd - binStart;
-
-      // Calculate proportional position within the bin
       const offsetWithinBin = annotationTime - binStart;
       const fraction = binDuration > 0 ? offsetWithinBin / binDuration : 0;
-
       x = binIndex * barWidth + fraction * barWidth;
     }
   }
 
-  // For incubation period ranges, show shaded area
+  // For range annotations (exposure periods), show light shaded area
   if (annotation.endDate) {
     const endTime = annotation.endDate.getTime();
     let endX: number;
 
     if (endTime >= lastBinEnd) {
-      // After last bin
       endX = bins.length * barWidth;
     } else {
-      // Find which bin contains the end timestamp
       const endBinIndex = bins.findIndex(b =>
         endTime >= b.startDate.getTime() && endTime < b.endDate.getTime()
       );
@@ -1313,11 +1585,8 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
         const binStart = bin.startDate.getTime();
         const binEnd = bin.endDate.getTime();
         const binDuration = binEnd - binStart;
-
-        // Calculate proportional position within the bin
         const offsetWithinBin = endTime - binStart;
         const fraction = binDuration > 0 ? offsetWithinBin / binDuration : 0;
-
         endX = endBinIndex * barWidth + fraction * barWidth;
       } else {
         endX = bins.length * barWidth;
@@ -1336,72 +1605,66 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
         }}
         title={annotation.label}
       >
-        {/* Shaded region */}
+        {/* Light shaded region */}
         <div
-          className="absolute inset-0 opacity-20"
-          style={{ backgroundColor: annotation.color }}
+          className="absolute inset-0"
+          style={{ backgroundColor: annotation.color, opacity: 0.1 }}
         />
-        {/* Flag at start - pole centered on start date */}
-        <div className="absolute top-0 left-0">
-          {/* Flag pennant - positioned to the right of the pole */}
-          <div
-            className="absolute px-2 py-1 text-xs font-medium text-white shadow-md"
-            style={{
-              backgroundColor: annotation.color,
-              clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)',
-              paddingRight: '14px',
-              left: 1,
-              top: 0,
-            }}
-          >
-            {annotation.label}
-          </div>
-          {/* Flag pole - centered on the start date */}
-          <div
-            className="absolute w-0.5"
-            style={{
-              backgroundColor: annotation.color,
-              height: chartHeight,
-              left: 0,
-              top: 0,
-              transform: 'translateX(-50%)',
-            }}
-          />
+        {/* Dashed border lines */}
+        <div
+          className="absolute top-0 bottom-0 left-0"
+          style={{
+            borderLeft: `1px dashed ${annotation.color}`,
+          }}
+        />
+        <div
+          className="absolute top-0 bottom-0 right-0"
+          style={{
+            borderRight: `1px dashed ${annotation.color}`,
+          }}
+        />
+        {/* Label above chart */}
+        <div
+          className="absolute text-xs font-medium whitespace-nowrap"
+          style={{
+            color: annotation.color,
+            top: -18,
+            left: 2,
+          }}
+        >
+          {annotation.label}
         </div>
       </div>
     );
   }
 
-  // Single date annotation - show as flag with pole centered on date
+  // Single date annotation - dashed vertical line with label above
   return (
     <div
       className="absolute top-0 pointer-events-none"
-      style={{ left: x }}
+      style={{ left: x, height: chartHeight }}
+      title={annotation.label}
     >
-      {/* Flag pennant - positioned to the right of the pole */}
+      {/* Dashed vertical line */}
       <div
-        className="absolute px-2 py-1 text-xs font-medium text-white shadow-md"
+        className="absolute top-0 bottom-0"
         style={{
-          backgroundColor: annotation.color,
-          clipPath: 'polygon(0 0, calc(100% - 8px) 0, 100% 50%, calc(100% - 8px) 100%, 0 100%)',
-          paddingRight: '14px',
-          left: 1,
-          top: 0,
+          borderLeft: `1.5px dashed ${annotation.color}`,
+          transform: 'translateX(-50%)',
+        }}
+      />
+      {/* Label above chart */}
+      <div
+        className="absolute text-xs font-medium whitespace-nowrap"
+        style={{
+          color: annotation.color,
+          top: -18,
+          left: 2,
+          transform: 'translateX(-50%)',
         }}
       >
         {annotation.label}
       </div>
-      {/* Flag pole - centered on the date position */}
-      <div
-        className="absolute w-0.5"
-        style={{
-          backgroundColor: annotation.color,
-          height: chartHeight,
-          left: 0,
-          top: 0,
-          transform: 'translateX(-50%)',
-        }}
-      />
     </div>
   );
 }
