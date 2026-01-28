@@ -63,6 +63,9 @@ type FormView = 'builder' | 'preview';
 // =============================================================================
 
 const DEMO_DATASET_ID = 'demo-outbreak-2024';
+// Bump this version whenever demo data in demoData.ts changes.
+// Existing users with stale demo data will get the updated version automatically.
+const DEMO_DATA_VERSION = 2;
 
 /** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({
@@ -307,6 +310,26 @@ function App() {
     const saved = localStorage.getItem('epikit_editLog');
     return saved ? JSON.parse(saved) : [];
   });
+
+  // ---------------------------------------------------------------------------
+  // DEMO DATA VERSION CHECK
+  // Refresh the demo dataset if a newer version has been deployed.
+  // Only replaces the demo dataset — user-created datasets are untouched.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const savedVersion = localStorage.getItem('epikit_demoDataVersion');
+    if (!savedVersion || Number(savedVersion) < DEMO_DATA_VERSION) {
+      setDatasets(prev => {
+        const withoutOldDemo = prev.filter(d => d.id !== DEMO_DATASET_ID);
+        return [createDemoDataset(), ...withoutOldDemo];
+      });
+      setFormDefinitions(prev => {
+        const withoutOldDemo = prev.filter(f => f.id !== DEMO_FORM_ID);
+        return [createDemoFormDefinition(), ...withoutOldDemo];
+      });
+      localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // AUTO-SAVE TO LOCALSTORAGE
