@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
@@ -31,6 +31,11 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   const [selectedExposures, setSelectedExposures] = useState<string[]>([]);
   // For each exposure, store which value means "exposed" (default to "Yes")
   const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>({});
+
+  // Filter state
+  const [filterBy, setFilterBy] = useState<string>('');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
 
   // Get columns suitable for case definition (categorical columns)
@@ -67,6 +72,30 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       return uniqueValues >= 2 && uniqueValues <= 20;
     });
   }, [dataset, outcomeVar]);
+
+  // Get unique values for the filter dropdown
+  const filterValues = useMemo(() => {
+    if (!filterBy) return [];
+    const values = new Set(dataset.records.map(r => String(r[filterBy] ?? 'Unknown')));
+    return Array.from(values).sort();
+  }, [dataset.records, filterBy]);
+
+  // Reset selected filter values when filter variable changes
+  useEffect(() => {
+    setSelectedFilterValues(new Set());
+    setShowAllFilterValues(false);
+  }, [filterBy]);
+
+  // Apply filter to records
+  const filteredRecords = useMemo(() => {
+    if (!filterBy || selectedFilterValues.size === 0) {
+      return dataset.records;
+    }
+    return dataset.records.filter(record => {
+      const value = String(record[filterBy] ?? 'Unknown');
+      return selectedFilterValues.has(value);
+    });
+  }, [dataset.records, filterBy, selectedFilterValues]);
 
   // Auto-detect outcome variable on mount
   useEffect(() => {
@@ -153,11 +182,11 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   };
 
   // Export dataset with only the records used in the current analysis
-  const exportDatasetCSV = () => {
+  const exportDatasetCSV = useCallback(() => {
     if (!outcomeVar || caseValues.size === 0 || selectedExposures.length === 0) return;
 
     // Filter to only records with valid outcome and at least one valid exposure
-    const analysisRecords = dataset.records.filter(record => {
+    const analysisRecords = filteredRecords.filter(record => {
       // Must have valid outcome
       const outcomeValue = record[outcomeVar];
       if (outcomeValue === null || outcomeValue === undefined || String(outcomeValue).trim() === '') {
@@ -197,7 +226,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, [outcomeVar, caseValues, selectedExposures, filteredRecords, dataset.columns]);
 
   // Calculate 2x2 results for each selected exposure
   const exposureResults: ExposureResult[] = useMemo(() => {
@@ -209,7 +238,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       const exposedValue = exposurePositiveValues[expVar] || detectExposedValue(expVar);
       let a = 0, b = 0, c = 0, d = 0;
 
-      dataset.records.forEach((record: CaseRecord) => {
+      filteredRecords.forEach((record: CaseRecord) => {
         const expValue = record[expVar];
 
         // Skip records with missing exposure values
@@ -250,12 +279,12 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         return propB - propA;
       }
     });
-  }, [dataset.records, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, studyDesign]);
+  }, [filteredRecords, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, studyDesign]);
 
   // Count total cases
   const totalCases = useMemo(() => {
-    return dataset.records.filter(isCase).length;
-  }, [dataset.records, outcomeVar, caseValues]);
+    return filteredRecords.filter(isCase).length;
+  }, [filteredRecords, outcomeVar, caseValues]);
 
   const formatNumber = (n: number, decimals: number = 2): string => {
     if (!isFinite(n)) return 'Undefined';
@@ -478,6 +507,85 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         description="Compare exposure and outcome with a 2×2 table and measures of association."
       />
 
+      {/* Filter Data */}
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h4 className="text-sm font-semibold text-gray-900 mb-3">Filter Data (optional)</h4>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Filter by</label>
+          <select
+            value={filterBy}
+            onChange={(e) => setFilterBy(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+          >
+            <option value="">None (show all)</option>
+            {dataset.columns.map(col => (
+              <option key={col.key} value={col.key}>{col.label}</option>
+            ))}
+          </select>
+
+          {/* Filter value checkboxes */}
+          {filterBy && filterValues.length > 0 && (
+            <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-500">Select values:</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedFilterValues(new Set(filterValues))}
+                    className="text-xs text-gray-600 hover:text-gray-900"
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setSelectedFilterValues(new Set())}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="space-y-1 max-h-32 overflow-auto">
+                {(showAllFilterValues ? filterValues : filterValues.slice(0, 5)).map(value => {
+                  const count = dataset.records.filter(r => String(r[filterBy] ?? 'Unknown') === value).length;
+                  return (
+                    <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedFilterValues.has(value)}
+                        onChange={(e) => {
+                          const newSet = new Set(selectedFilterValues);
+                          if (e.target.checked) {
+                            newSet.add(value);
+                          } else {
+                            newSet.delete(value);
+                          }
+                          setSelectedFilterValues(newSet);
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-gray-700 truncate flex-1">{value}</span>
+                      <span className="text-gray-400 text-xs">({count})</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {filterValues.length > 5 && (
+                <button
+                  onClick={() => setShowAllFilterValues(!showAllFilterValues)}
+                  className="mt-2 text-xs text-gray-600 hover:text-gray-900"
+                >
+                  {showAllFilterValues ? 'Show less' : `Show ${filterValues.length - 5} more...`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        {filterBy && selectedFilterValues.size > 0 && (
+          <div className="mt-2 text-xs text-gray-600">
+            Showing <span className="font-medium">{filteredRecords.length}</span> of {dataset.records.length} records
+          </div>
+        )}
+      </div>
+
       {/* Study Design Selector */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
         <label className="block text-sm font-medium text-gray-700 mb-3">Analysis Type</label>
@@ -575,8 +683,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           {outcomeVar && caseValues.size > 0 && (
             <div className="mt-3 space-y-2">
               <div className="text-sm text-gray-700">
-                <strong>{totalCases}</strong> cases identified out of <strong>{dataset.records.length}</strong> records
-                ({formatPercent((totalCases / dataset.records.length) * 100, dataset.records.length)}%)
+                <strong>{totalCases}</strong> cases identified out of <strong>{filteredRecords.length}</strong> records
+                ({formatPercent((totalCases / filteredRecords.length) * 100, filteredRecords.length)}%)
               </div>
               {/* Case/Control mapping display */}
               {outcomeValues.length > 0 && (

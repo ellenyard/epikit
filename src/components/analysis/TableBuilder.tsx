@@ -14,9 +14,10 @@ interface TableBuilderProps {
   onColVarChange?: (varKey: string) => void;
 }
 
+type PercentType = 'row' | 'column' | 'total';
+
 interface TableOptions {
-  showN: boolean;
-  showPercent: boolean;
+  percentType: PercentType;
   showCumPercent: boolean;
   includeMissing: boolean;
 }
@@ -36,6 +37,7 @@ interface CrossTabCell {
   count: number;
   rowPercent: number;
   colPercent: number;
+  totalPercent: number;
 }
 
 interface SingleCrossTab {
@@ -72,12 +74,16 @@ export function TableBuilder({
 
   const [draggedVar, setDraggedVar] = useState<string | null>(null);
   const [tableOptions, setTableOptions] = useState<TableOptions>({
-    showN: true,
-    showPercent: true,
+    percentType: 'column',
     showCumPercent: false,
     includeMissing: true,
   });
   const [copySuccess, setCopySuccess] = useState(false);
+
+  // Filter state
+  const [filterBy, setFilterBy] = useState<string>('');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
   // Apply initial row vars when they change (for quick actions from Explorer)
   useEffect(() => {
@@ -98,6 +104,30 @@ export function TableBuilder({
     }
     return Array.from(values).sort();
   }, [dataset.records]);
+
+  // Get unique values for the filter dropdown
+  const filterValues = useMemo(() => {
+    if (!filterBy) return [];
+    const values = new Set(dataset.records.map(r => String(r[filterBy] ?? 'Unknown')));
+    return Array.from(values).sort();
+  }, [dataset.records, filterBy]);
+
+  // Reset selected filter values when filter variable changes
+  useEffect(() => {
+    setSelectedFilterValues(new Set());
+    setShowAllFilterValues(false);
+  }, [filterBy]);
+
+  // Apply filter to records
+  const filteredRecords = useMemo(() => {
+    if (!filterBy || selectedFilterValues.size === 0) {
+      return dataset.records;
+    }
+    return dataset.records.filter(record => {
+      const value = String(record[filterBy] ?? 'Unknown');
+      return selectedFilterValues.has(value);
+    });
+  }, [dataset.records, filterBy, selectedFilterValues]);
 
   // Drag handlers
   const handleDragStart = (varKey: string) => {
@@ -141,7 +171,7 @@ export function TableBuilder({
     if (rowVars.length === 0 || colVar) return [];
 
     const rows: FrequencyRow[] = [];
-    const totalRecords = dataset.records.length;
+    const totalRecords = filteredRecords.length;
 
     for (const varKey of rowVars) {
       const column = dataset.columns.find(c => c.key === varKey);
@@ -151,7 +181,7 @@ export function TableBuilder({
       const valueCounts = new Map<string, number>();
       let missingCount = 0;
 
-      for (const record of dataset.records) {
+      for (const record of filteredRecords) {
         const val = record[varKey];
         if (val === null || val === undefined || String(val).trim() === '') {
           missingCount++;
@@ -195,7 +225,7 @@ export function TableBuilder({
     }
 
     return rows;
-  }, [rowVars, colVar, dataset, tableOptions.includeMissing]);
+  }, [rowVars, colVar, dataset.columns, filteredRecords, tableOptions.includeMissing]);
 
   // Calculate cross-tabulation data (when both row and column vars are set)
   // Returns an array of cross-tabs, one for each row variable
@@ -222,14 +252,14 @@ export function TableBuilder({
       rowValues.forEach(rv => {
         table.set(rv, new Map());
         colValues.forEach(cv => {
-          table.get(rv)!.set(cv, { count: 0, rowPercent: 0, colPercent: 0 });
+          table.get(rv)!.set(cv, { count: 0, rowPercent: 0, colPercent: 0, totalPercent: 0 });
         });
         rowTotals.set(rv, 0);
       });
       colValues.forEach(cv => colTotals.set(cv, 0));
 
       // Count
-      for (const record of dataset.records) {
+      for (const record of filteredRecords) {
         const rowVal = record[rowVar];
         const colVal = record[colVar];
 
@@ -262,6 +292,7 @@ export function TableBuilder({
           const colTotal = colTotals.get(cv) || 0;
           cell.rowPercent = rowTotal > 0 ? (cell.count / rowTotal) * 100 : 0;
           cell.colPercent = colTotal > 0 ? (cell.count / colTotal) * 100 : 0;
+          cell.totalPercent = grandTotal > 0 ? (cell.count / grandTotal) * 100 : 0;
         });
       });
 
@@ -283,7 +314,7 @@ export function TableBuilder({
       colValues,
       crossTabs,
     };
-  }, [rowVars, colVar, dataset, getUniqueValues]);
+  }, [rowVars, colVar, dataset.columns, filteredRecords, getUniqueValues]);
 
   // Calculate chi-square for each cross-tab
   const chiSquareResults = useMemo(() => {
@@ -295,7 +326,7 @@ export function TableBuilder({
       // Build data for chi-square calculation
       const data: { rowValue: string; colValue: string }[] = [];
 
-      for (const record of dataset.records) {
+      for (const record of filteredRecords) {
         const rowVal = record[ct.rowVar];
         const colVal = record[colVar];
 
@@ -314,11 +345,28 @@ export function TableBuilder({
     }
 
     return results;
-  }, [crossTabData, rowVars, colVar, dataset.records]);
+  }, [crossTabData, rowVars, colVar, filteredRecords]);
 
   const formatNumber = (n: number, decimals: number = 2): string => {
     if (!isFinite(n)) return 'N/A';
     return n.toFixed(decimals);
+  };
+
+  // Helper to get the correct percentage based on percentType
+  const getCellPercent = (cell: CrossTabCell): number => {
+    switch (tableOptions.percentType) {
+      case 'row': return cell.rowPercent;
+      case 'column': return cell.colPercent;
+      case 'total': return cell.totalPercent;
+    }
+  };
+
+  const getPercentLabel = (): string => {
+    switch (tableOptions.percentType) {
+      case 'row': return 'Row %';
+      case 'column': return 'Column %';
+      case 'total': return 'Total %';
+    }
   };
 
   // Export to CSV
@@ -342,9 +390,8 @@ export function TableBuilder({
             `"${rv}"`,
             ...crossTabData.colValues.map(cv => {
               const cell = ct.table.get(rv)!.get(cv)!;
-              return tableOptions.showPercent
-                ? `"${cell.count} (${cell.colPercent.toFixed(1)}%)"`
-                : String(cell.count);
+              const pct = getCellPercent(cell);
+              return `"${cell.count} (${pct.toFixed(1)}%)"`;
             }),
             String(ct.rowTotals.get(rv) || 0),
           ];
@@ -361,9 +408,7 @@ export function TableBuilder({
       });
     } else if (frequencyData.length > 0) {
       // Frequency table export
-      const headers = ['Variable', 'Value'];
-      if (tableOptions.showN) headers.push('N');
-      if (tableOptions.showPercent) headers.push('%');
+      const headers = ['Variable', 'Value', 'N', '%'];
       if (tableOptions.showCumPercent) headers.push('Cum %');
       csv = headers.join(',') + '\n';
 
@@ -371,9 +416,9 @@ export function TableBuilder({
         const csvRow = [
           row.isVariableHeader ? `"${row.variableLabel}"` : '',
           `"${row.value}"`,
+          String(row.count),
+          row.percent.toFixed(1) + '%',
         ];
-        if (tableOptions.showN) csvRow.push(String(row.count));
-        if (tableOptions.showPercent) csvRow.push(row.percent.toFixed(1) + '%');
         if (tableOptions.showCumPercent) csvRow.push(row.isMissing ? '-' : row.cumPercent.toFixed(1) + '%');
         csv += csvRow.join(',') + '\n';
       });
@@ -413,9 +458,8 @@ export function TableBuilder({
             rv,
             ...crossTabData.colValues.map(cv => {
               const cell = ct.table.get(rv)!.get(cv)!;
-              return tableOptions.showPercent
-                ? `${cell.count} (${cell.colPercent.toFixed(1)}%)`
-                : String(cell.count);
+              const pct = getCellPercent(cell);
+              return `${cell.count} (${pct.toFixed(1)}%)`;
             }),
             String(ct.rowTotals.get(rv) || 0),
           ];
@@ -431,9 +475,7 @@ export function TableBuilder({
       });
     } else if (frequencyData.length > 0) {
       // Frequency table
-      const headers = ['Variable', 'Value'];
-      if (tableOptions.showN) headers.push('N');
-      if (tableOptions.showPercent) headers.push('%');
+      const headers = ['Variable', 'Value', 'N', '%'];
       if (tableOptions.showCumPercent) headers.push('Cum %');
       text = headers.join('\t') + '\n';
 
@@ -441,9 +483,9 @@ export function TableBuilder({
         const cols = [
           row.isVariableHeader ? row.variableLabel : '',
           row.value,
+          String(row.count),
+          row.percent.toFixed(1) + '%',
         ];
-        if (tableOptions.showN) cols.push(String(row.count));
-        if (tableOptions.showPercent) cols.push(row.percent.toFixed(1) + '%');
         if (tableOptions.showCumPercent) cols.push(row.isMissing ? '-' : row.cumPercent.toFixed(1) + '%');
         text += cols.join('\t') + '\n';
       });
@@ -496,6 +538,85 @@ export function TableBuilder({
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left: Available Variables & Drop Zones */}
         <div className="space-y-4">
+          {/* Filter Data */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4">
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">Filter Data (optional)</h4>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Filter by</label>
+              <select
+                value={filterBy}
+                onChange={(e) => setFilterBy(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="">None (show all)</option>
+                {dataset.columns.map(col => (
+                  <option key={col.key} value={col.key}>{col.label}</option>
+                ))}
+              </select>
+
+              {/* Filter value checkboxes */}
+              {filterBy && filterValues.length > 0 && (
+                <div className="mt-2 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500">Select values:</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSelectedFilterValues(new Set(filterValues))}
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setSelectedFilterValues(new Set())}
+                        className="text-xs text-gray-500 hover:text-gray-700"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-1 max-h-32 overflow-auto">
+                    {(showAllFilterValues ? filterValues : filterValues.slice(0, 5)).map(value => {
+                      const count = dataset.records.filter(r => String(r[filterBy] ?? 'Unknown') === value).length;
+                      return (
+                        <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedFilterValues.has(value)}
+                            onChange={(e) => {
+                              const newSet = new Set(selectedFilterValues);
+                              if (e.target.checked) {
+                                newSet.add(value);
+                              } else {
+                                newSet.delete(value);
+                              }
+                              setSelectedFilterValues(newSet);
+                            }}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-gray-700 truncate flex-1">{value}</span>
+                          <span className="text-gray-400 text-xs">({count})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {filterValues.length > 5 && (
+                    <button
+                      onClick={() => setShowAllFilterValues(!showAllFilterValues)}
+                      className="mt-2 text-xs text-gray-600 hover:text-gray-900"
+                    >
+                      {showAllFilterValues ? 'Show less' : `Show ${filterValues.length - 5} more...`}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            {filterBy && selectedFilterValues.size > 0 && (
+              <div className="mt-2 text-xs text-gray-600">
+                Showing <span className="font-medium">{filteredRecords.length}</span> of {dataset.records.length} records
+              </div>
+            )}
+          </div>
+
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-3">Available Variables</h4>
             <p className="text-xs text-gray-500 mb-3">Drag to ROWS or COLUMN</p>
@@ -576,25 +697,45 @@ export function TableBuilder({
           {/* Table Options */}
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-3">Table Options</h4>
-            <div className="space-y-2 text-sm">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={tableOptions.showN}
-                  onChange={(e) => setTableOptions(prev => ({ ...prev, showN: e.target.checked }))}
-                  className="rounded border-gray-300"
-                />
-                Show N
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={tableOptions.showPercent}
-                  onChange={(e) => setTableOptions(prev => ({ ...prev, showPercent: e.target.checked }))}
-                  className="rounded border-gray-300"
-                />
-                Show %
-              </label>
+            <div className="space-y-3 text-sm">
+              {/* Percent Type - only relevant for cross-tabs */}
+              {colVar && (
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">Percentage type:</p>
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="percentType"
+                        checked={tableOptions.percentType === 'row'}
+                        onChange={() => setTableOptions(prev => ({ ...prev, percentType: 'row' }))}
+                        className="border-gray-300"
+                      />
+                      Row %
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="percentType"
+                        checked={tableOptions.percentType === 'column'}
+                        onChange={() => setTableOptions(prev => ({ ...prev, percentType: 'column' }))}
+                        className="border-gray-300"
+                      />
+                      Column %
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="percentType"
+                        checked={tableOptions.percentType === 'total'}
+                        onChange={() => setTableOptions(prev => ({ ...prev, percentType: 'total' }))}
+                        className="border-gray-300"
+                      />
+                      Total %
+                    </label>
+                  </div>
+                </div>
+              )}
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
@@ -660,22 +801,23 @@ export function TableBuilder({
                                 <td className="px-4 py-3 font-medium border-r border-gray-300">{rv}</td>
                                 {crossTabData.colValues.map(cv => {
                                   const cell = ct.table.get(rv)!.get(cv)!;
+                                  const pct = getCellPercent(cell);
                                   return (
                                     <td key={cv} className="px-4 py-3 text-center">
-                                      {tableOptions.showN && cell.count}
-                                      {tableOptions.showN && tableOptions.showPercent && ' '}
-                                      {tableOptions.showPercent && `(${cell.colPercent.toFixed(1)}%)`}
+                                      {cell.count} ({pct.toFixed(1)}%)
                                     </td>
                                   );
                                 })}
-                                <td className="px-4 py-3 text-center font-medium">{ct.rowTotals.get(rv)}</td>
+                                <td className="px-4 py-3 text-center font-medium">
+                                  {ct.rowTotals.get(rv)}{tableOptions.percentType === 'row' && ' (100.0%)'}
+                                </td>
                               </tr>
                             ))}
                             <tr className="bg-gray-50 font-medium">
                               <td className="px-4 py-3 border-t border-r border-gray-300">Total</td>
                               {crossTabData.colValues.map(cv => (
                                 <td key={cv} className="px-4 py-3 text-center border-t border-gray-300">
-                                  {ct.colTotals.get(cv)}
+                                  {ct.colTotals.get(cv)}{tableOptions.percentType === 'column' && ' (100.0%)'}
                                 </td>
                               ))}
                               <td className="px-4 py-3 text-center border-t border-gray-300">{ct.grandTotal}</td>
@@ -685,7 +827,7 @@ export function TableBuilder({
                       </div>
                       {ct.excludedCount > 0 && (
                         <p className="text-xs text-gray-500 mt-3">
-                          Note: Column percentages shown. Excludes {ct.excludedCount} records with missing values.
+                          Note: {getPercentLabel()} shown. Excludes {ct.excludedCount} records with missing values.
                         </p>
                       )}
 
@@ -729,19 +871,15 @@ export function TableBuilder({
                 // Frequency table preview
                 <div>
                   <p className="text-sm font-medium text-gray-900 mb-4">
-                    Table: Characteristics of Cases (N = {dataset.records.length})
+                    Table: Characteristics of Cases (N = {filteredRecords.length})
                   </p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm border border-gray-300">
                       <thead className="bg-gray-50">
                         <tr>
                           <th className="px-4 py-3 text-left border-b border-gray-300">Characteristic</th>
-                          {tableOptions.showN && (
-                            <th className="px-4 py-3 text-right border-b border-gray-300">N</th>
-                          )}
-                          {tableOptions.showPercent && (
-                            <th className="px-4 py-3 text-right border-b border-gray-300">%</th>
-                          )}
+                          <th className="px-4 py-3 text-right border-b border-gray-300">N</th>
+                          <th className="px-4 py-3 text-right border-b border-gray-300">%</th>
                           {tableOptions.showCumPercent && (
                             <th className="px-4 py-3 text-right border-b border-gray-300">Cum %</th>
                           )}
@@ -764,7 +902,7 @@ export function TableBuilder({
                                 <tr className="bg-gray-50">
                                   <td
                                     className="px-4 py-2 font-semibold text-gray-900"
-                                    colSpan={1 + (tableOptions.showN ? 1 : 0) + (tableOptions.showPercent ? 1 : 0) + (tableOptions.showCumPercent ? 1 : 0)}
+                                    colSpan={3 + (tableOptions.showCumPercent ? 1 : 0)}
                                   >
                                     {row.variableLabel}
                                   </td>
@@ -772,12 +910,8 @@ export function TableBuilder({
                               )}
                               <tr className={`hover:bg-gray-50 ${row.isMissing ? 'text-gray-500' : ''}`}>
                                 <td className="px-4 py-2 pl-8">{row.value}</td>
-                                {tableOptions.showN && (
-                                  <td className="px-4 py-2 text-right">{row.count}</td>
-                                )}
-                                {tableOptions.showPercent && (
-                                  <td className="px-4 py-2 text-right">{row.percent.toFixed(1)}</td>
-                                )}
+                                <td className="px-4 py-2 text-right">{row.count}</td>
+                                <td className="px-4 py-2 text-right">{row.percent.toFixed(1)}</td>
                                 {tableOptions.showCumPercent && (
                                   <td className="px-4 py-2 text-right">{row.isMissing ? '-' : row.cumPercent.toFixed(1)}</td>
                                 )}

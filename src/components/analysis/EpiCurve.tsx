@@ -469,6 +469,38 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     };
   }, [curveData, useManualDateRange, manualStartDate, manualEndDate]);
 
+  // Calculate annotation offsets for labels that share the same bin
+  // This prevents labels from overlapping when multiple annotations fall on the same day
+  const annotationOffsets = useMemo(() => {
+    const offsets = new Map<string, number>();
+    if (displayData.bins.length === 0) return offsets;
+
+    // Helper to find bin index for a date
+    const getBinIndexForDate = (date: Date): number => {
+      const time = date.getTime();
+      const firstBinStart = displayData.bins[0].startDate.getTime();
+      const lastBinEnd = displayData.bins[displayData.bins.length - 1].endDate.getTime();
+
+      if (time < firstBinStart) return -1; // Before first bin
+      if (time >= lastBinEnd) return displayData.bins.length; // After last bin
+
+      return displayData.bins.findIndex(b =>
+        time >= b.startDate.getTime() && time < b.endDate.getTime()
+      );
+    };
+
+    // Group annotations by bin index
+    const binCounts = new Map<number, number>();
+    for (const annotation of allAnnotations) {
+      const binIndex = getBinIndexForDate(annotation.date);
+      const count = binCounts.get(binIndex) || 0;
+      offsets.set(annotation.id, count * 20); // 20px per stacked label
+      binCounts.set(binIndex, count + 1);
+    }
+
+    return offsets;
+  }, [allAnnotations, displayData.bins]);
+
   // Helper to get default date from dataset range
   const getDefaultAnnotationDate = (): string => {
     if (curveData.bins.length === 0) {
@@ -1318,6 +1350,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                         bins={displayData.bins}
                         barWidth={barWidth}
                         chartHeight={chartHeight}
+                        labelOffset={annotationOffsets.get(ann.id) || 0}
                       />
                     ))}
 
@@ -1587,11 +1620,12 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
 }
 
 // Annotation marker component - professional dashed line style (per CDC guidelines)
-function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
+function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset = 0 }: {
   annotation: Annotation;
   bins: EpiCurveData['bins'];
   barWidth: number;
   chartHeight: number;
+  labelOffset?: number;
 }) {
   if (bins.length === 0) return null;
 
@@ -1682,7 +1716,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
           className="absolute text-xs font-medium whitespace-nowrap bg-white/80 px-1 rounded"
           style={{
             color: annotation.color,
-            top: 4,
+            top: 4 + labelOffset,
             left: 4,
           }}
         >
@@ -1712,7 +1746,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight }: {
         className="absolute text-xs font-medium whitespace-nowrap bg-white/80 px-1 rounded"
         style={{
           color: annotation.color,
-          top: 4,
+          top: 4 + labelOffset,
           left: 4,
         }}
       >
