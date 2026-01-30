@@ -138,6 +138,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   // Exposure window estimation
   const [selectedPathogen, setSelectedPathogen] = useState<string>('');
   const [showExposureWindow, setShowExposureWindow] = useState(false);
+  const [showExposurePanel, setShowExposurePanel] = useState(false);
 
   // 7-1-7 Response Timeline
   const [show717Panel, setShow717Panel] = useState(false);
@@ -1081,6 +1082,70 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
             )}
           </div>
 
+          {/* Exposure Estimation */}
+          <div className="border-t border-gray-200 pt-4">
+            <button
+              onClick={() => setShowExposurePanel(!showExposurePanel)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <span className="text-sm font-medium text-gray-700">Exposure Estimation</span>
+              <span className="text-gray-400">{showExposurePanel ? '−' : '+'}</span>
+            </button>
+
+            {showExposurePanel && (
+              <div className="mt-3 space-y-3">
+                {/* Pathogen Selection */}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Suspected Pathogen</label>
+                  <select
+                    value={selectedPathogen}
+                    onChange={(e) => {
+                      setSelectedPathogen(e.target.value);
+                      if (e.target.value) setShowExposureWindow(true);
+                    }}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                  >
+                    <option value="">Select pathogen...</option>
+                    {Object.keys(PATHOGEN_INCUBATION).sort().map(pathogen => (
+                      <option key={pathogen} value={pathogen}>
+                        {pathogen} ({PATHOGEN_INCUBATION[pathogen].min}-{PATHOGEN_INCUBATION[pathogen].max}d)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Exposure Window Toggle & Info */}
+                {selectedPathogen && (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showExposureWindow}
+                        onChange={(e) => setShowExposureWindow(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-gray-700">Show estimated exposure window</span>
+                    </label>
+
+                    {exposureWindow && (
+                      <div className="p-2 bg-red-50 border border-red-100 rounded-lg">
+                        <p className="text-xs font-medium text-red-700 mb-1">Estimated Exposure Period</p>
+                        <p className="text-xs text-red-600">
+                          {exposureWindow.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {' '}&ndash;{' '}
+                          {exposureWindow.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                        <p className="text-xs text-red-400 mt-1">
+                          Based on {selectedPathogen} incubation ({exposureWindow.incubation.min}-{exposureWindow.incubation.max} days)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Advanced Options */}
           <AdvancedOptions>
             {/* Color Scheme */}
@@ -1200,59 +1265,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               </div>
             </div>
 
-            {/* Exposure Estimation */}
-            <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Exposure Estimation</p>
-
-              {/* Pathogen Selection */}
-              <div className="mb-3">
-                <label className="block text-xs text-gray-500 mb-1">Suspected Pathogen</label>
-                <select
-                  value={selectedPathogen}
-                  onChange={(e) => {
-                    setSelectedPathogen(e.target.value);
-                    if (e.target.value) setShowExposureWindow(true);
-                  }}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                >
-                  <option value="">Select pathogen...</option>
-                  {Object.keys(PATHOGEN_INCUBATION).sort().map(pathogen => (
-                    <option key={pathogen} value={pathogen}>
-                      {pathogen} ({PATHOGEN_INCUBATION[pathogen].min}-{PATHOGEN_INCUBATION[pathogen].max}d)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Exposure Window Toggle & Info */}
-              {selectedPathogen && (
-                <div className="space-y-2 mb-3">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showExposureWindow}
-                      onChange={(e) => setShowExposureWindow(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-gray-700">Show estimated exposure window</span>
-                  </label>
-
-                  {exposureWindow && (
-                    <div className="p-2 bg-red-50 border border-red-100 rounded-lg">
-                      <p className="text-xs font-medium text-red-700 mb-1">Estimated Exposure Period</p>
-                      <p className="text-xs text-red-600">
-                        {exposureWindow.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        {' '}&ndash;{' '}
-                        {exposureWindow.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
-                      <p className="text-xs text-red-400 mt-1">
-                        Based on {selectedPathogen} incubation ({exposureWindow.incubation.min}-{exposureWindow.incubation.max} days)
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </AdvancedOptions>
 
           {/* Help Panel */}
