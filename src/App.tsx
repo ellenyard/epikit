@@ -262,12 +262,18 @@ function App() {
     ));
   }, []);
 
-  /** Delete a dataset and clear selection if it was active */
+  /** Delete a dataset, clean up its edit log entries, and select another dataset if needed */
   const deleteDataset = useCallback((id: string) => {
-    setDatasets(prev => prev.filter(d => d.id !== id));
-    if (activeDatasetId === id) {
-      setActiveDatasetId(null);
-    }
+    setDatasets(prev => {
+      const remaining = prev.filter(d => d.id !== id);
+      // Auto-select another dataset if the deleted one was active
+      if (activeDatasetId === id) {
+        setActiveDatasetId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      return remaining;
+    });
+    // Clean up edit log entries for the deleted dataset
+    setEditLog(prev => prev.filter(entry => entry.datasetId !== id));
   }, [activeDatasetId]);
 
   /** Add a new record to a dataset (from form submission or manual entry) */
@@ -772,6 +778,7 @@ function App() {
             onImportData={() => setShowImport(true)}
             onOpenHelp={() => setShowHelpCenter(true)}
             onSelectDataset={(id) => setActiveDatasetId(id)}
+            onDeleteDataset={deleteDataset}
           />
         ) : activeModule === 'forms' ? (
           formView === 'builder' ? (
