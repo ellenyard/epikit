@@ -305,11 +305,11 @@ export function SpotMap({ dataset }: SpotMapProps) {
     return dataset.records.length - mapCases.length;
   }, [dataset.records.length, mapCases.length, latColumn, lngColumn]);
 
-  // Get unique classification values for legend
+  // Get unique classification values for legend (use filteredCases so legend reflects active filters)
   const classificationValues = useMemo(() => {
-    const values = new Set(mapCases.map(c => c.classification));
+    const values = new Set(filteredCases.map(c => c.classification));
     return Array.from(values).sort();
-  }, [mapCases]);
+  }, [filteredCases]);
 
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
