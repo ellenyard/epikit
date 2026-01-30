@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
+import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
 import { TabHeader, HelpPanel, ResultsActions, ExportIcons, StatTooltip, statDefinitions } from '../shared';
 
@@ -286,31 +287,14 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     return filteredRecords.filter(isCase).length;
   }, [filteredRecords, outcomeVar, caseValues]);
 
-  const formatNumber = (n: number, decimals: number = 2): string => {
+  const formatMeasure = (n: number): string => {
     if (!isFinite(n)) return 'Undefined';
-    return n.toFixed(decimals);
-  };
-
-  // Format to significant figures
-  const formatSigFigs = (n: number, sigFigs: number = 2): string => {
-    if (!isFinite(n) || n === 0) return '0';
-    const magnitude = Math.floor(Math.log10(Math.abs(n)));
-    const precision = sigFigs - 1 - magnitude;
-    if (precision < 0) {
-      return Math.round(n / Math.pow(10, -precision)) * Math.pow(10, -precision) + '';
-    }
-    return n.toFixed(Math.max(0, precision));
-  };
-
-  // Format percentage based on sample size: 2 sig figs if n < 1000, 3 sig figs if n >= 1000
-  const formatPercent = (value: number, sampleSize: number): string => {
-    const sigFigs = sampleSize >= 1000 ? 3 : 2;
-    return formatSigFigs(value, sigFigs);
+    return formatSigFigs(n, 3);
   };
 
   const formatCI = (ci: [number, number]): string => {
     if (!isFinite(ci[0]) || !isFinite(ci[1])) return '(Undefined)';
-    return `(${ci[0].toFixed(2)} - ${ci[1].toFixed(2)})`;
+    return `(${formatSigFigs(ci[0], 3)} - ${formatSigFigs(ci[1], 3)})`;
   };
 
   // Toggle exposure selection
@@ -454,15 +438,15 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.a}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalExposed}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900 border-r border-gray-200">
-                          {formatPercent(r.attackRateExposed * 100, r.total)}%
+                          {formatStatPercent(r.attackRateExposed * 100, r.total)}%
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.table.c}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">{r.totalUnexposed}</td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900 border-r border-gray-200">
-                          {formatPercent(r.attackRateUnexposed * 100, r.total)}%
+                          {formatStatPercent(r.attackRateUnexposed * 100, r.total)}%
                         </td>
                         <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
-                          {formatNumber(measure)}
+                          {formatMeasure(measure)}
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-500">
                           {formatCI(ci)}
@@ -471,13 +455,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     ) : (
                       <>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {r.table.a} ({formatPercent((r.table.a / r.totalDisease) * 100, r.total)}%)
+                          {r.table.a} ({formatStatPercent((r.table.a / r.totalDisease) * 100, r.total)}%)
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {r.table.b} ({formatPercent((r.table.b / r.totalNoDisease) * 100, r.total)}%)
+                          {r.table.b} ({formatStatPercent((r.table.b / r.totalNoDisease) * 100, r.total)}%)
                         </td>
                         <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
-                          {formatNumber(measure)}
+                          {formatMeasure(measure)}
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-500">
                           {formatCI(ci)}
@@ -684,7 +668,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
             <div className="mt-3 space-y-2">
               <div className="text-sm text-gray-700">
                 <strong>{totalCases}</strong> cases identified out of <strong>{filteredRecords.length}</strong> records
-                ({formatPercent((totalCases / filteredRecords.length) * 100, filteredRecords.length)}%)
+                ({formatStatPercent((totalCases / filteredRecords.length) * 100, filteredRecords.length)}%)
               </div>
               {/* Case/Control mapping display */}
               {outcomeValues.length > 0 && (
@@ -792,8 +776,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
                 return (
                   <p className="text-sm text-gray-700 leading-relaxed">
-                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The attack rate ratio (ARR) for {exposureName} is {formatNumber(arr)} with a 95% CI of {formatCI(ci)}.
-                    This means that people who were exposed to {exposureName} ({exposedValue}) were {formatNumber(arr)} times {arr > 1 ? 'more' : 'less'} likely to become ill compared to those who were not exposed.
+                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The attack rate ratio (ARR) for {exposureName} is {formatMeasure(arr)} with a 95% CI of {formatCI(ci)}.
+                    This means that people who were exposed to {exposureName} ({exposedValue}) were {formatMeasure(arr)} times {arr > 1 ? 'more' : 'less'} likely to become ill compared to those who were not exposed.
                     The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
                     This suggests a {arr > 2 ? 'strong' : arr > 1.5 ? 'moderate' : arr > 1 ? 'weak' : ''} {arr > 1 ? 'positive association' : arr < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
                     An ARR greater than 1.0 indicates increased risk, while an ARR less than 1.0 suggests the exposure may be protective.
@@ -819,8 +803,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
                 return (
                   <p className="text-sm text-gray-700 leading-relaxed">
-                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The odds ratio (OR) for {exposureName} is {formatNumber(or)} with a 95% CI of {formatCI(ci)}.
-                    This means that cases had {formatNumber(or)} times the odds of being exposed to {exposureName} ({exposedValue}) compared to controls.
+                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The odds ratio (OR) for {exposureName} is {formatMeasure(or)} with a 95% CI of {formatCI(ci)}.
+                    This means that cases had {formatMeasure(or)} times the odds of being exposed to {exposureName} ({exposedValue}) compared to controls.
                     The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
                     This suggests a {or > 3 ? 'strong' : or > 2 ? 'moderate' : or > 1 ? 'weak' : ''} {or > 1 ? 'positive association' : or < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
                     An OR greater than 1.0 indicates that cases had higher odds of exposure (suggesting the exposure may increase risk),
