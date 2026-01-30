@@ -150,3 +150,43 @@ export function getNumberInputPattern(config: LocaleConfig): string {
   // Allow both locale format and period format for flexibility
   return `^-?\\d+(${thousands}\\d{3})*([.,]\\d+)?$`;
 }
+
+/**
+ * Format a number to a specified number of significant figures.
+ * More appropriate than fixed decimal places for statistical displays,
+ * as it adapts precision to the magnitude of the number.
+ *
+ * Examples with 3 sig figs:
+ *   0.00456 → "0.00456"
+ *   1.23    → "1.23"
+ *   45.6    → "45.6"
+ *   1234    → "1230"
+ */
+export function formatSigFigs(n: number, sigFigs: number = 3): string {
+  if (!isFinite(n)) return '-';
+  if (n === 0) return '0';
+  const magnitude = Math.floor(Math.log10(Math.abs(n)));
+  const precision = sigFigs - 1 - magnitude;
+  if (precision < 0) {
+    const factor = Math.pow(10, -precision);
+    return String(Math.round(n / factor) * factor);
+  }
+  return n.toFixed(Math.max(0, precision));
+}
+
+/**
+ * Format a percentage using significant figures appropriate to the sample size.
+ * Uses 2 significant figures for n < 1000, 3 for n >= 1000.
+ * Prevents rounding artifacts at the 0% and 100% boundaries.
+ */
+export function formatStatPercent(value: number, sampleSize: number): string {
+  if (!isFinite(value)) return '-';
+  if (value === 0) return '0';
+  if (value === 100) return '100';
+  const sigFigs = sampleSize >= 1000 ? 3 : 2;
+  const formatted = formatSigFigs(value, sigFigs);
+  // Prevent misleading 0% or 100% when value is not exactly 0 or 100
+  if (formatted === '0' && value > 0) return '<1';
+  if (formatted === '100' && value < 100) return '>99';
+  return formatted;
+}
