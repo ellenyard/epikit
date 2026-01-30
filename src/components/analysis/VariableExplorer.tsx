@@ -324,7 +324,7 @@ export function VariableExplorer({
                 <div className="space-y-2">
                   <button
                     onClick={() => setShowRecodeModal(true)}
-                    className="w-full px-3 py-2 text-sm text-left text-gray-700 hover:bg-gray-50 rounded border border-gray-200"
+                    className="w-full px-3 py-2 text-sm text-left text-blue-600 hover:bg-blue-50 rounded border border-blue-200 font-medium"
                   >
                     Recode variable...
                   </button>
