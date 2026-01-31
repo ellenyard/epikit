@@ -118,36 +118,81 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
 }
 
 export function SpotMap({ dataset }: SpotMapProps) {
-  const [latColumn, setLatColumn] = useState<string>('');
-  const [lngColumn, setLngColumn] = useState<string>('');
-  const [classificationColumn, setClassificationColumn] = useState<string>('');
-  const [filterBy, setFilterBy] = useState<string>('');
-  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
-  const [colorScheme, setColorScheme] = useState<ColorScheme>('classification');
-  const [markerSize, setMarkerSize] = useState<number>(8);
-  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>('street');
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Persistence key for this dataset
+  const persistenceKey = `epikit_spotmap_${dataset.id}`;
+
+  // Load persisted state once during initialization (avoids race conditions with auto-detect effects)
+  const [saved] = useState<Record<string, unknown>>(() => {
+    try {
+      const raw = localStorage.getItem(persistenceKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // State initialized from localStorage
+  const [latColumn, setLatColumn] = useState<string>(() => (saved.latColumn as string) || '');
+  const [lngColumn, setLngColumn] = useState<string>(() => (saved.lngColumn as string) || '');
+  const [classificationColumn, setClassificationColumn] = useState<string>(() => (saved.classificationColumn as string) || '');
+  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    const arr = saved.selectedFilterValues;
+    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
+  });
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'classification');
+  const [markerSize, setMarkerSize] = useState<number>(() => (saved.markerSize as number) ?? 8);
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>(() => (saved.mapStyle as 'street' | 'satellite' | 'topo') || 'street');
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
 
   // Privacy safeguards
-  const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(true);
-  const [jitterDistance, setJitterDistance] = useState<number>(500); // meters
+  const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(() => saved.obfuscateLocations !== undefined ? saved.obfuscateLocations as boolean : true);
+  const [jitterDistance, setJitterDistance] = useState<number>(() => (saved.jitterDistance as number) ?? 500);
 
   // Map title and caption
-  const [mapTitle, setMapTitle] = useState<string>('');
-  const [mapCaption, setMapCaption] = useState<string>('');
+  const [mapTitle, setMapTitle] = useState<string>(() => (saved.mapTitle as string) ?? '');
+  const [mapCaption, setMapCaption] = useState<string>(() => (saved.mapCaption as string) ?? '');
 
   // North arrow
-  const [showNorthArrow, setShowNorthArrow] = useState<boolean>(false);
+  const [showNorthArrow, setShowNorthArrow] = useState<boolean>(() => saved.showNorthArrow !== undefined ? saved.showNorthArrow as boolean : false);
 
   // Point clustering
-  const [enableClustering, setEnableClustering] = useState<boolean>(false);
+  const [enableClustering, setEnableClustering] = useState<boolean>(() => saved.enableClustering !== undefined ? saved.enableClustering as boolean : false);
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
   const [isResizing, setIsResizing] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Save all state to localStorage when it changes
+  useEffect(() => {
+    try {
+      const toSave = {
+        latColumn,
+        lngColumn,
+        classificationColumn,
+        colorScheme,
+        markerSize,
+        mapStyle,
+        obfuscateLocations,
+        jitterDistance,
+        mapTitle,
+        mapCaption,
+        showNorthArrow,
+        enableClustering,
+        filterBy,
+        selectedFilterValues: Array.from(selectedFilterValues),
+      };
+      localStorage.setItem(persistenceKey, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('Failed to save spot map settings:', e);
+    }
+  }, [persistenceKey, latColumn, lngColumn, classificationColumn, colorScheme, markerSize,
+    mapStyle, obfuscateLocations, jitterDistance, mapTitle, mapCaption, showNorthArrow,
+    enableClustering, filterBy, selectedFilterValues]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

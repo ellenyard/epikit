@@ -64,6 +64,19 @@ export function TableBuilder({
   colVar: controlledColVar,
   onColVarChange,
 }: TableBuilderProps) {
+  // Persistence key for this dataset
+  const persistenceKey = `epikit_tablebuilder_${dataset.id}`;
+
+  // Load persisted state once during initialization
+  const [saved] = useState<Record<string, unknown>>(() => {
+    try {
+      const raw = localStorage.getItem(persistenceKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Use controlled state if provided, otherwise use local state
   const [internalRowVars, setInternalRowVars] = useState<string[]>([]);
   const [internalColVar, setInternalColVar] = useState<string>('');
@@ -74,17 +87,40 @@ export function TableBuilder({
   const setColVar = onColVarChange || setInternalColVar;
 
   const [draggedVar, setDraggedVar] = useState<string | null>(null);
-  const [tableOptions, setTableOptions] = useState<TableOptions>({
-    percentType: 'column',
-    showCumPercent: false,
-    includeMissing: true,
+  const [tableOptions, setTableOptions] = useState<TableOptions>(() => {
+    const savedOpts = saved.tableOptions as Record<string, unknown> | undefined;
+    if (savedOpts) {
+      return {
+        percentType: (savedOpts.percentType as PercentType) || 'column',
+        showCumPercent: savedOpts.showCumPercent !== undefined ? savedOpts.showCumPercent as boolean : false,
+        includeMissing: savedOpts.includeMissing !== undefined ? savedOpts.includeMissing as boolean : true,
+      };
+    }
+    return { percentType: 'column', showCumPercent: false, includeMissing: true };
   });
   const [copySuccess, setCopySuccess] = useState(false);
 
   // Filter state
-  const [filterBy, setFilterBy] = useState<string>('');
-  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    const arr = saved.selectedFilterValues;
+    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
+  });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
+
+  // Save state to localStorage when it changes
+  useEffect(() => {
+    try {
+      const toSave = {
+        tableOptions,
+        filterBy,
+        selectedFilterValues: Array.from(selectedFilterValues),
+      };
+      localStorage.setItem(persistenceKey, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('Failed to save table builder settings:', e);
+    }
+  }, [persistenceKey, tableOptions, filterBy, selectedFilterValues]);
 
   // Apply initial row vars when they change (for quick actions from Explorer)
   useEffect(() => {
