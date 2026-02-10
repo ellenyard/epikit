@@ -218,7 +218,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       <li>Drag field types from the palette onto the canvas</li>
                       <li>Configure field properties (label, options, validation, help text)</li>
                       <li>Use <strong>Skip Logic</strong> to show/hide fields based on answers</li>
-                      <li>Save your form and use it in the <strong>Collect</strong> module</li>
+                      <li>Save your form and export it as JSON</li>
                     </ol>
                   </div>
                 </section>
