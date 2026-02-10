@@ -64,7 +64,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-3">Welcome to EpiKit</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Your outbreak investigation toolkit for collecting, cleaning, and analyzing epidemiological data
+            Your outbreak investigation toolkit for cleaning and analyzing epidemiological data
           </p>
         </div>
 

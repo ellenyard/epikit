@@ -7,7 +7,6 @@
  * Application Structure:
  * - Dashboard: Landing page with quick actions and dataset overview
  * - Forms: Build custom data collection forms (drag-and-drop builder)
- * - Collect: Enter data using built forms
  * - Review/Clean: Data quality checks, editing, and variable creation
  * - Epi Curve: Epidemic curve visualization with stratification
  * - Spot Map: Geographic visualization using Leaflet/OpenStreetMap
@@ -15,9 +14,8 @@
  *
  * Data Flow:
  * 1. Forms created in Form Builder generate form definitions
- * 2. Data collected via Collect module creates records in datasets
- * 3. Data can also be imported via CSV/Excel in any analysis module
- * 4. All data persisted to localStorage and can be exported as project files
+ * 2. Data can be imported via CSV/Excel in any analysis module
+ * 3. All data persisted to localStorage and can be exported as project files
  *
  * State Management:
  * - Uses React useState/useCallback for local state
@@ -31,7 +29,6 @@ import { FormBuilder } from './components/FormBuilder';
 import { FormPreview } from './components/FormPreview';
 import { ExportModal } from './components/ExportModal';
 import { Review } from './components/review/Review';
-import { Collect } from './components/collect/Collect';
 import { EpiCurve } from './components/analysis/EpiCurve';
 import { SpotMap } from './components/analysis/SpotMap';
 import { AnalysisWorkflow } from './components/analysis/AnalysisWorkflow';
@@ -43,7 +40,6 @@ import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
 import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
-import { formToColumns, formDataToRecord, generateDatasetName } from './utils/formToDataset';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
@@ -51,7 +47,7 @@ import { exportProject, downloadProject, parseProjectFile } from './utils/persis
 import type { VariableConfig } from './types/analysis';
 
 /** Available navigation modules in the app */
-type Module = 'dashboard' | 'forms' | 'collect' | 'review' | 'epicurve' | 'spotmap' | 'analysis';
+type Module = 'dashboard' | 'forms' | 'review' | 'epicurve' | 'spotmap' | 'analysis';
 
 /** Form builder can be in builder or preview mode */
 type FormView = 'builder' | 'preview';
@@ -114,7 +110,7 @@ function App() {
 
   // ---------------------------------------------------------------------------
   // FORM DEFINITIONS STATE
-  // Saved forms that can be used for data collection. Persisted to localStorage.
+  // Saved forms that can be used for export. Persisted to localStorage.
   // ---------------------------------------------------------------------------
   const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => {
     const saved = localStorage.getItem('epikit_formDefinitions');
@@ -130,7 +126,7 @@ function App() {
 
   // ---------------------------------------------------------------------------
   // DATASET STATE
-  // Core data storage - shared across Collect, Review, and Analysis modules.
+  // Core data storage - shared across Review and Analysis modules.
   // Each dataset has columns (schema) and records (rows of data).
   // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
@@ -193,45 +189,6 @@ function App() {
       setCurrentFormId(newForm.id);
     }
   }, [currentFormId]);
-
-  // Handle form submission from Collect module
-  const handleFormSubmit = useCallback((formId: string, data: Record<string, unknown>) => {
-    const form = formDefinitions.find(f => f.id === formId);
-    if (!form) return;
-
-    const datasetName = generateDatasetName(form.name);
-    const existingDataset = datasets.find(d => d.name === datasetName && d.source === 'form');
-
-    if (existingDataset) {
-      // Add record to existing dataset
-      const newRecord: CaseRecord = {
-        id: crypto.randomUUID(),
-        ...formDataToRecord(data, form.fields),
-      };
-      setDatasets(prev => prev.map(d =>
-        d.id === existingDataset.id
-          ? { ...d, records: [...d.records, newRecord], updatedAt: new Date().toISOString() }
-          : d
-      ));
-    } else {
-      // Create new dataset
-      const columns = formToColumns(form.fields);
-      const newRecord: CaseRecord = {
-        id: crypto.randomUUID(),
-        ...formDataToRecord(data, form.fields),
-      };
-      const newDataset: Dataset = {
-        id: crypto.randomUUID(),
-        name: datasetName,
-        source: 'form',
-        columns,
-        records: [newRecord],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setDatasets(prev => [...prev, newDataset]);
-    }
-  }, [formDefinitions, datasets]);
 
   // ---------------------------------------------------------------------------
   // DATASET CRUD OPERATIONS
@@ -410,15 +367,6 @@ function App() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, [editLog, datasets]);
-
-  // Get submission count for a form
-  const getFormSubmissionCount = useCallback((formId: string) => {
-    const form = formDefinitions.find(f => f.id === formId);
-    if (!form) return 0;
-    const datasetName = generateDatasetName(form.name);
-    const dataset = datasets.find(d => d.name === datasetName && d.source === 'form');
-    return dataset?.records.length || 0;
-  }, [formDefinitions, datasets]);
 
   // Handle data import
   const handleImport = useCallback((name: string, columns: DataColumn[], records: CaseRecord[]) => {
@@ -610,16 +558,6 @@ function App() {
                 Forms
               </button>
               <button
-                onClick={() => setActiveModule('collect')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'collect'
-                    ? 'bg-slate-700 text-white'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Collect
-              </button>
-              <button
                 onClick={() => setActiveModule('review')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'review'
@@ -792,23 +730,6 @@ function App() {
           ) : (
             <FormPreview items={previewItems} onBack={handleBackToBuilder} />
           )
-        ) : activeModule === 'collect' ? (
-          <Collect
-            formDefinitions={formDefinitions}
-            onSubmit={handleFormSubmit}
-            getSubmissionCount={getFormSubmissionCount}
-            onViewInAnalysis={(formId) => {
-              const form = formDefinitions.find(f => f.id === formId);
-              if (form) {
-                const datasetName = generateDatasetName(form.name);
-                const dataset = datasets.find(d => d.name === datasetName);
-                if (dataset) {
-                  setActiveDatasetId(dataset.id);
-                }
-              }
-              setActiveModule('review');
-            }}
-          />
         ) : activeDataset ? (
           // Modules that require a dataset
           activeModule === 'review' ? (
