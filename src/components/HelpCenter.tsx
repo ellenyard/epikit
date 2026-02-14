@@ -214,7 +214,21 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                 </section>
 
                 <section>
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">4. Exporting Results</h4>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">4. Building Custom Forms</h4>
+                  <div className="prose prose-sm text-gray-600">
+                    <p className="mb-3">Create data collection instruments:</p>
+                    <ol className="list-decimal ml-6 space-y-2">
+                      <li>Navigate to the <strong>Forms</strong> module</li>
+                      <li>Drag field types from the palette onto the canvas</li>
+                      <li>Configure field properties (label, options, validation, help text)</li>
+                      <li>Use <strong>Skip Logic</strong> to show/hide fields based on answers</li>
+                      <li>Save your form and export it as JSON</li>
+                    </ol>
+                  </div>
+                </section>
+
+                <section>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">5. Exporting Results</h4>
                   <div className="prose prose-sm text-gray-600">
                     <ul className="list-disc ml-6 space-y-2">
                       <li><strong>Export CSV:</strong> Download your cleaned dataset from the dataset selector bar</li>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Dataset } from '../types/analysis';
 
 interface DashboardProps {
@@ -8,6 +8,7 @@ interface DashboardProps {
   onImportData: () => void;
   onOpenHelp: () => void;
   onSelectDataset: (datasetId: string) => void;
+  onDeleteDataset: (id: string) => void;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
@@ -17,7 +18,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onImportData,
   onOpenHelp,
   onSelectDataset,
+  onDeleteDataset,
 }) => {
+  const [deleteConfirmDataset, setDeleteConfirmDataset] = useState<Dataset | null>(null);
+
   // Get datasets sorted by most recent
   const recentDatasets = [...datasets].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -60,7 +64,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-3">Welcome to EpiKit</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Your outbreak investigation toolkit for collecting, cleaning, and analyzing epidemiological data
+            Your outbreak investigation toolkit for cleaning and analyzing epidemiological data
           </p>
         </div>
 
@@ -147,39 +151,56 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {recentDatasets.length > 0 ? (
             <div className="space-y-2">
               {recentDatasets.map((dataset) => (
-                <button
+                <div
                   key={dataset.id}
-                  onClick={() => handleDatasetClick(dataset)}
-                  className="w-full flex items-center justify-between p-4 rounded-lg border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors text-left focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex items-center gap-2 p-4 rounded-lg border border-gray-100 hover:bg-gray-50 hover:border-gray-200 transition-colors"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                      dataset.source === 'form' ? 'bg-green-100' : 'bg-blue-100'
-                    }`}>
-                      {dataset.source === 'form' ? (
-                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      ) : (
-                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                      )}
+                  <button
+                    onClick={() => handleDatasetClick(dataset)}
+                    className="flex-1 flex items-center justify-between text-left focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                        dataset.source === 'form' ? 'bg-green-100' : 'bg-blue-100'
+                      }`}>
+                        {dataset.source === 'form' ? (
+                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        ) : (
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                          </svg>
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-gray-900">{dataset.name}</h3>
+                        <p className="text-sm text-gray-500">
+                          {dataset.records.length} record{dataset.records.length !== 1 ? 's' : ''} · {dataset.columns.length} variable{dataset.columns.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-medium text-gray-900">{dataset.name}</h3>
-                      <p className="text-sm text-gray-500">
-                        {dataset.records.length} record{dataset.records.length !== 1 ? 's' : ''} · {dataset.columns.length} variable{dataset.columns.length !== 1 ? 's' : ''}
-                      </p>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-gray-400">{formatDate(dataset.updatedAt)}</span>
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-400">{formatDate(dataset.updatedAt)}</span>
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirmDataset(dataset);
+                    }}
+                    className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                    title="Delete dataset"
+                    aria-label={`Delete ${dataset.name}`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                     </svg>
-                  </div>
-                </button>
+                  </button>
+                </div>
               ))}
             </div>
           ) : (
@@ -229,6 +250,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmDataset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Dataset?</h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete "<span className="font-medium">{deleteConfirmDataset.name}</span>"?
+              This will permanently remove {deleteConfirmDataset.records.length} record{deleteConfirmDataset.records.length !== 1 ? 's' : ''} and all associated edit history. This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirmDataset(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  onDeleteDataset(deleteConfirmDataset.id);
+                  setDeleteConfirmDataset(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
