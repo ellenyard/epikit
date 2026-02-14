@@ -23,6 +23,19 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartBodyRef = useRef<HTMLDivElement>(null);
 
+  // Persistence key for this dataset
+  const persistenceKey = `epikit_epicurve_${dataset.id}`;
+
+  // Load persisted state once during initialization (avoids race conditions with auto-detect effects)
+  const [saved] = useState<Record<string, unknown>>(() => {
+    try {
+      const raw = localStorage.getItem(persistenceKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
   const [isResizing, setIsResizing] = useState(false);
@@ -50,27 +63,40 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     };
   }, [isResizing]);
 
-  // Configuration state
-  const [dateColumn, setDateColumn] = useState<string>('');
-  const [timeColumn, setTimeColumn] = useState<string>('');
-  const [binSize, setBinSize] = useState<BinSize>('daily');
-  const [stratifyBy, setStratifyBy] = useState<string>('');
-  const [colorScheme, setColorScheme] = useState<ColorScheme>('default');
+  // Configuration state (initialized from localStorage)
+  const [dateColumn, setDateColumn] = useState<string>(() => (saved.dateColumn as string) || '');
+  const [timeColumn, setTimeColumn] = useState<string>(() => (saved.timeColumn as string) || '');
+  const [binSize, setBinSize] = useState<BinSize>(() => (saved.binSize as BinSize) || 'daily');
+  const [stratifyBy, setStratifyBy] = useState<string>(() => (saved.stratifyBy as string) ?? '');
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'default');
 
   // Filter state
-  const [filterBy, setFilterBy] = useState<string>('');
-  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    const arr = saved.selectedFilterValues;
+    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
+  });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
   // Display options
-  const [showGridLines, setShowGridLines] = useState(true);
-  const [showCaseCounts, setShowCaseCounts] = useState(true);
-  const [chartTitle, setChartTitle] = useState('Epidemic Curve');
-  const [xAxisLabel, setXAxisLabel] = useState('Date of Onset');
-  const [yAxisLabel, setYAxisLabel] = useState('Number of Cases');
+  const [showGridLines, setShowGridLines] = useState(() => saved.showGridLines !== undefined ? saved.showGridLines as boolean : true);
+  const [showCaseCounts, setShowCaseCounts] = useState(() => saved.showCaseCounts !== undefined ? saved.showCaseCounts as boolean : true);
+  const [chartTitle, setChartTitle] = useState(() => (saved.chartTitle as string) ?? 'Epidemic Curve');
+  const [xAxisLabel, setXAxisLabel] = useState(() => (saved.xAxisLabel as string) ?? 'Date of Onset');
+  const [yAxisLabel, setYAxisLabel] = useState(() => (saved.yAxisLabel as string) ?? 'Number of Cases');
 
-  // Annotations
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // Annotations (dates need reconstruction from ISO strings)
+  const [annotations, setAnnotations] = useState<Annotation[]>(() => {
+    const arr = saved.annotations;
+    if (Array.isArray(arr)) {
+      return arr.map((a: Record<string, unknown>) => ({
+        ...a,
+        date: new Date(a.date as string),
+        endDate: a.endDate ? new Date(a.endDate as string) : undefined,
+      })) as Annotation[];
+    }
+    return [];
+  });
   const [showAnnotationForm, setShowAnnotationForm] = useState(false);
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null);
   const [newAnnotation, setNewAnnotation] = useState({
@@ -85,38 +111,25 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   const [clickAddPosition, setClickAddPosition] = useState<{ x: number; y: number; date: string } | null>(null);
 
   // Manual date range override
-  const [useManualDateRange, setUseManualDateRange] = useState(false);
-  const [manualStartDate, setManualStartDate] = useState('');
-  const [manualEndDate, setManualEndDate] = useState('');
+  const [useManualDateRange, setUseManualDateRange] = useState(() => saved.useManualDateRange !== undefined ? saved.useManualDateRange as boolean : false);
+  const [manualStartDate, setManualStartDate] = useState(() => (saved.manualStartDate as string) || '');
+  const [manualEndDate, setManualEndDate] = useState(() => (saved.manualEndDate as string) || '');
 
-  // Persistence key for this dataset
-  const persistenceKey = `epikit_epicurve_${dataset.id}`;
+  // Exposure window estimation
+  const [selectedPathogen, setSelectedPathogen] = useState<string>(() => (saved.selectedPathogen as string) ?? '');
+  const [showExposureWindow, setShowExposureWindow] = useState(() => saved.showExposureWindow !== undefined ? saved.showExposureWindow as boolean : false);
+  const [showExposurePanel, setShowExposurePanel] = useState(false);
 
-  // Load persisted annotations on mount or dataset change
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(persistenceKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.annotations && Array.isArray(parsed.annotations)) {
-          // Restore dates from ISO strings
-          const restoredAnnotations = parsed.annotations.map((a: Annotation & { date: string; endDate?: string }) => ({
-            ...a,
-            date: new Date(a.date),
-            endDate: a.endDate ? new Date(a.endDate) : undefined,
-          }));
-          setAnnotations(restoredAnnotations);
-        }
-        if (parsed.manualStartDate) setManualStartDate(parsed.manualStartDate);
-        if (parsed.manualEndDate) setManualEndDate(parsed.manualEndDate);
-        if (parsed.useManualDateRange !== undefined) setUseManualDateRange(parsed.useManualDateRange);
-      }
-    } catch (e) {
-      console.error('Failed to load epi curve settings:', e);
-    }
-  }, [persistenceKey]);
+  // 7-1-7 Response Timeline
+  const [show717Panel, setShow717Panel] = useState(false);
+  const [outbreakStartDate, setOutbreakStartDate] = useState<string>(() => (saved.outbreakStartDate as string) ?? '');
+  const [detectionDate, setDetectionDate] = useState<string>(() => (saved.detectionDate as string) ?? '');
+  const [notificationDate, setNotificationDate] = useState<string>(() => (saved.notificationDate as string) ?? '');
+  const [responseCompleteDate, setResponseCompleteDate] = useState<string>(() => (saved.responseCompleteDate as string) ?? '');
+  const [show717OnChart, setShow717OnChart] = useState(() => saved.show717OnChart !== undefined ? saved.show717OnChart as boolean : true);
+  const [show717Metrics, setShow717Metrics] = useState(() => saved.show717Metrics !== undefined ? saved.show717Metrics as boolean : true);
 
-  // Save annotations and date range to localStorage when they change
+  // Save all state to localStorage when it changes
   useEffect(() => {
     try {
       const toSave = {
@@ -128,25 +141,36 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
         manualStartDate,
         manualEndDate,
         useManualDateRange,
+        dateColumn,
+        timeColumn,
+        binSize,
+        stratifyBy,
+        colorScheme,
+        showGridLines,
+        showCaseCounts,
+        chartTitle,
+        xAxisLabel,
+        yAxisLabel,
+        selectedPathogen,
+        showExposureWindow,
+        outbreakStartDate,
+        detectionDate,
+        notificationDate,
+        responseCompleteDate,
+        show717OnChart,
+        show717Metrics,
+        filterBy,
+        selectedFilterValues: Array.from(selectedFilterValues),
       };
       localStorage.setItem(persistenceKey, JSON.stringify(toSave));
     } catch (e) {
       console.error('Failed to save epi curve settings:', e);
     }
-  }, [persistenceKey, annotations, manualStartDate, manualEndDate, useManualDateRange]);
-
-  // Exposure window estimation
-  const [selectedPathogen, setSelectedPathogen] = useState<string>('');
-  const [showExposureWindow, setShowExposureWindow] = useState(false);
-
-  // 7-1-7 Response Timeline
-  const [show717Panel, setShow717Panel] = useState(false);
-  const [outbreakStartDate, setOutbreakStartDate] = useState<string>('');
-  const [detectionDate, setDetectionDate] = useState<string>('');
-  const [notificationDate, setNotificationDate] = useState<string>('');
-  const [responseCompleteDate, setResponseCompleteDate] = useState<string>('');
-  const [show717OnChart, setShow717OnChart] = useState(true);
-  const [show717Metrics, setShow717Metrics] = useState(true);
+  }, [persistenceKey, annotations, manualStartDate, manualEndDate, useManualDateRange,
+    dateColumn, timeColumn, binSize, stratifyBy, colorScheme, showGridLines, showCaseCounts,
+    chartTitle, xAxisLabel, yAxisLabel, selectedPathogen, showExposureWindow,
+    outbreakStartDate, detectionDate, notificationDate, responseCompleteDate,
+    show717OnChart, show717Metrics, filterBy, selectedFilterValues]);
 
   // Find date columns (memoized to prevent unnecessary re-renders)
   const dateColumns = useMemo(
@@ -1081,6 +1105,70 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
             )}
           </div>
 
+          {/* Exposure Estimation */}
+          <div className="border-t border-gray-200 pt-4">
+            <button
+              onClick={() => setShowExposurePanel(!showExposurePanel)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <span className="text-sm font-medium text-gray-700">Exposure Estimation</span>
+              <span className="text-gray-400">{showExposurePanel ? '−' : '+'}</span>
+            </button>
+
+            {showExposurePanel && (
+              <div className="mt-3 space-y-3">
+                {/* Pathogen Selection */}
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Suspected Pathogen</label>
+                  <select
+                    value={selectedPathogen}
+                    onChange={(e) => {
+                      setSelectedPathogen(e.target.value);
+                      if (e.target.value) setShowExposureWindow(true);
+                    }}
+                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
+                  >
+                    <option value="">Select pathogen...</option>
+                    {Object.keys(PATHOGEN_INCUBATION).sort().map(pathogen => (
+                      <option key={pathogen} value={pathogen}>
+                        {pathogen} ({PATHOGEN_INCUBATION[pathogen].min}-{PATHOGEN_INCUBATION[pathogen].max}d)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Exposure Window Toggle & Info */}
+                {selectedPathogen && (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showExposureWindow}
+                        onChange={(e) => setShowExposureWindow(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-gray-700">Show estimated exposure window</span>
+                    </label>
+
+                    {exposureWindow && (
+                      <div className="p-2 bg-red-50 border border-red-100 rounded-lg">
+                        <p className="text-xs font-medium text-red-700 mb-1">Estimated Exposure Period</p>
+                        <p className="text-xs text-red-600">
+                          {exposureWindow.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          {' '}&ndash;{' '}
+                          {exposureWindow.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </p>
+                        <p className="text-xs text-red-400 mt-1">
+                          Based on {selectedPathogen} incubation ({exposureWindow.incubation.min}-{exposureWindow.incubation.max} days)
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Advanced Options */}
           <AdvancedOptions>
             {/* Color Scheme */}
@@ -1200,59 +1288,6 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
               </div>
             </div>
 
-            {/* Exposure Estimation */}
-            <div className="pt-3 border-t border-gray-200">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Exposure Estimation</p>
-
-              {/* Pathogen Selection */}
-              <div className="mb-3">
-                <label className="block text-xs text-gray-500 mb-1">Suspected Pathogen</label>
-                <select
-                  value={selectedPathogen}
-                  onChange={(e) => {
-                    setSelectedPathogen(e.target.value);
-                    if (e.target.value) setShowExposureWindow(true);
-                  }}
-                  className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                >
-                  <option value="">Select pathogen...</option>
-                  {Object.keys(PATHOGEN_INCUBATION).sort().map(pathogen => (
-                    <option key={pathogen} value={pathogen}>
-                      {pathogen} ({PATHOGEN_INCUBATION[pathogen].min}-{PATHOGEN_INCUBATION[pathogen].max}d)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Exposure Window Toggle & Info */}
-              {selectedPathogen && (
-                <div className="space-y-2 mb-3">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={showExposureWindow}
-                      onChange={(e) => setShowExposureWindow(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-gray-700">Show estimated exposure window</span>
-                  </label>
-
-                  {exposureWindow && (
-                    <div className="p-2 bg-red-50 border border-red-100 rounded-lg">
-                      <p className="text-xs font-medium text-red-700 mb-1">Estimated Exposure Period</p>
-                      <p className="text-xs text-red-600">
-                        {exposureWindow.start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        {' '}&ndash;{' '}
-                        {exposureWindow.end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </p>
-                      <p className="text-xs text-red-400 mt-1">
-                        Based on {selectedPathogen} incubation ({exposureWindow.incubation.min}-{exposureWindow.incubation.max} days)
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </AdvancedOptions>
 
           {/* Help Panel */}
