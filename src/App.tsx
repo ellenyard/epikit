@@ -6,14 +6,16 @@
  *
  * Application Structure:
  * - Dashboard: Landing page with quick actions and dataset overview
+ * - Forms: Build custom data collection forms (drag-and-drop builder)
  * - Review/Clean: Data quality checks, editing, and variable creation
  * - Epi Curve: Epidemic curve visualization with stratification
  * - Spot Map: Geographic visualization using Leaflet/OpenStreetMap
  * - Analysis: Variable exploration, frequency tables, and 2x2 analysis
  *
  * Data Flow:
- * 1. Data can be imported via CSV/Excel in any analysis module
- * 2. All data persisted to localStorage and can be exported as project files
+ * 1. Forms created in Form Builder generate form definitions
+ * 2. Data can be imported via CSV/Excel in any analysis module
+ * 3. All data persisted to localStorage and can be exported as project files
  *
  * State Management:
  * - Uses React useState/useCallback for local state
@@ -33,7 +35,7 @@ import { HelpIcon } from './components/HelpIcon';
 import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
-import { demoColumns, demoCaseRecords } from './data/demoData';
+import { demoFormItems, demoColumns, demoCaseRecords } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
@@ -41,7 +43,10 @@ import { exportProject, downloadProject, parseProjectFile } from './utils/persis
 import type { VariableConfig } from './types/analysis';
 
 /** Available navigation modules in the app */
-type Module = 'dashboard' | 'review' | 'epicurve' | 'spotmap' | 'analysis' | 'visualize';
+type Module = 'dashboard' | 'forms' | 'review' | 'epicurve' | 'spotmap' | 'analysis';
+
+/** Form builder can be in builder or preview mode */
+type FormView = 'builder' | 'preview';
 
 // =============================================================================
 // DEMO DATA SETUP
@@ -86,6 +91,22 @@ function App() {
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
   // ---------------------------------------------------------------------------
+  // FORM DEFINITIONS STATE
+  // Saved forms that can be used for export. Persisted to localStorage.
+  // ---------------------------------------------------------------------------
+  const [formDefinitions, setFormDefinitions] = useState<FormDefinition[]>(() => {
+    const saved = localStorage.getItem('epikit_formDefinitions');
+    return saved ? JSON.parse(saved) : [createDemoFormDefinition()];
+  });
+
+  // Which form is currently being edited in the Form Builder
+  const [currentFormId, setCurrentFormId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('epikit_currentFormId');
+    return saved || DEMO_FORM_ID;
+  });
+  const [currentFormName] = useState('Foodborne Outbreak Investigation');
+
+  // ---------------------------------------------------------------------------
   // DATASET STATE
   // Core data storage - shared across Review and Analysis modules.
   // Each dataset has columns (schema) and records (rows of data).
@@ -103,6 +124,53 @@ function App() {
 
   // Onboarding wizard can be accessed from Help Center
   // Dashboard now serves as the welcoming landing page
+
+  // Get current form items for the builder
+  const currentFormItems = useMemo(() => {
+    if (currentFormId) {
+      const form = formDefinitions.find(f => f.id === currentFormId);
+      return form?.fields || demoFormItems;
+    }
+    return demoFormItems;
+  }, [currentFormId, formDefinitions]);
+
+  const handlePreview = (items: FormItem[]) => {
+    setPreviewItems(items);
+    setFormView('preview');
+  };
+
+  const handleExport = (items: FormItem[]) => {
+    setExportItems(items);
+  };
+
+  const handleBackToBuilder = () => {
+    setFormView('builder');
+  };
+
+  // Save form definition
+  const handleSaveForm = useCallback((items: FormItem[], formName: string) => {
+    const now = new Date().toISOString();
+
+    if (currentFormId) {
+      // Update existing form
+      setFormDefinitions(prev => prev.map(f =>
+        f.id === currentFormId
+          ? { ...f, name: formName, fields: items, updatedAt: now }
+          : f
+      ));
+    } else {
+      // Create new form
+      const newForm: FormDefinition = {
+        id: crypto.randomUUID(),
+        name: formName,
+        fields: items,
+        createdAt: now,
+        updatedAt: now,
+      };
+      setFormDefinitions(prev => [...prev, newForm]);
+      setCurrentFormId(newForm.id);
+    }
+  }, [currentFormId]);
 
   // ---------------------------------------------------------------------------
   // DATASET CRUD OPERATIONS
@@ -133,12 +201,18 @@ function App() {
     ));
   }, []);
 
-  /** Delete a dataset and clear selection if it was active */
+  /** Delete a dataset, clean up its edit log entries, and select another dataset if needed */
   const deleteDataset = useCallback((id: string) => {
-    setDatasets(prev => prev.filter(d => d.id !== id));
-    if (activeDatasetId === id) {
-      setActiveDatasetId(null);
-    }
+    setDatasets(prev => {
+      const remaining = prev.filter(d => d.id !== id);
+      // Auto-select another dataset if the deleted one was active
+      if (activeDatasetId === id) {
+        setActiveDatasetId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      return remaining;
+    });
+    // Clean up edit log entries for the deleted dataset
+    setEditLog(prev => prev.filter(entry => entry.datasetId !== id));
   }, [activeDatasetId]);
 
   /** Add a new record to a dataset (from form submission or manual entry) */
@@ -438,6 +512,16 @@ function App() {
             </button>
             <div className="flex gap-0.5 overflow-x-auto">
               <button
+                onClick={() => { setActiveModule('forms'); setFormView('builder'); }}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === 'forms'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Forms
+              </button>
+              <button
                 onClick={() => setActiveModule('review')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'review'
@@ -596,7 +680,20 @@ function App() {
             onImportData={() => setShowImport(true)}
             onOpenHelp={() => setShowHelpCenter(true)}
             onSelectDataset={(id) => setActiveDatasetId(id)}
+            onDeleteDataset={deleteDataset}
           />
+        ) : activeModule === 'forms' ? (
+          formView === 'builder' ? (
+            <FormBuilder
+              onPreview={handlePreview}
+              onExport={handleExport}
+              onSave={handleSaveForm}
+              initialItems={currentFormItems}
+              initialFormName={currentFormName}
+            />
+          ) : (
+            <FormPreview items={previewItems} onBack={handleBackToBuilder} />
+          )
         ) : activeDataset ? (
           // Modules that require a dataset
           activeModule === 'review' ? (
