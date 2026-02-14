@@ -4,13 +4,10 @@
  */
 
 import type { Dataset, EditLogEntry } from '../types/analysis';
-import type { FormDefinition } from '../types/form';
 
 const STORAGE_KEYS = {
   DATASETS: 'epikit_datasets',
   ACTIVE_DATASET_ID: 'epikit_activeDatasetId',
-  FORM_DEFINITIONS: 'epikit_formDefinitions',
-  CURRENT_FORM_ID: 'epikit_currentFormId',
   EDIT_LOG: 'epikit_editLog',
   ANALYSIS_STATE: 'epikit_analysis_state',
 } as const;
@@ -43,8 +40,6 @@ export interface ProjectData {
   exportedAt: string;
   datasets: Dataset[];
   activeDatasetId: string | null;
-  formDefinitions: FormDefinition[];
-  currentFormId: string | null;
   editLog: EditLogEntry[];
   analysisState: Record<string, AnalysisState>; // keyed by dataset ID
 }
@@ -86,45 +81,6 @@ export function loadActiveDatasetId(): string | null {
     return localStorage.getItem(STORAGE_KEYS.ACTIVE_DATASET_ID);
   } catch (e) {
     console.error('Failed to load active dataset ID:', e);
-    return null;
-  }
-}
-
-export function saveFormDefinitions(forms: FormDefinition[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEYS.FORM_DEFINITIONS, JSON.stringify(forms));
-  } catch (e) {
-    console.error('Failed to save form definitions:', e);
-  }
-}
-
-export function loadFormDefinitions(): FormDefinition[] | null {
-  try {
-    const data = localStorage.getItem(STORAGE_KEYS.FORM_DEFINITIONS);
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    console.error('Failed to load form definitions:', e);
-    return null;
-  }
-}
-
-export function saveCurrentFormId(id: string | null): void {
-  try {
-    if (id) {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_FORM_ID, id);
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.CURRENT_FORM_ID);
-    }
-  } catch (e) {
-    console.error('Failed to save current form ID:', e);
-  }
-}
-
-export function loadCurrentFormId(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.CURRENT_FORM_ID);
-  } catch (e) {
-    console.error('Failed to load current form ID:', e);
     return null;
   }
 }
@@ -190,8 +146,6 @@ export function clearAllAnalysisStates(): void {
 export function exportProject(
   datasets: Dataset[],
   activeDatasetId: string | null,
-  formDefinitions: FormDefinition[],
-  currentFormId: string | null,
   editLog: EditLogEntry[]
 ): ProjectData {
   const analysisStates = loadAllAnalysisStates() || {};
@@ -201,8 +155,6 @@ export function exportProject(
     exportedAt: new Date().toISOString(),
     datasets,
     activeDatasetId,
-    formDefinitions,
-    currentFormId,
     editLog,
     analysisState: analysisStates,
   };

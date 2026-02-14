@@ -229,7 +229,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <ul className="list-disc ml-6 space-y-2">
                       <li><strong>Export CSV:</strong> Download your cleaned dataset from the dataset selector bar</li>
                       <li><strong>Save Charts:</strong> Use browser print/screenshot for visualizations</li>
-                      <li><strong>Export Forms:</strong> Download form definitions as JSON files</li>
                     </ul>
                   </div>
                 </section>
@@ -389,8 +388,8 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <div className="space-y-3 text-sm text-gray-700">
                     <p>
                       EpiKit is a free, open-source web application designed for outbreak investigation and epidemiological analysis.
-                      Built for junior epidemiologists and public health professionals, it provides essential tools for data collection,
-                      quality assurance, and statistical analysis—all without requiring coding skills.
+                      Built for junior epidemiologists and public health professionals, it provides essential tools for data
+                      quality assurance and statistical analysis—all without requiring coding skills.
                     </p>
 
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -518,17 +517,12 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'export',
                     question: 'How do I save my analysis results?',
-                    answer: 'You can export your cleaned dataset as CSV using the "Export CSV" button. For charts and visualizations, use your browser\'s print or screenshot functionality. Forms can be exported as JSON files from the Forms module.'
+                    answer: 'You can export your cleaned dataset as CSV using the "Export CSV" button. For charts and visualizations, use your browser\'s print or screenshot functionality.'
                   },
                   {
                     id: 'coordinates',
                     question: 'What format should my coordinates be in for spot maps?',
                     answer: 'Latitude and longitude should be in decimal degrees format (e.g., 41.6639, -83.5552). Most mapping services and GPS devices can provide coordinates in this format. Make sure latitude is between -90 and 90, and longitude is between -180 and 180.'
-                  },
-                  {
-                    id: 'skip-logic',
-                    question: 'How does skip logic work in forms?',
-                    answer: 'Skip logic allows you to show or hide form fields based on previous answers. In the form builder, configure a field\'s "Show If" conditions to specify when it should appear. For example, show "Which symptoms?" only if "Experienced symptoms" is "Yes".'
                   },
                   {
                     id: 'attack-rate',
