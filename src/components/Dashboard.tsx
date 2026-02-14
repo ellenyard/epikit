@@ -82,19 +82,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </p>
           </button>
 
-          {/* Create Form Card */}
+          {/* Visualize Card */}
           <button
-            onClick={() => onNavigate('forms')}
+            onClick={() => onNavigate('visualize')}
             className="group bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-left hover:shadow-lg hover:border-green-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
           >
             <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-green-200 transition-colors">
               <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Create Form</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Visualize Data</h3>
             <p className="text-sm text-gray-600">
-              Build a custom data collection form with drag-and-drop fields
+              Create publication-ready charts with Evergreen design principles
             </p>
           </button>
 
@@ -126,7 +126,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex-1">
               <h3 className="font-semibold text-blue-900 mb-1">Your work is automatically saved</h3>
               <p className="text-sm text-blue-800 mb-2">
-                All your datasets, forms, and edits are saved automatically in your browser. You can close this tab and return later - everything will be exactly as you left it.
+                All your datasets and edits are saved automatically in your browser. You can close this tab and return later - everything will be exactly as you left it.
               </p>
               <p className="text-sm text-blue-700">
                 <strong>Note:</strong> Data is saved only on this browser. To transfer work to another device or create backups, use the export features in each module.

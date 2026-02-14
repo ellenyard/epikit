@@ -33,6 +33,7 @@ import { HelpIcon } from './components/HelpIcon';
 import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
+import { VisualizeWorkflow } from './components/visualize/VisualizeWorkflow';
 import { demoColumns, demoCaseRecords } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
@@ -422,7 +423,7 @@ function App() {
   }, [showProjectLoadConfirm]);
 
   // Check if current module needs dataset selector
-  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'analysis'].includes(activeModule);
+  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'analysis', 'visualize'].includes(activeModule);
 
   return (
     <div className="h-screen flex flex-col">
@@ -477,6 +478,16 @@ function App() {
                 }`}
               >
                 Analysis
+              </button>
+              <button
+                onClick={() => setActiveModule('visualize')}
+                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                  activeModule === 'visualize'
+                    ? 'bg-slate-700 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Visualize
               </button>
             </div>
           </div>
@@ -625,6 +636,8 @@ function App() {
               onCreateVariable={handleCreateVariable}
               onUpdateRecords={handleUpdateRecords}
             />
+          ) : activeModule === 'visualize' ? (
+            <VisualizeWorkflow dataset={activeDataset} />
           ) : null
         ) : (
           // No dataset selected - show prompt
