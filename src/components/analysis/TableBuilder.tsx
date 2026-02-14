@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Dataset } from '../../types/analysis';
 import { calculateCrossTabulation } from '../../utils/statistics';
 import type { CrossTabResults } from '../../utils/statistics';
+import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
 
 interface TableBuilderProps {
   dataset: Dataset;
@@ -63,6 +64,19 @@ export function TableBuilder({
   colVar: controlledColVar,
   onColVarChange,
 }: TableBuilderProps) {
+  // Persistence key for this dataset
+  const persistenceKey = `epikit_tablebuilder_${dataset.id}`;
+
+  // Load persisted state once during initialization
+  const [saved] = useState<Record<string, unknown>>(() => {
+    try {
+      const raw = localStorage.getItem(persistenceKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
   // Use controlled state if provided, otherwise use local state
   const [internalRowVars, setInternalRowVars] = useState<string[]>([]);
   const [internalColVar, setInternalColVar] = useState<string>('');
@@ -73,17 +87,40 @@ export function TableBuilder({
   const setColVar = onColVarChange || setInternalColVar;
 
   const [draggedVar, setDraggedVar] = useState<string | null>(null);
-  const [tableOptions, setTableOptions] = useState<TableOptions>({
-    percentType: 'column',
-    showCumPercent: false,
-    includeMissing: true,
+  const [tableOptions, setTableOptions] = useState<TableOptions>(() => {
+    const savedOpts = saved.tableOptions as Record<string, unknown> | undefined;
+    if (savedOpts) {
+      return {
+        percentType: (savedOpts.percentType as PercentType) || 'column',
+        showCumPercent: savedOpts.showCumPercent !== undefined ? savedOpts.showCumPercent as boolean : false,
+        includeMissing: savedOpts.includeMissing !== undefined ? savedOpts.includeMissing as boolean : true,
+      };
+    }
+    return { percentType: 'column', showCumPercent: false, includeMissing: true };
   });
   const [copySuccess, setCopySuccess] = useState(false);
 
   // Filter state
-  const [filterBy, setFilterBy] = useState<string>('');
-  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
+  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    const arr = saved.selectedFilterValues;
+    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
+  });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
+
+  // Save state to localStorage when it changes
+  useEffect(() => {
+    try {
+      const toSave = {
+        tableOptions,
+        filterBy,
+        selectedFilterValues: Array.from(selectedFilterValues),
+      };
+      localStorage.setItem(persistenceKey, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('Failed to save table builder settings:', e);
+    }
+  }, [persistenceKey, tableOptions, filterBy, selectedFilterValues]);
 
   // Apply initial row vars when they change (for quick actions from Explorer)
   useEffect(() => {
@@ -459,7 +496,7 @@ export function TableBuilder({
             ...crossTabData.colValues.map(cv => {
               const cell = ct.table.get(rv)!.get(cv)!;
               const pct = getCellPercent(cell);
-              return `${cell.count} (${pct.toFixed(1)}%)`;
+              return `${cell.count} (${formatStatPercent(pct, ct.grandTotal)}%)`;
             }),
             String(ct.rowTotals.get(rv) || 0),
           ];
@@ -484,9 +521,9 @@ export function TableBuilder({
           row.isVariableHeader ? row.variableLabel : '',
           row.value,
           String(row.count),
-          row.percent.toFixed(1) + '%',
+          formatStatPercent(row.percent, filteredRecords.length) + '%',
         ];
-        if (tableOptions.showCumPercent) cols.push(row.isMissing ? '-' : row.cumPercent.toFixed(1) + '%');
+        if (tableOptions.showCumPercent) cols.push(row.isMissing ? '-' : formatStatPercent(row.cumPercent, filteredRecords.length) + '%');
         text += cols.join('\t') + '\n';
       });
     }
@@ -804,12 +841,12 @@ export function TableBuilder({
                                   const pct = getCellPercent(cell);
                                   return (
                                     <td key={cv} className="px-4 py-3 text-center">
-                                      {cell.count} ({pct.toFixed(1)}%)
+                                      {cell.count} ({formatStatPercent(pct, ct.grandTotal)}%)
                                     </td>
                                   );
                                 })}
                                 <td className="px-4 py-3 text-center font-medium">
-                                  {ct.rowTotals.get(rv)}{tableOptions.percentType === 'row' && ' (100.0%)'}
+                                  {ct.rowTotals.get(rv)}{tableOptions.percentType === 'row' && ' (100%)'}
                                 </td>
                               </tr>
                             ))}
@@ -817,7 +854,7 @@ export function TableBuilder({
                               <td className="px-4 py-3 border-t border-r border-gray-300">Total</td>
                               {crossTabData.colValues.map(cv => (
                                 <td key={cv} className="px-4 py-3 text-center border-t border-gray-300">
-                                  {ct.colTotals.get(cv)}{tableOptions.percentType === 'column' && ' (100.0%)'}
+                                  {ct.colTotals.get(cv)}{tableOptions.percentType === 'column' && ' (100%)'}
                                 </td>
                               ))}
                               <td className="px-4 py-3 text-center border-t border-gray-300">{ct.grandTotal}</td>
@@ -838,7 +875,7 @@ export function TableBuilder({
                           <div className="grid grid-cols-3 gap-4 text-center">
                             <div>
                               <p className="text-xl font-bold text-gray-900">
-                                {formatNumber(chiSquareResults.get(ct.rowVar)!.chiSquare.chiSquare)}
+                                {formatSigFigs(chiSquareResults.get(ct.rowVar)!.chiSquare.chiSquare, 3)}
                               </p>
                               <p className="text-xs text-gray-500">χ² Statistic</p>
                             </div>
@@ -911,9 +948,9 @@ export function TableBuilder({
                               <tr className={`hover:bg-gray-50 ${row.isMissing ? 'text-gray-500' : ''}`}>
                                 <td className="px-4 py-2 pl-8">{row.value}</td>
                                 <td className="px-4 py-2 text-right">{row.count}</td>
-                                <td className="px-4 py-2 text-right">{row.percent.toFixed(1)}</td>
+                                <td className="px-4 py-2 text-right">{formatStatPercent(row.percent, filteredRecords.length)}</td>
                                 {tableOptions.showCumPercent && (
-                                  <td className="px-4 py-2 text-right">{row.isMissing ? '-' : row.cumPercent.toFixed(1)}</td>
+                                  <td className="px-4 py-2 text-right">{row.isMissing ? '-' : formatStatPercent(row.cumPercent, filteredRecords.length)}</td>
                                 )}
                               </tr>
                             </React.Fragment>

@@ -24,45 +24,53 @@ interface MapCase {
   classification: string;
 }
 
-// Color palettes - all schemes now use case classification
-const colorPalettes: Record<ColorScheme, Record<string, string>> = {
-  default: {
-    'Confirmed': '#3B82F6',
-    'Probable': '#3B82F6',
-    'Suspected': '#3B82F6',
-    'Not a case': '#3B82F6',
-    'Unknown': '#3B82F6',
-    _default: '#3B82F6',
-  },
-  classification: {
-    'Confirmed': '#DC2626',
-    'Probable': '#F59E0B',
-    'Suspected': '#3B82F6',
-    'Not a case': '#22C55E',
-    'Unknown': '#9CA3AF',
-    _default: '#6B7280',
-  },
-  colorblind: {
-    'Confirmed': '#CC3311',
-    'Probable': '#EE7733',
-    'Suspected': '#0077BB',
-    'Not a case': '#009988',
-    'Unknown': '#BBBBBB',
-    _default: '#BBBBBB',
-  },
-  sequential: {
-    'Confirmed': '#99000d',
-    'Probable': '#fc9272',
-    'Suspected': '#fee5d9',
-    'Not a case': '#f0f0f0',
-    'Unknown': '#f0f0f0',
-    _default: '#f0f0f0',
-  },
+// Dynamic color palettes for any classification variable
+const defaultColors = [
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+  '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1',
+];
+
+const colorblindColors = [
+  '#0077BB', '#33BBEE', '#009988', '#EE7733', '#CC3311',
+  '#EE3377', '#BBBBBB', '#000000',
+];
+
+const sequentialColors = [
+  '#99000d', '#cb181d', '#ef3b2c', '#fb6a4a', '#fc9272',
+  '#fcbba1', '#fee0d2', '#fee5d9',
+];
+
+// Known case status colors used when values match epidemiological terminology
+const caseStatusColors: Record<string, string> = {
+  'Confirmed': '#DC2626',
+  'Probable': '#F59E0B',
+  'Suspected': '#3B82F6',
+  'Not a case': '#22C55E',
+  'Unknown': '#9CA3AF',
 };
 
-function getMarkerColor(classification: string, scheme: ColorScheme): string {
-  const palette = colorPalettes[scheme];
-  return palette[classification] || palette._default;
+function getMarkerColor(classification: string, scheme: ColorScheme, allValues: string[]): string {
+  if (scheme === 'default') return '#3B82F6';
+
+  // For classification scheme, use known case status colors when they match
+  if (scheme === 'classification') {
+    if (caseStatusColors[classification]) return caseStatusColors[classification];
+  }
+
+  // Fall back to index-based dynamic colors for any value
+  const index = allValues.indexOf(classification);
+  const i = index >= 0 ? index : 0;
+
+  switch (scheme) {
+    case 'classification':
+      return defaultColors[i % defaultColors.length];
+    case 'colorblind':
+      return colorblindColors[i % colorblindColors.length];
+    case 'sequential':
+      return sequentialColors[i % sequentialColors.length];
+    default:
+      return '#3B82F6';
+  }
 }
 
 // Deterministic jitter function for privacy
@@ -110,36 +118,81 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
 }
 
 export function SpotMap({ dataset }: SpotMapProps) {
-  const [latColumn, setLatColumn] = useState<string>('');
-  const [lngColumn, setLngColumn] = useState<string>('');
-  const [classificationColumn, setClassificationColumn] = useState<string>('');
-  const [filterBy, setFilterBy] = useState<string>('');
-  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(new Set());
-  const [colorScheme, setColorScheme] = useState<ColorScheme>('classification');
-  const [markerSize, setMarkerSize] = useState<number>(8);
-  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>('street');
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Persistence key for this dataset
+  const persistenceKey = `epikit_spotmap_${dataset.id}`;
+
+  // Load persisted state once during initialization (avoids race conditions with auto-detect effects)
+  const [saved] = useState<Record<string, unknown>>(() => {
+    try {
+      const raw = localStorage.getItem(persistenceKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // State initialized from localStorage
+  const [latColumn, setLatColumn] = useState<string>(() => (saved.latColumn as string) || '');
+  const [lngColumn, setLngColumn] = useState<string>(() => (saved.lngColumn as string) || '');
+  const [classificationColumn, setClassificationColumn] = useState<string>(() => (saved.classificationColumn as string) || '');
+  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    const arr = saved.selectedFilterValues;
+    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
+  });
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'classification');
+  const [markerSize, setMarkerSize] = useState<number>(() => (saved.markerSize as number) ?? 8);
+  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>(() => (saved.mapStyle as 'street' | 'satellite' | 'topo') || 'street');
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
 
   // Privacy safeguards
-  const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(true);
-  const [jitterDistance, setJitterDistance] = useState<number>(500); // meters
+  const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(() => saved.obfuscateLocations !== undefined ? saved.obfuscateLocations as boolean : true);
+  const [jitterDistance, setJitterDistance] = useState<number>(() => (saved.jitterDistance as number) ?? 500);
 
   // Map title and caption
-  const [mapTitle, setMapTitle] = useState<string>('');
-  const [mapCaption, setMapCaption] = useState<string>('');
+  const [mapTitle, setMapTitle] = useState<string>(() => (saved.mapTitle as string) ?? '');
+  const [mapCaption, setMapCaption] = useState<string>(() => (saved.mapCaption as string) ?? '');
 
   // North arrow
-  const [showNorthArrow, setShowNorthArrow] = useState<boolean>(false);
+  const [showNorthArrow, setShowNorthArrow] = useState<boolean>(() => saved.showNorthArrow !== undefined ? saved.showNorthArrow as boolean : false);
 
   // Point clustering
-  const [enableClustering, setEnableClustering] = useState<boolean>(false);
+  const [enableClustering, setEnableClustering] = useState<boolean>(() => saved.enableClustering !== undefined ? saved.enableClustering as boolean : false);
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
   const [isResizing, setIsResizing] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Save all state to localStorage when it changes
+  useEffect(() => {
+    try {
+      const toSave = {
+        latColumn,
+        lngColumn,
+        classificationColumn,
+        colorScheme,
+        markerSize,
+        mapStyle,
+        obfuscateLocations,
+        jitterDistance,
+        mapTitle,
+        mapCaption,
+        showNorthArrow,
+        enableClustering,
+        filterBy,
+        selectedFilterValues: Array.from(selectedFilterValues),
+      };
+      localStorage.setItem(persistenceKey, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('Failed to save spot map settings:', e);
+    }
+  }, [persistenceKey, latColumn, lngColumn, classificationColumn, colorScheme, markerSize,
+    mapStyle, obfuscateLocations, jitterDistance, mapTitle, mapCaption, showNorthArrow,
+    enableClustering, filterBy, selectedFilterValues]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -297,11 +350,11 @@ export function SpotMap({ dataset }: SpotMapProps) {
     return dataset.records.length - mapCases.length;
   }, [dataset.records.length, mapCases.length, latColumn, lngColumn]);
 
-  // Get unique classification values for legend
+  // Get unique classification values for legend (use filteredCases so legend reflects active filters)
   const classificationValues = useMemo(() => {
-    const values = new Set(mapCases.map(c => c.classification));
+    const values = new Set(filteredCases.map(c => c.classification));
     return Array.from(values).sort();
-  }, [mapCases]);
+  }, [filteredCases]);
 
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
@@ -513,7 +566,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">None (all same color)</option>
-              {dataset.columns.filter(c => c.type !== 'number' || c.key.toLowerCase().includes('status') || c.key.toLowerCase().includes('class')).map(col => (
+              {dataset.columns.filter(c => c.type !== 'date').map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
             </select>
@@ -748,7 +801,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                       center={[caseData.displayLat, caseData.displayLng]}
                       radius={markerSize}
                       pathOptions={{
-                        fillColor: getMarkerColor(caseData.classification, colorScheme),
+                        fillColor: getMarkerColor(caseData.classification, colorScheme, classificationValues),
                         fillOpacity: 0.7,
                         color: '#fff',
                         weight: 1,
@@ -783,7 +836,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                     center={[caseData.displayLat, caseData.displayLng]}
                     radius={markerSize}
                     pathOptions={{
-                      fillColor: getMarkerColor(caseData.classification, colorScheme),
+                      fillColor: getMarkerColor(caseData.classification, colorScheme, classificationValues),
                       fillOpacity: 0.7,
                       color: '#fff',
                       weight: 1,
@@ -831,7 +884,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                     <div key={value} className="flex items-center gap-2">
                       <div
                         className="w-3 h-3 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: getMarkerColor(value, colorScheme) }}
+                        style={{ backgroundColor: getMarkerColor(value, colorScheme, classificationValues) }}
                       />
                       <span className="text-xs text-gray-700">{value}</span>
                       <span className="text-xs text-gray-400">
