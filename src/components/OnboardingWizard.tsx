@@ -134,7 +134,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 <h4 className="font-semibold text-blue-900 mb-3">What is EpiKit?</h4>
                 <p className="text-blue-800 mb-4">
                   EpiKit is a free, web-based platform designed for junior epidemiologists and public health professionals.
-                  It helps you collect, clean, and analyze outbreak data without requiring coding skills.
+                  It helps you clean and analyze outbreak data without requiring coding skills.
                   <strong className="block mt-2">Within a minute, you can load demo data and generate your first epi curve.</strong>
                 </p>
                 <ul className="space-y-2 text-blue-800">

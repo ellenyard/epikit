@@ -22,12 +22,8 @@
  * - Persists to localStorage on every change (auto-save)
  * - Edit log tracks all data modifications for audit trail
  */
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import type { FormItem, FormDefinition } from './types/form';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
-import { FormBuilder } from './components/FormBuilder';
-import { FormPreview } from './components/FormPreview';
-import { ExportModal } from './components/ExportModal';
 import { Review } from './components/review/Review';
 import { EpiCurve } from './components/analysis/EpiCurve';
 import { SpotMap } from './components/analysis/SpotMap';
@@ -74,17 +70,6 @@ const createDemoDataset = (): Dataset => ({
   updatedAt: new Date().toISOString(),
 });
 
-// Create demo form definition
-const DEMO_FORM_ID = 'demo-foodborne-form';
-const createDemoFormDefinition = (): FormDefinition => ({
-  id: DEMO_FORM_ID,
-  name: 'Foodborne Outbreak Investigation',
-  description: 'Investigation form for suspected foodborne illness cases',
-  fields: demoFormItems,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
-
 // =============================================================================
 // MAIN APPLICATION COMPONENT
 // =============================================================================
@@ -97,9 +82,6 @@ function App() {
   // UI STATE - Controls which module/modal is currently visible
   // ---------------------------------------------------------------------------
   const [activeModule, setActiveModule] = useState<Module>('dashboard');
-  const [formView, setFormView] = useState<FormView>('builder');
-  const [previewItems, setPreviewItems] = useState<FormItem[]>([]);
-  const [exportItems, setExportItems] = useState<FormItem[] | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showHelpCenter, setShowHelpCenter] = useState(false);
@@ -286,10 +268,6 @@ function App() {
         const withoutOldDemo = prev.filter(d => d.id !== DEMO_DATASET_ID);
         return [createDemoDataset(), ...withoutOldDemo];
       });
-      setFormDefinitions(prev => {
-        const withoutOldDemo = prev.filter(f => f.id !== DEMO_FORM_ID);
-        return [createDemoFormDefinition(), ...withoutOldDemo];
-      });
       localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
     }
   }, []);
@@ -298,10 +276,6 @@ function App() {
   // AUTO-SAVE TO LOCALSTORAGE
   // All state changes are automatically persisted so users don't lose work.
   // ---------------------------------------------------------------------------
-  useEffect(() => {
-    localStorage.setItem('epikit_formDefinitions', JSON.stringify(formDefinitions));
-  }, [formDefinitions]);
-
   useEffect(() => {
     localStorage.setItem('epikit_datasets', JSON.stringify(datasets));
   }, [datasets]);
@@ -315,12 +289,6 @@ function App() {
       localStorage.setItem('epikit_activeDatasetId', activeDatasetId);
     }
   }, [activeDatasetId]);
-
-  useEffect(() => {
-    if (currentFormId) {
-      localStorage.setItem('epikit_currentFormId', currentFormId);
-    }
-  }, [currentFormId]);
 
   const addEditLogEntry = useCallback((entry: EditLogEntry) => {
     setEditLog(prev => [...prev, entry]);
@@ -467,7 +435,7 @@ function App() {
 
   // ---------------------------------------------------------------------------
   // PROJECT SAVE/LOAD
-  // Users can export entire project (datasets, forms, edit log) as JSON file
+  // Users can export entire project (datasets, edit log) as JSON file
   // and reload it later. Useful for sharing or backing up work.
   // ---------------------------------------------------------------------------
 
@@ -476,12 +444,10 @@ function App() {
     const project = exportProject(
       datasets,
       activeDatasetId,
-      formDefinitions,
-      currentFormId,
       editLog
     );
     downloadProject(project);
-  }, [datasets, activeDatasetId, formDefinitions, currentFormId, editLog]);
+  }, [datasets, activeDatasetId, editLog]);
 
   // Project load handler - show file picker
   const handleLoadProjectClick = useCallback(() => {
@@ -518,8 +484,6 @@ function App() {
     // Load all project data
     setDatasets(project.datasets);
     setActiveDatasetId(project.activeDatasetId);
-    setFormDefinitions(project.formDefinitions);
-    setCurrentFormId(project.currentFormId);
     setEditLog(project.editLog);
 
     // Restore analysis states to localStorage
@@ -778,15 +742,6 @@ function App() {
         )}
       </div>
 
-      {/* Export Modal */}
-      {exportItems && (
-        <ExportModal
-          items={exportItems}
-          formName={currentFormName}
-          onClose={() => setExportItems(null)}
-        />
-      )}
-
       {/* Import Modal */}
       {showImport && (
         <DataImport
@@ -835,7 +790,6 @@ function App() {
             </p>
             <ul className="text-sm text-gray-600 mb-4 space-y-1 ml-4">
               <li>• {showProjectLoadConfirm.project?.datasets.length || 0} dataset(s)</li>
-              <li>• {showProjectLoadConfirm.project?.formDefinitions.length || 0} form definition(s)</li>
               <li>• {showProjectLoadConfirm.project?.editLog.length || 0} edit log entries</li>
               <li>• All saved analysis settings</li>
             </ul>
