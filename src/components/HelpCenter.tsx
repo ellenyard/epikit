@@ -196,7 +196,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <h5 className="font-medium text-gray-800 mb-1">Spot Map</h5>
                         <p className="text-xs">Map geographic distribution to identify spatial clusters</p>
                       </div>
-                      <div className="border border-gray-200 rounded p-3 md:col-span-2">
+                      <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Analysis</h5>
                         <p className="text-xs mb-2">Three-step workflow for descriptive and analytical epidemiology:</p>
                         <ul className="text-xs space-y-1 ml-3">
@@ -204,6 +204,10 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                           <li><strong>Build Tables:</strong> Create frequency tables and cross-tabulations</li>
                           <li><strong>Test:</strong> 2×2 tables for attack rates, risk ratios, and odds ratios</li>
                         </ul>
+                      </div>
+                      <div className="border border-gray-200 rounded p-3">
+                        <h5 className="font-medium text-gray-800 mb-1">Visualize</h5>
+                        <p className="text-xs">Create publication-ready charts (bar, line, slope, lollipop, waffle, heatmap, and more) following Evergreen data visualization best practices</p>
                       </div>
                     </div>
                   </div>

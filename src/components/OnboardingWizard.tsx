@@ -434,6 +434,32 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h4 className="font-semibold text-gray-800 mb-2 flex items-center">
+                        <svg className="w-5 h-5 text-teal-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        Visualize
+                      </h4>
+                      <p className="text-sm text-gray-600 mb-3">
+                        Create publication-ready charts following Stephanie Evergreen's data visualization best
+                        practices—bar charts, line charts, slope charts, waffle charts, and more.
+                      </p>
+                      <button
+                        onClick={() => handleTryTool('visualize')}
+                        className="text-teal-600 hover:text-teal-700 text-sm font-medium inline-flex items-center"
+                      >
+                        Try This Now
+                        <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-gray-800 mb-2 flex items-center">
                         <svg className="w-5 h-5 text-orange-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                         </svg>
