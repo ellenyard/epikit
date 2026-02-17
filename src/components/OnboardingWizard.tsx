@@ -446,7 +446,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         Visualize
                       </h4>
                       <p className="text-sm text-gray-600 mb-3">
-                        Create publication-ready charts following Stephanie Evergreen's data visualization best
+                        Create publication-ready charts following data visualization best
                         practices—bar charts, line charts, slope charts, waffle charts, and more.
                       </p>
                       <button

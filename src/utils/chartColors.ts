@@ -1,6 +1,6 @@
 export type ChartColorScheme = 'evergreen' | 'colorblind' | 'grayscale' | 'blue' | 'warm';
 
-// Evergreen-inspired palette: muted, professional colors
+// Default palette: muted, professional colors
 const evergreenColors = ['#2E5E86', '#E57A3A', '#5BA155', '#C44E52', '#8C6BB1', '#D4944A', '#4ABFBF', '#7F7F7F'];
 const colorblindColors = ['#0077BB', '#33BBEE', '#009988', '#EE7733', '#CC3311', '#EE3377', '#BBBBBB', '#000000'];
 const grayscaleColors = ['#2D2D2D', '#4D4D4D', '#6D6D6D', '#8D8D8D', '#ADADAD', '#CDCDCD', '#E0E0E0', '#F0F0F0'];

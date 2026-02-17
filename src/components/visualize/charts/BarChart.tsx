@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
@@ -137,7 +137,7 @@ export function BarChart({ dataset }: BarChartProps) {
       svg += svgTitle(width, chartTitle, chartSubtitle || undefined);
     }
 
-    // Vertical gridlines (light, minimal -- Evergreen principle)
+    // Vertical gridlines (light, minimal)
     const tickCount = 5;
     for (let i = 1; i <= tickCount; i++) {
       const x = margin.left + (i / tickCount) * plotWidth;
@@ -221,9 +221,9 @@ export function BarChart({ dataset }: BarChartProps) {
             </p>
           </div>
 
-          <EvergreenTip
+          <VisualizationTip
             tip="Horizontal bars are easier to read than vertical bars because labels are left-aligned and the eye naturally compares lengths."
-            context="Evergreen design: prefer horizontal bars for categorical data"
+            context="Best practice: prefer horizontal bars for categorical data"
           />
 
           {/* Category variable */}

@@ -207,7 +207,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       </div>
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Visualize</h5>
-                        <p className="text-xs">Create publication-ready charts (bar, line, slope, lollipop, waffle, heatmap, and more) following Evergreen data visualization best practices</p>
+                        <p className="text-xs">Create publication-ready charts (bar, line, slope, lollipop, waffle, heatmap, and more) following data visualization best practices</p>
                       </div>
                     </div>
                   </div>

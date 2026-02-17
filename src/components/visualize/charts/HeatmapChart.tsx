@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -352,7 +352,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
           </div>
         </div>
 
-        <EvergreenTip
+        <VisualizationTip
           tip="Use sequential color schemes (light-to-dark) for heatmaps. Avoid rainbow palettes, which create false boundaries."
           context="Heatmaps excel at revealing patterns in two-dimensional categorical data"
         />

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -204,7 +204,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     <div className="flex gap-6">
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
-        <EvergreenTip
+        <VisualizationTip
           tip="Use grouped bars to compare values across sub-groups; use stacked bars to show how parts contribute to totals. Avoid too many groups - 2 to 4 is ideal."
           context="Grouped mode highlights comparison; stacked mode highlights composition."
         />

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import {
   getDefaultDimensions,
   svgWrapper,
@@ -210,7 +210,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
 
-          <EvergreenTip
+          <VisualizationTip
             tip="Slope charts excel at showing change between exactly two time points or conditions. They reveal both direction and magnitude of change at a glance."
             context="Best used with 3-15 categories for readability."
           />

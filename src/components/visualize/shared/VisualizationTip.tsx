@@ -1,11 +1,11 @@
 import { useState } from 'react';
 
-interface EvergreenTipProps {
+interface VisualizationTipProps {
   tip: string;
   context?: string; // When to show this tip
 }
 
-export function EvergreenTip({ tip, context }: EvergreenTipProps) {
+export function VisualizationTip({ tip, context }: VisualizationTipProps) {
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { calculateFrequency } from '../../../utils/statistics';
 import {
   getDefaultDimensions,
@@ -176,7 +176,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
 
-          <EvergreenTip
+          <VisualizationTip
             tip="Lollipop charts are a cleaner alternative to bar charts for ranking data. The dot-on-stick design reduces visual clutter while maintaining precise value communication."
             context="Horizontal layout makes category labels easy to read."
           />

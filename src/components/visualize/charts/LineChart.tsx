@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColor, getChartColors } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
@@ -319,9 +319,9 @@ export function LineChart({ dataset }: LineChartProps) {
             </p>
           </div>
 
-          <EvergreenTip
+          <VisualizationTip
             tip="Line charts imply continuity between data points. Use them for time series or ordered data, never for unrelated categories."
-            context="Evergreen design: use lines only when a connection between points is meaningful"
+            context="Best practice: use lines only when a connection between points is meaningful"
           />
 
           {/* X-axis variable */}
