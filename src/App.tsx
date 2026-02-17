@@ -34,7 +34,7 @@ import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
 import { VisualizeWorkflow } from './components/visualize/VisualizeWorkflow';
-import { demoColumns, demoCaseRecords } from './data/demoData';
+import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
@@ -51,9 +51,10 @@ type Module = 'dashboard' | 'review' | 'epicurve' | 'spotmap' | 'analysis' | 'vi
 // =============================================================================
 
 const DEMO_DATASET_ID = 'demo-outbreak-2024';
+const DEMO_NUTRITION_DATASET_ID = 'demo-nutrition-survey-2025';
 // Bump this version whenever demo data in demoData.ts changes.
 // Existing users with stale demo data will get the updated version automatically.
-const DEMO_DATA_VERSION = 2;
+const DEMO_DATA_VERSION = 3;
 
 /** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({
@@ -62,6 +63,17 @@ const createDemoDataset = (): Dataset => ({
   source: 'form',
   columns: demoColumns,
   records: demoCaseRecords,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
+
+/** Creates the child nutrition survey demo dataset */
+const createNutritionDemoDataset = (): Dataset => ({
+  id: DEMO_NUTRITION_DATASET_ID,
+  name: 'Child Nutrition Survey - Rapid Assessment',
+  source: 'form',
+  columns: nutritionDemoColumns,
+  records: nutritionDemoRecords,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 });
@@ -93,7 +105,7 @@ function App() {
   // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
     const saved = localStorage.getItem('epikit_datasets');
-    return saved ? JSON.parse(saved) : [createDemoDataset()];
+    return saved ? JSON.parse(saved) : [createDemoDataset(), createNutritionDemoDataset()];
   });
 
   // Which dataset is currently selected for viewing/editing
@@ -198,8 +210,10 @@ function App() {
     const savedVersion = localStorage.getItem('epikit_demoDataVersion');
     if (!savedVersion || Number(savedVersion) < DEMO_DATA_VERSION) {
       setDatasets(prev => {
-        const withoutOldDemo = prev.filter(d => d.id !== DEMO_DATASET_ID);
-        return [createDemoDataset(), ...withoutOldDemo];
+        const withoutOldDemos = prev.filter(
+          d => d.id !== DEMO_DATASET_ID && d.id !== DEMO_NUTRITION_DATASET_ID
+        );
+        return [createDemoDataset(), createNutritionDemoDataset(), ...withoutOldDemos];
       });
       localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
     }
