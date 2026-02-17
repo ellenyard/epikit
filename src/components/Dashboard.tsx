@@ -98,7 +98,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">Visualize Data</h3>
             <p className="text-sm text-gray-600">
-              Create publication-ready charts with Evergreen design principles
+              Create publication-ready charts with data visualization best practices
             </p>
           </button>
 

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import { calculateFrequency } from '../../../utils/statistics';
 import {
@@ -127,7 +127,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
     <div className="flex gap-6">
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
-        <EvergreenTip
+        <VisualizationTip
           tip="Waffle charts make proportions tangible: each square equals 1%, making it easy for audiences to grasp part-to-whole relationships."
           context="Best used when you have a small number of categories (2-6)."
         />

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -315,7 +315,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
           </div>
         </div>
 
-        <EvergreenTip
+        <VisualizationTip
           tip="Cleveland dot plots reduce visual clutter compared to bar charts. Use two series to highlight gaps between groups."
           context="Best for comparing a single quantitative value across categories"
         />

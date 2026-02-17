@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -163,9 +163,9 @@ export function BulletChart({ dataset }: BulletChartProps) {
     <div className="flex gap-6">
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
-        <EvergreenTip
+        <VisualizationTip
           tip="Bullet charts are ideal for comparing actual performance to a target, replacing dashboard gauges with a more space-efficient design."
-          context="Introduced by Stephen Few as an alternative to gauge charts."
+          context="A space-efficient alternative to gauge charts."
         />
 
         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">

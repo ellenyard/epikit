@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { EvergreenTip } from '../shared/EvergreenTip';
+import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -358,7 +358,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           </div>
         </div>
 
-        <EvergreenTip
+        <VisualizationTip
           tip="Paired bar charts (population pyramids) are ideal for comparing two groups across the same categories, such as age-sex distributions."
           context="Use the group-split mode when your data has a binary grouping variable"
         />
