@@ -154,3 +154,195 @@ export const demoCaseRecords: CaseRecord[] = [
 ];
 
 export const demoDatasetName = 'Foodborne Outbreak - Community Picnic';
+
+// =============================================================================
+// DEMO DATASET 2: Child Nutrition Survey (SMART-style rapid assessment)
+//
+// 300 children aged 6-59 months across 30 survey clusters, Nov–Jan 2025-2026.
+// No geographic coordinates — designed to showcase EpiKit's visualization
+// features: dot plots, box plots, waffle charts, heatmaps, grouped/paired bars,
+// bullet charts, slope charts, and frequency distributions.
+//
+// Key indicators:
+//   - Global Acute Malnutrition (GAM) by WHZ: ~8% SAM, ~17% MAM, ~75% Normal
+//   - Acute Malnutrition by MUAC: ~4% SAM, ~12% MAM, ~84% Normal
+//   - Stunting (HAZ < -2): ~38%
+//   - Underweight (WAZ < -2): ~22%
+//   - Vitamin A coverage: ~62%  |  Measles vaccination: ~76%
+// =============================================================================
+
+export const nutritionDemoColumns: DataColumn[] = [
+  { key: 'child_id', label: 'Child ID', type: 'text' },
+  { key: 'age_months', label: 'Age (months)', type: 'number' },
+  {
+    key: 'age_group', label: 'Age Group', type: 'categorical',
+    valueOrder: ['6-11 mo', '12-23 mo', '24-35 mo', '36-47 mo', '48-59 mo'],
+  },
+  { key: 'sex', label: 'Sex', type: 'categorical' },
+  { key: 'caregiver_age', label: 'Caregiver Age', type: 'number' },
+  {
+    key: 'caregiver_education', label: 'Caregiver Education', type: 'categorical',
+    valueOrder: ['None', 'Primary', 'Secondary', 'Higher'],
+  },
+  { key: 'household_size', label: 'Household Size', type: 'number' },
+  { key: 'children_under5', label: 'Children Under 5', type: 'number' },
+  { key: 'weight_kg', label: 'Weight (kg)', type: 'number' },
+  { key: 'height_cm', label: 'Height (cm)', type: 'number' },
+  { key: 'muac_cm', label: 'MUAC (cm)', type: 'number' },
+  { key: 'oedema', label: 'Bilateral Oedema', type: 'categorical' },
+  { key: 'whz', label: 'WHZ Score', type: 'number' },
+  { key: 'haz', label: 'HAZ Score', type: 'number' },
+  { key: 'waz', label: 'WAZ Score', type: 'number' },
+  {
+    key: 'gam_status', label: 'Acute Malnutrition (WHZ)', type: 'categorical',
+    valueOrder: ['SAM', 'MAM', 'Normal'],
+  },
+  {
+    key: 'muac_status', label: 'Acute Malnutrition (MUAC)', type: 'categorical',
+    valueOrder: ['SAM', 'MAM', 'Normal'],
+  },
+  { key: 'stunting_status', label: 'Stunting Status', type: 'categorical' },
+  { key: 'underweight_status', label: 'Underweight Status', type: 'categorical' },
+  { key: 'currently_breastfeeding', label: 'Currently Breastfeeding', type: 'categorical' },
+  { key: 'dietary_diversity_score', label: 'Dietary Diversity Score (0-8)', type: 'number' },
+  { key: 'meal_frequency', label: 'Meal Frequency (per day)', type: 'number' },
+  { key: 'vitamin_a_supplement', label: 'Vitamin A Supplement (past 6 mo)', type: 'categorical' },
+  { key: 'measles_vaccinated', label: 'Measles Vaccinated', type: 'categorical' },
+  { key: 'deworming', label: 'Deworming (past 6 mo)', type: 'categorical' },
+  { key: 'survey_cluster', label: 'Survey Cluster', type: 'number' },
+  { key: 'survey_date', label: 'Survey Date', type: 'date' },
+];
+
+/** Seeded linear congruential generator — produces reproducible demo data */
+function makeLCG(seed: number) {
+  let s = seed >>> 0;
+  return function () {
+    s = (Math.imul(1664525, s) + 1013904223) | 0;
+    return (s >>> 0) / 4294967296;
+  };
+}
+
+function generateNutritionRecords(): CaseRecord[] {
+  const rand = makeLCG(2025);
+
+  // Box-Muller transform for approximately normal values
+  function randNorm(mean: number, sd: number): number {
+    const u1 = Math.max(1e-10, rand());
+    const u2 = rand();
+    const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    return mean + sd * z;
+  }
+  function round1(n: number) { return Math.round(n * 10) / 10; }
+  function round2(n: number) { return Math.round(n * 100) / 100; }
+  function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
+
+  const surveyDates = [
+    '2025-11-03', '2025-11-10', '2025-11-17', '2025-11-24',
+    '2025-12-01', '2025-12-08', '2025-12-15', '2025-12-22',
+    '2026-01-05', '2026-01-12', '2026-01-19', '2026-01-26',
+  ];
+
+  const records: CaseRecord[] = [];
+
+  for (let i = 0; i < 300; i++) {
+    const child_id = `NC${String(i + 1).padStart(3, '0')}`;
+
+    // Age 6-59 months, roughly uniform
+    const age_months = Math.floor(rand() * 54) + 6;
+    const age_group =
+      age_months < 12 ? '6-11 mo' :
+      age_months < 24 ? '12-23 mo' :
+      age_months < 36 ? '24-35 mo' :
+      age_months < 48 ? '36-47 mo' : '48-59 mo';
+
+    const sex = rand() < 0.5 ? 'Male' : 'Female';
+
+    const caregiver_age = clamp(Math.round(randNorm(28, 7)), 18, 50);
+    const edu_val = rand();
+    const caregiver_education =
+      edu_val < 0.18 ? 'None' :
+      edu_val < 0.52 ? 'Primary' :
+      edu_val < 0.84 ? 'Secondary' : 'Higher';
+
+    const household_size = clamp(Math.round(randNorm(5.5, 2)), 2, 12);
+    const children_under5 = clamp(Math.floor(rand() * 4) + 1, 1, Math.floor(household_size / 2) + 1);
+
+    // Anthropometric z-scores for a high-burden setting
+    const whz = round2(clamp(randNorm(-1.0, 1.2), -4, 2.5));
+    const haz = round2(clamp(randNorm(-1.6, 1.3), -4, 2.5));
+    const waz = round2(clamp(0.5 * whz + 0.5 * haz + randNorm(0, 0.4), -4, 2.5));
+
+    // Classification
+    const gam_status = whz < -3 ? 'SAM' : whz < -2 ? 'MAM' : 'Normal';
+    const stunting_status = haz < -2 ? 'Stunted' : 'Not Stunted';
+    const underweight_status = waz < -2 ? 'Underweight' : 'Normal';
+
+    // Physical measurements derived from z-scores + age (approximate WHO growth curves)
+    const height_cm = round1(clamp(67 + age_months * 0.77 + haz * 2.2 + randNorm(0, 0.5), 60, 120));
+    const weight_kg = round1(clamp((height_cm / 100) ** 2 * 16.5 * (1 + whz * 0.09), 4.5, 22));
+
+    // MUAC correlated with WHZ and age
+    const muac_cm = round1(clamp(12.5 + whz * 0.75 + (age_months - 12) * 0.015 + randNorm(0, 0.35), 9.5, 17.5));
+    const muac_status = muac_cm < 11.5 ? 'SAM' : muac_cm < 12.5 ? 'MAM' : 'Normal';
+
+    const oedema = rand() < 0.04 ? 'Yes' : 'No';
+
+    // Breastfeeding — common under 24 months, rare after
+    const currently_breastfeeding = rand() < (age_months < 24 ? 0.70 : 0.12) ? 'Yes' : 'No';
+
+    // Dietary diversity: higher with better caregiver education
+    const dds_base =
+      caregiver_education === 'None' ? 2.2 :
+      caregiver_education === 'Primary' ? 3.0 :
+      caregiver_education === 'Secondary' ? 3.8 : 4.5;
+    const dietary_diversity_score = clamp(Math.round(randNorm(dds_base, 1.4)), 0, 8);
+
+    // Meal frequency — older children eat more often
+    const meal_frequency = clamp(Math.floor(rand() * 4) + (age_months < 12 ? 1 : 2), 1, 5);
+
+    // Coverage: slightly lower for acutely malnourished children
+    const cov_adj = gam_status === 'Normal' ? 0 : -0.08;
+    const vitamin_a_supplement = rand() < (0.62 + cov_adj) ? 'Yes' : 'No';
+    const measles_vaccinated   = rand() < (0.76 + cov_adj) ? 'Yes' : 'No';
+    const deworming            = rand() < (0.55 + cov_adj) ? 'Yes' : 'No';
+
+    const survey_cluster = Math.floor(rand() * 30) + 1;
+    const survey_date = surveyDates[Math.floor(rand() * surveyDates.length)];
+
+    records.push({
+      id: String(i + 1),
+      child_id,
+      age_months,
+      age_group,
+      sex,
+      caregiver_age,
+      caregiver_education,
+      household_size,
+      children_under5,
+      weight_kg,
+      height_cm,
+      muac_cm,
+      oedema,
+      whz,
+      haz,
+      waz,
+      gam_status,
+      muac_status,
+      stunting_status,
+      underweight_status,
+      currently_breastfeeding,
+      dietary_diversity_score,
+      meal_frequency,
+      vitamin_a_supplement,
+      measles_vaccinated,
+      deworming,
+      survey_cluster,
+      survey_date,
+    });
+  }
+
+  return records;
+}
+
+export const nutritionDemoRecords: CaseRecord[] = generateNutritionRecords();
+export const nutritionDemoDatasetName = 'Child Nutrition Survey - Rapid Assessment';
