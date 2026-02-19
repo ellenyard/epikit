@@ -226,7 +226,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
 
           <VisualizationTip
             tip="Slope charts excel at showing change between exactly two time points or conditions. They reveal both direction and magnitude of change at a glance. Data is automatically aggregated by category."
-            context="Try this: Category=Age Group, use Value+Group mode with Value=Vitamin A Coverage (%), Group=Survey Round"
+            context="Try this: Category=Age Group, use Value+Group mode with Value=Vitamin A Coverage (%), Group=Survey Year"
           />
 
           {/* Data point warning */}

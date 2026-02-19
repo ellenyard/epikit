@@ -158,17 +158,23 @@ export const demoDatasetName = 'Foodborne Outbreak - Community Picnic';
 // =============================================================================
 // DEMO DATASET 2: Child Nutrition Survey (SMART-style rapid assessment)
 //
-// 300 children aged 6-59 months across 30 survey clusters, Nov–Jan 2025-2026.
-// No geographic coordinates — designed to showcase EpiKit's visualization
-// features: dot plots, box plots, waffle charts, heatmaps, grouped/paired bars,
-// bullet charts, slope charts, and frequency distributions.
+// 300 children aged 6-59 months across 30 survey clusters, surveyed in
+// two consecutive years (2024 and 2025). No geographic coordinates —
+// designed to showcase EpiKit's visualization features: dot plots, box
+// plots, waffle charts, heatmaps, grouped/paired bars, bullet charts,
+// slope charts, and frequency distributions.
 //
-// Key indicators:
+// Two-year design: 150 children surveyed in 2020 and 150 in 2025. The
+// 2025 cohort shows meaningful improvements in coverage and nutrition —
+// reflecting five years of programme impact — so that slope charts
+// clearly display change over time.
+//
+// Key indicators (approximate, per year):
 //   - Global Acute Malnutrition (GAM) by WHZ: ~8% SAM, ~17% MAM, ~75% Normal
-//   - Acute Malnutrition by MUAC: ~4% SAM, ~12% MAM, ~84% Normal
 //   - Stunting (HAZ < -2): ~38%
 //   - Underweight (WAZ < -2): ~22%
-//   - Vitamin A coverage: ~62%  |  Measles vaccination: ~76%
+//   - Vitamin A coverage: ~62% (2020) → ~74% (2025)
+//   - Measles vaccination: ~72% (2020) → ~84% (2025)
 // =============================================================================
 
 export const nutritionDemoColumns: DataColumn[] = [
@@ -211,7 +217,7 @@ export const nutritionDemoColumns: DataColumn[] = [
   { key: 'deworming', label: 'Deworming (past 6 mo)', type: 'categorical' },
   { key: 'survey_cluster', label: 'Survey Cluster', type: 'number' },
   { key: 'survey_date', label: 'Survey Date', type: 'date' },
-  { key: 'survey_round', label: 'Survey Round', type: 'categorical', valueOrder: ['Round 1', 'Round 2'] },
+  { key: 'survey_year', label: 'Survey Year', type: 'categorical', valueOrder: ['2020', '2025'] },
   { key: 'target_vitamin_a', label: 'Target Vitamin A Coverage (%)', type: 'number' },
   { key: 'target_measles', label: 'Target Measles Coverage (%)', type: 'number' },
   { key: 'vitamin_a_coverage_pct', label: 'Vitamin A Coverage (%)', type: 'number' },
@@ -241,10 +247,14 @@ function generateNutritionRecords(): CaseRecord[] {
   function round2(n: number) { return Math.round(n * 100) / 100; }
   function clamp(n: number, min: number, max: number) { return Math.max(min, Math.min(max, n)); }
 
-  const surveyDates = [
-    '2025-11-03', '2025-11-10', '2025-11-17', '2025-11-24',
-    '2025-12-01', '2025-12-08', '2025-12-15', '2025-12-22',
-    '2026-01-05', '2026-01-12', '2026-01-19', '2026-01-26',
+  // Dates span two survey years — 6 collection dates per year (5-year gap)
+  const surveyDates2020 = [
+    '2020-10-05', '2020-10-12', '2020-10-19',
+    '2020-11-02', '2020-11-09', '2020-11-16',
+  ];
+  const surveyDates2025 = [
+    '2025-10-06', '2025-10-13', '2025-10-20',
+    '2025-11-03', '2025-11-10', '2025-11-17',
   ];
 
   const records: CaseRecord[] = [];
@@ -305,18 +315,21 @@ function generateNutritionRecords(): CaseRecord[] {
     // Meal frequency — older children eat more often
     const meal_frequency = clamp(Math.floor(rand() * 4) + (age_months < 12 ? 1 : 2), 1, 5);
 
+    // Survey year: first 150 children = 2020, second 150 = 2025
+    const survey_year = i < 150 ? '2020' : '2025';
+    const yearDates = survey_year === '2020' ? surveyDates2020 : surveyDates2025;
+
+    // Year-over-year improvement: 2025 cohort has better programme coverage
+    const yearBoost = survey_year === '2025' ? 0.12 : 0;
+
     // Coverage: slightly lower for acutely malnourished children
     const cov_adj = gam_status === 'Normal' ? 0 : -0.08;
-    const vitamin_a_supplement = rand() < (0.62 + cov_adj) ? 'Yes' : 'No';
-    const measles_vaccinated   = rand() < (0.76 + cov_adj) ? 'Yes' : 'No';
-    const deworming            = rand() < (0.55 + cov_adj) ? 'Yes' : 'No';
+    const vitamin_a_supplement = rand() < (0.62 + cov_adj + yearBoost) ? 'Yes' : 'No';
+    const measles_vaccinated   = rand() < (0.72 + cov_adj + yearBoost) ? 'Yes' : 'No';
+    const deworming            = rand() < (0.55 + cov_adj + yearBoost) ? 'Yes' : 'No';
 
     const survey_cluster = Math.floor(rand() * 30) + 1;
-    const survey_date = surveyDates[Math.floor(rand() * surveyDates.length)];
-
-    // Survey round: first 6 dates = Round 1, last 6 = Round 2
-    const dateIndex = surveyDates.indexOf(survey_date);
-    const survey_round = dateIndex < 6 ? 'Round 1' : 'Round 2';
+    const survey_date = yearDates[Math.floor(rand() * yearDates.length)];
 
     // Target coverage percentages (national programme targets)
     const target_vitamin_a = 90;
@@ -356,7 +369,7 @@ function generateNutritionRecords(): CaseRecord[] {
       deworming,
       survey_cluster,
       survey_date,
-      survey_round,
+      survey_year,
       target_vitamin_a,
       target_measles,
       vitamin_a_coverage_pct,
