@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
+import type { Dataset, DataColumn } from '../../types/analysis';
 
 export type ChartType =
   | 'bar'
@@ -231,39 +232,131 @@ const CHART_GROUPS: ChartGroup[] = [
 
 interface ChartGalleryProps {
   onSelectChart: (chartType: ChartType) => void;
+  dataset?: Dataset;
 }
 
-export function ChartGallery({ onSelectChart }: ChartGalleryProps) {
+/** Map from ChartType to the full ChartInfo for quick lookup */
+const ALL_CHARTS = CHART_GROUPS.flatMap(g => g.charts);
+const CHART_MAP = new Map(ALL_CHARTS.map(c => [c.type, c]));
+
+/**
+ * Suggest charts based on the column types present in the dataset.
+ */
+function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string }[] {
+  const numericCols = columns.filter(c => c.type === 'number');
+  const categoricalCols = columns.filter(c => c.type === 'categorical' || c.type === 'text');
+  const dateCols = columns.filter(c => c.type === 'date');
+  const suggestions: { type: ChartType; reason: string }[] = [];
+
+  // Binary categorical (exactly 2 values are common) + categorical = paired bar
+  const hasBinaryCat = categoricalCols.some(c => c.valueOrder && c.valueOrder.length === 2);
+  if (hasBinaryCat && categoricalCols.length >= 2) {
+    suggestions.push({ type: 'paired', reason: 'Your data has a binary grouping variable — great for comparing two groups' });
+  }
+
+  // Multiple numeric columns = slope chart
+  if (numericCols.length >= 2 && categoricalCols.length >= 1) {
+    suggestions.push({ type: 'slope', reason: 'Multiple numeric columns can show change between two measures' });
+  }
+
+  // Categorical + numeric = bar or lollipop
+  if (categoricalCols.length >= 1 && numericCols.length >= 1) {
+    suggestions.push({ type: 'bar', reason: 'Compare categories using numeric values' });
+  }
+
+  // Date column + numeric = line chart
+  if (dateCols.length >= 1 && numericCols.length >= 1) {
+    suggestions.push({ type: 'line', reason: 'Visualize trends over time with your date and numeric columns' });
+  }
+
+  // Two categorical + numeric = heatmap
+  if (categoricalCols.length >= 2) {
+    suggestions.push({ type: 'heatmap', reason: 'Cross-tabulate two categorical variables with color intensity' });
+  }
+
+  // Numeric with target-like columns = bullet chart
+  const hasTarget = numericCols.some(c => c.key.includes('target') || c.label.toLowerCase().includes('target'));
+  if (hasTarget && categoricalCols.length >= 1) {
+    suggestions.push({ type: 'bullet', reason: 'Compare actual values against targets in your data' });
+  }
+
+  // Deduplicate
+  const seen = new Set<ChartType>();
+  return suggestions.filter(s => {
+    if (seen.has(s.type)) return false;
+    seen.add(s.type);
+    return true;
+  }).slice(0, 4);
+}
+
+function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void; reason?: string }) {
+  const Thumbnail = chart.thumbnail;
+  return (
+    <button
+      onClick={onSelect}
+      className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg text-left hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer group"
+    >
+      <div className="flex-shrink-0 bg-gray-50 rounded-md p-2 group-hover:bg-blue-50 transition-colors">
+        <Thumbnail />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 transition-colors">
+          {chart.name}
+        </p>
+        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+          {chart.description}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
+  const suggestions = useMemo(() => {
+    if (!dataset) return [];
+    return suggestCharts(dataset.columns);
+  }, [dataset]);
+
   return (
     <div className="space-y-8">
+      {/* Suggested charts section */}
+      {suggestions.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-1 flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            Suggested for Your Data
+          </h4>
+          <p className="text-xs text-gray-500 mb-3">Based on the columns in your dataset</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {suggestions.map(({ type, reason }) => {
+              const chart = CHART_MAP.get(type);
+              if (!chart) return null;
+              return (
+                <div key={type} className="relative">
+                  <ChartCard chart={chart} onSelect={() => onSelectChart(type)} />
+                  <p className="text-xs text-green-600 mt-1 ml-1">{reason}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {CHART_GROUPS.map((group) => (
         <div key={group.label}>
           <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
             {group.label}
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {group.charts.map((chart) => {
-              const Thumbnail = chart.thumbnail;
-              return (
-                <button
-                  key={chart.type}
-                  onClick={() => onSelectChart(chart.type)}
-                  className="flex items-center gap-4 p-4 bg-white border border-gray-200 rounded-lg text-left hover:border-blue-400 hover:shadow-sm transition-all cursor-pointer group"
-                >
-                  <div className="flex-shrink-0 bg-gray-50 rounded-md p-2 group-hover:bg-blue-50 transition-colors">
-                    <Thumbnail />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 transition-colors">
-                      {chart.name}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
-                      {chart.description}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+            {group.charts.map((chart) => (
+              <ChartCard
+                key={chart.type}
+                chart={chart}
+                onSelect={() => onSelectChart(chart.type)}
+              />
+            ))}
           </div>
         </div>
       ))}

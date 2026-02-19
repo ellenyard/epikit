@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { TabHeader } from '../shared/TabHeader';
+import { DatasetSummary } from './DatasetSummary';
 import { ChartGallery } from './ChartGallery';
 import type { ChartType } from './ChartGallery';
 import type { Dataset } from '../../types/analysis';
@@ -43,7 +44,10 @@ export function VisualizeWorkflow({ dataset }: VisualizeWorkflowProps) {
         />
 
         {selectedChart === null ? (
-          <ChartGallery onSelectChart={setSelectedChart} />
+          <>
+            <DatasetSummary dataset={dataset} />
+            <ChartGallery onSelectChart={setSelectedChart} dataset={dataset} />
+          </>
         ) : (
           <div>
             <button

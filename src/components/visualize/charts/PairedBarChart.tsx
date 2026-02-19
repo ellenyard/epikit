@@ -32,6 +32,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   const [numericCol, setNumericCol] = useState('');
   const [groupCol, setGroupCol] = useState('');
 
+  type PairedAggMode = 'mean' | 'sum' | 'count';
+  const [aggMode, setAggMode] = useState<PairedAggMode>('mean');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
   const [title, setTitle] = useState('Paired Bar Chart');
@@ -93,10 +95,18 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
       }
     }
 
+    const resolveAgg = (sum: number, count: number) => {
+      switch (aggMode) {
+        case 'mean': return count > 0 ? sum / count : 0;
+        case 'sum': return sum;
+        case 'count': return count;
+      }
+    };
+
     const rows = Array.from(categoryMap.entries()).map(([cat, agg]) => ({
       category: cat,
-      leftVal: agg.leftCount > 0 ? agg.leftSum / agg.leftCount : 0,
-      rightVal: agg.rightCount > 0 ? agg.rightSum / agg.rightCount : 0,
+      leftVal: resolveAgg(agg.leftSum, agg.leftCount),
+      rightVal: resolveAgg(agg.rightSum, agg.rightCount),
     }));
 
     // Sort alphabetically by category
@@ -209,7 +219,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [categoryCol, inputMode, leftValueCol, rightValueCol, numericCol, groupCol, groupValues, colorScheme, showLabels, title, subtitle, source, dataset]);
+  }, [categoryCol, inputMode, leftValueCol, rightValueCol, numericCol, groupCol, groupValues, aggMode, colorScheme, showLabels, title, subtitle, source, dataset]);
 
   return (
     <div className="flex gap-6">
@@ -299,6 +309,20 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Options</h4>
 
           <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Aggregation</label>
+            <select
+              value={aggMode}
+              onChange={(e) => setAggMode(e.target.value as PairedAggMode)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="mean">Mean (average)</option>
+              <option value="sum">Sum (total)</option>
+              <option value="count">Count (frequency)</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Count mode compares group sizes per category</p>
+          </div>
+
+          <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>
             <select
               value={colorScheme}
@@ -359,8 +383,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
         </div>
 
         <VisualizationTip
-          tip="Paired bar charts (population pyramids) are ideal for comparing two groups across the same categories, such as age-sex distributions."
-          context="Use the group-split mode when your data has a binary grouping variable"
+          tip="Paired bar charts (population pyramids) are ideal for comparing two groups across the same categories, such as age-sex distributions. Use Count mode to compare group sizes."
+          context="Try this: Category=Age Group, Group=Sex, Aggregation=Count — to see a population pyramid by age and sex"
         />
       </div>
 

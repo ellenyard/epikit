@@ -13,6 +13,7 @@ import {
   escapeXml,
 } from '../../../utils/chartExport';
 import { INCREASE_COLOR, DECREASE_COLOR, NEUTRAL_COLOR } from '../../../utils/chartColors';
+import { aggregatePairByCategory, type AggregationMode } from '../../../utils/chartAggregation';
 
 interface SlopeChartProps {
   dataset: Dataset;
@@ -33,6 +34,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
   const [valueCol, setValueCol] = useState('');
   const [groupCol, setGroupCol] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('two-columns');
+  const [aggMode, setAggMode] = useState<AggregationMode>('mean');
   const [showValues, setShowValues] = useState(true);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
@@ -53,53 +55,65 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
 
   const hasTwoGroups = groupValues.length === 2;
 
-  // Build slope data
+  // Build slope data — always aggregates by category
   const slopeData = useMemo((): SlopeDataPoint[] => {
     if (!categoryCol) return [];
 
     if (inputMode === 'two-columns') {
       if (!startCol || !endCol) return [];
-      const points: SlopeDataPoint[] = [];
-      for (const record of dataset.records) {
-        const cat = record[categoryCol];
-        const sv = record[startCol];
-        const ev = record[endCol];
-        if (cat == null || cat === '' || sv == null || ev == null) continue;
-        const startNum = Number(sv);
-        const endNum = Number(ev);
-        if (isNaN(startNum) || isNaN(endNum)) continue;
-        points.push({ category: String(cat), startValue: startNum, endValue: endNum });
-      }
-      return points;
+      const pairs = aggregatePairByCategory(dataset.records, categoryCol, startCol, endCol, aggMode);
+      return pairs.map(p => ({ category: p.category, startValue: p.valueA, endValue: p.valueB }));
     } else {
       // single-column mode: pivot on group column
       if (!valueCol || !groupCol || !hasTwoGroups) return [];
-      const grouped = new Map<string, { start?: number; end?: number }>();
       const [g1, g2] = groupValues;
 
-      for (const record of dataset.records) {
-        const cat = record[categoryCol];
-        const grp = record[groupCol];
-        const val = record[valueCol];
-        if (cat == null || cat === '' || grp == null || val == null) continue;
-        const num = Number(val);
-        if (isNaN(num)) continue;
-        const key = String(cat);
-        if (!grouped.has(key)) grouped.set(key, {});
-        const entry = grouped.get(key)!;
-        if (String(grp) === g1) entry.start = num;
-        if (String(grp) === g2) entry.end = num;
-      }
+      // Split records by group, then aggregate each side by category
+      const g1Records = dataset.records.filter(r => String(r[groupCol]) === g1);
+      const g2Records = dataset.records.filter(r => String(r[groupCol]) === g2);
 
-      const points: SlopeDataPoint[] = [];
-      for (const [category, vals] of grouped) {
-        if (vals.start !== undefined && vals.end !== undefined) {
-          points.push({ category, startValue: vals.start, endValue: vals.end });
+      // Build maps for each group
+      const buildMap = (recs: typeof dataset.records) => {
+        const map = new Map<string, { sum: number; count: number }>();
+        for (const rec of recs) {
+          const cat = rec[categoryCol];
+          const val = rec[valueCol];
+          if (cat == null || cat === '' || val == null) continue;
+          const num = Number(val);
+          if (isNaN(num)) continue;
+          const key = String(cat);
+          if (!map.has(key)) map.set(key, { sum: 0, count: 0 });
+          const entry = map.get(key)!;
+          entry.sum += num;
+          entry.count++;
         }
+        return map;
+      };
+
+      const mapStart = buildMap(g1Records);
+      const mapEnd = buildMap(g2Records);
+
+      const categories = new Set([...mapStart.keys(), ...mapEnd.keys()]);
+      const points: SlopeDataPoint[] = [];
+
+      for (const cat of categories) {
+        const s = mapStart.get(cat);
+        const e = mapEnd.get(cat);
+        if (!s || !e) continue;
+
+        const resolveVal = (bucket: { sum: number; count: number }) => {
+          switch (aggMode) {
+            case 'mean': return bucket.count > 0 ? bucket.sum / bucket.count : 0;
+            case 'sum': return bucket.sum;
+            case 'count': return bucket.count;
+            default: return bucket.count > 0 ? bucket.sum / bucket.count : 0;
+          }
+        };
+        points.push({ category: cat, startValue: resolveVal(s), endValue: resolveVal(e) });
       }
       return points;
     }
-  }, [categoryCol, startCol, endCol, valueCol, groupCol, inputMode, dataset.records, groupValues, hasTwoGroups]);
+  }, [categoryCol, startCol, endCol, valueCol, groupCol, inputMode, aggMode, dataset.records, groupValues, hasTwoGroups]);
 
   // Generate SVG
   const svgContent = useMemo(() => {
@@ -211,9 +225,18 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
 
           <VisualizationTip
-            tip="Slope charts excel at showing change between exactly two time points or conditions. They reveal both direction and magnitude of change at a glance."
-            context="Best used with 3-15 categories for readability."
+            tip="Slope charts excel at showing change between exactly two time points or conditions. They reveal both direction and magnitude of change at a glance. Data is automatically aggregated by category."
+            context="Try this: Category=Age Group, use Value+Group mode with Value=Vitamin A Coverage (%), Group=Survey Round"
           />
+
+          {/* Data point warning */}
+          {slopeData.length > 50 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+              <p className="text-xs text-amber-800">
+                <strong>{slopeData.length} categories detected.</strong> Slope charts work best with 3-15 categories. Consider using a column with fewer unique values.
+              </p>
+            </div>
+          )}
 
           {/* Input mode toggle */}
           <div className="mb-3">
@@ -305,6 +328,21 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
         {/* Display options */}
         <div className="border-t border-gray-200 pt-4">
           <h4 className="text-sm font-medium text-gray-700 mb-2">Display Options</h4>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Aggregation</label>
+            <select
+              value={aggMode}
+              onChange={e => setAggMode(e.target.value as AggregationMode)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="mean">Mean (average)</option>
+              <option value="sum">Sum (total)</option>
+              <option value="count">Count (frequency)</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">How to combine multiple records per category</p>
+          </div>
+
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input
               type="checkbox"

@@ -211,6 +211,11 @@ export const nutritionDemoColumns: DataColumn[] = [
   { key: 'deworming', label: 'Deworming (past 6 mo)', type: 'categorical' },
   { key: 'survey_cluster', label: 'Survey Cluster', type: 'number' },
   { key: 'survey_date', label: 'Survey Date', type: 'date' },
+  { key: 'survey_round', label: 'Survey Round', type: 'categorical', valueOrder: ['Round 1', 'Round 2'] },
+  { key: 'target_vitamin_a', label: 'Target Vitamin A Coverage (%)', type: 'number' },
+  { key: 'target_measles', label: 'Target Measles Coverage (%)', type: 'number' },
+  { key: 'vitamin_a_coverage_pct', label: 'Vitamin A Coverage (%)', type: 'number' },
+  { key: 'measles_coverage_pct', label: 'Measles Coverage (%)', type: 'number' },
 ];
 
 /** Seeded linear congruential generator — produces reproducible demo data */
@@ -309,6 +314,19 @@ function generateNutritionRecords(): CaseRecord[] {
     const survey_cluster = Math.floor(rand() * 30) + 1;
     const survey_date = surveyDates[Math.floor(rand() * surveyDates.length)];
 
+    // Survey round: first 6 dates = Round 1, last 6 = Round 2
+    const dateIndex = surveyDates.indexOf(survey_date);
+    const survey_round = dateIndex < 6 ? 'Round 1' : 'Round 2';
+
+    // Target coverage percentages (national programme targets)
+    const target_vitamin_a = 90;
+    const target_measles = 95;
+
+    // Compute individual coverage as percentage (100 or 0) — aggregating by
+    // category (e.g. age group) will yield meaningful percentages
+    const vitamin_a_coverage_pct = vitamin_a_supplement === 'Yes' ? 100 : 0;
+    const measles_coverage_pct = measles_vaccinated === 'Yes' ? 100 : 0;
+
     records.push({
       id: String(i + 1),
       child_id,
@@ -338,6 +356,11 @@ function generateNutritionRecords(): CaseRecord[] {
       deworming,
       survey_cluster,
       survey_date,
+      survey_round,
+      target_vitamin_a,
+      target_measles,
+      vitamin_a_coverage_pct,
+      measles_coverage_pct,
     });
   }
 
