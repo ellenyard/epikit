@@ -14,6 +14,7 @@ import {
   svgGridLine,
   escapeXml,
 } from '../../../utils/chartExport';
+import { aggregatePairByCategory, type AggregationMode } from '../../../utils/chartAggregation';
 
 interface BulletChartProps {
   dataset: Dataset;
@@ -23,27 +24,34 @@ export function BulletChart({ dataset }: BulletChartProps) {
   const [categoryVar, setCategoryVar] = useState('');
   const [actualVar, setActualVar] = useState('');
   const [targetVar, setTargetVar] = useState('');
+  const [aggMode, setAggMode] = useState<AggregationMode>('mean');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showValueLabels, setShowValueLabels] = useState(true);
   const [title, setTitle] = useState('Bullet Chart');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
 
+  // Count unique categories for warning
+  const uniqueCategories = useMemo(() => {
+    if (!categoryVar) return 0;
+    const unique = new Set<string>();
+    for (const rec of dataset.records) {
+      const cat = rec[categoryVar];
+      if (cat !== null && cat !== undefined && cat !== '') unique.add(String(cat));
+    }
+    return unique.size;
+  }, [categoryVar, dataset.records]);
+
   const svgContent = useMemo(() => {
     if (!categoryVar || !actualVar || !targetVar) return '';
 
-    // Extract data
-    const rows: { category: string; actual: number; target: number }[] = [];
-    for (const record of dataset.records) {
-      const cat = record[categoryVar];
-      const act = record[actualVar];
-      const tgt = record[targetVar];
-      if (cat == null || act == null || tgt == null) continue;
-      const actualNum = Number(act);
-      const targetNum = Number(tgt);
-      if (isNaN(actualNum) || isNaN(targetNum)) continue;
-      rows.push({ category: String(cat), actual: actualNum, target: targetNum });
-    }
+    // Extract data with aggregation by category
+    const aggregated = aggregatePairByCategory(dataset.records, categoryVar, actualVar, targetVar, aggMode);
+    const rows = aggregated.map(a => ({
+      category: a.category,
+      actual: a.valueA,
+      target: a.valueB,
+    }));
 
     if (rows.length === 0) return '';
 
@@ -155,7 +163,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [categoryVar, actualVar, targetVar, colorScheme, showValueLabels, title, subtitle, source, dataset.records]);
+  }, [categoryVar, actualVar, targetVar, aggMode, colorScheme, showValueLabels, title, subtitle, source, dataset.records]);
 
   const isReady = categoryVar && actualVar && targetVar;
 
@@ -164,9 +172,18 @@ export function BulletChart({ dataset }: BulletChartProps) {
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
         <VisualizationTip
-          tip="Bullet charts are ideal for comparing actual performance to a target, replacing dashboard gauges with a more space-efficient design."
-          context="A space-efficient alternative to gauge charts."
+          tip="Bullet charts are ideal for comparing actual performance to a target. Data is automatically aggregated by category (e.g., mean per age group)."
+          context="Try this: Category=Age Group, Actual=Vitamin A Coverage (%), Target=Target Vitamin A Coverage (%)"
         />
+
+        {/* Data point warning */}
+        {uniqueCategories > 30 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-xs text-amber-800">
+              <strong>{uniqueCategories} categories detected.</strong> Bullet charts work best with 3-15 categories. Consider using a column with fewer unique values.
+            </p>
+          </div>
+        )}
 
         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
           <h4 className="text-sm font-semibold text-gray-700">Variables</h4>
@@ -204,6 +221,20 @@ export function BulletChart({ dataset }: BulletChartProps) {
 
         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
           <h4 className="text-sm font-semibold text-gray-700">Styling</h4>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Aggregation</label>
+            <select
+              value={aggMode}
+              onChange={(e) => setAggMode(e.target.value as AggregationMode)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="mean">Mean (average)</option>
+              <option value="sum">Sum (total)</option>
+              <option value="count">Count (frequency)</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">How to combine multiple records per category</p>
+          </div>
 
           <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Color Scheme</label>

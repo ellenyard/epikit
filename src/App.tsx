@@ -54,7 +54,7 @@ const DEMO_DATASET_ID = 'demo-outbreak-2024';
 const DEMO_NUTRITION_DATASET_ID = 'demo-nutrition-survey-2025';
 // Bump this version whenever demo data in demoData.ts changes.
 // Existing users with stale demo data will get the updated version automatically.
-const DEMO_DATA_VERSION = 3;
+const DEMO_DATA_VERSION = 4;
 
 /** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({

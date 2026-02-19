@@ -6,7 +6,7 @@ interface HelpCenterProps {
   onOpenOnboarding: () => void;
 }
 
-type HelpSection = 'quick-start' | 'faq' | 'privacy' | 'about' | 'saving-sharing';
+type HelpSection = 'quick-start' | 'faq' | 'privacy' | 'about' | 'saving-sharing' | 'glossary';
 
 export const HelpCenter: React.FC<HelpCenterProps> = ({
   isOpen,
@@ -15,6 +15,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
 }) => {
   const [activeSection, setActiveSection] = useState<HelpSection>('quick-start');
   const [expandedFAQ, setExpandedFAQ] = useState<string | null>(null);
+  const [glossarySearch, setGlossarySearch] = useState('');
 
   if (!isOpen) return null;
 
@@ -95,6 +96,19 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               Saving & Sharing
             </button>
             <button
+              onClick={() => setActiveSection('glossary')}
+              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+                activeSection === 'glossary'
+                  ? 'bg-blue-100 text-blue-700 font-medium'
+                  : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+              Glossary
+            </button>
+            <button
               onClick={() => setActiveSection('about')}
               className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
                 activeSection === 'about'
@@ -129,6 +143,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               {activeSection === 'privacy' && 'Privacy & Data Handling'}
               {activeSection === 'saving-sharing' && 'Saving & Sharing'}
               {activeSection === 'about' && 'About EpiKit'}
+              {activeSection === 'glossary' && 'Epidemiology Glossary'}
             </h3>
             <button
               onClick={onClose}
@@ -872,6 +887,74 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     </ul>
                   </div>
                 </section>
+              </div>
+            )}
+
+            {activeSection === 'glossary' && (
+              <div className="space-y-4 max-w-4xl">
+                <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
+                  <p className="text-blue-800 text-sm">
+                    Common epidemiology and nutrition terms used in FETP and public health practice.
+                  </p>
+                </div>
+
+                <input
+                  type="text"
+                  value={glossarySearch}
+                  onChange={(e) => setGlossarySearch(e.target.value)}
+                  placeholder="Search glossary..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+
+                {(() => {
+                  const terms = [
+                    { term: 'Attack Rate', definition: 'The proportion of people exposed to a risk factor who develop the disease. Calculated as: (number of ill among exposed) / (total number exposed) x 100.' },
+                    { term: 'Case Fatality Rate (CFR)', definition: 'The proportion of people diagnosed with a disease who die from it. Calculated as: (number of deaths) / (number of cases) x 100.' },
+                    { term: 'Confidence Interval (CI)', definition: 'A range of values that is likely to contain the true population parameter with a specified level of certainty (usually 95%).' },
+                    { term: 'Epi Curve (Epidemic Curve)', definition: 'A histogram showing the number of disease cases by date of onset, used to visualize the time course of an outbreak.' },
+                    { term: 'GAM (Global Acute Malnutrition)', definition: 'A measure of nutritional status combining SAM and MAM. Defined as WHZ < -2 or bilateral oedema. GAM prevalence >15% indicates a nutrition emergency.' },
+                    { term: 'HAZ (Height-for-Age Z-score)', definition: 'A standardized measure of linear growth. HAZ < -2 indicates stunting (chronic malnutrition). Based on WHO growth standards.' },
+                    { term: 'Incidence', definition: 'The number of NEW cases of a disease occurring in a population during a specific time period. Often expressed per 100,000 population per year.' },
+                    { term: 'Incidence Rate', definition: 'The rate at which new cases occur, calculated as: (new cases in time period) / (person-time at risk).' },
+                    { term: 'MAM (Moderate Acute Malnutrition)', definition: 'Moderate wasting defined by WHZ between -3 and -2, or MUAC between 11.5 and 12.5 cm (for children 6-59 months).' },
+                    { term: 'MUAC (Mid-Upper Arm Circumference)', definition: 'A quick field measurement of nutritional status. For children 6-59 months: <11.5 cm = SAM, 11.5-12.5 cm = MAM, >12.5 cm = Normal.' },
+                    { term: 'Odds Ratio (OR)', definition: 'A measure of association between an exposure and an outcome in case-control studies. OR = 1 means no association; OR > 1 suggests higher odds of outcome with exposure.' },
+                    { term: 'Prevalence', definition: 'The proportion of a population that has a particular condition at a specific point in time. Includes both new and existing cases.' },
+                    { term: 'Relative Risk (RR)', definition: 'The ratio of disease risk in the exposed group to the risk in the unexposed group. RR = 1 means no difference; RR > 1 suggests increased risk with exposure.' },
+                    { term: 'SAM (Severe Acute Malnutrition)', definition: 'Severe wasting defined by WHZ < -3, MUAC < 11.5 cm, or bilateral oedema. Requires urgent nutritional treatment.' },
+                    { term: 'SMART Survey', definition: 'Standardized Monitoring and Assessment of Relief and Transitions. A simplified, standardized methodology for measuring nutrition and mortality indicators in emergencies.' },
+                    { term: 'Stunting', definition: 'Chronic malnutrition reflected by low height-for-age (HAZ < -2). Indicates prolonged undernutrition and/or repeated illness.' },
+                    { term: 'Underweight', definition: 'Low weight-for-age (WAZ < -2). A composite indicator that can reflect both acute and chronic malnutrition.' },
+                    { term: 'WAZ (Weight-for-Age Z-score)', definition: 'A standardized measure comparing a child\'s weight to a reference population of the same age. WAZ < -2 indicates underweight.' },
+                    { term: 'WHZ (Weight-for-Height Z-score)', definition: 'A standardized measure of wasting (acute malnutrition). WHZ < -2 = MAM, WHZ < -3 = SAM. Based on WHO growth standards.' },
+                    { term: 'Z-score', definition: 'The number of standard deviations a measurement is from the reference population median. Used in nutrition to classify malnutrition status.' },
+                    { term: '2x2 Table', definition: 'A cross-tabulation of exposure (rows) and outcome (columns) with two levels each. The foundation for calculating attack rates, odds ratios, and relative risk.' },
+                    { term: 'Dietary Diversity Score', definition: 'A measure of diet quality based on the number of food groups consumed by an individual over a reference period (usually 24 hours). Ranges from 0-8 for children.' },
+                    { term: 'Bilateral Oedema', definition: 'Fluid retention causing swelling in both feet. A clinical sign of severe acute malnutrition (kwashiorkor) regardless of other anthropometric measurements.' },
+                    { term: 'Person-Time', definition: 'A measure combining the number of people observed and the duration of observation. Used as the denominator for incidence rates.' },
+                  ];
+
+                  const filtered = glossarySearch
+                    ? terms.filter(t =>
+                        t.term.toLowerCase().includes(glossarySearch.toLowerCase()) ||
+                        t.definition.toLowerCase().includes(glossarySearch.toLowerCase())
+                      )
+                    : terms;
+
+                  return (
+                    <div className="space-y-2">
+                      {filtered.length === 0 && (
+                        <p className="text-gray-500 text-sm py-4 text-center">No terms match your search.</p>
+                      )}
+                      {filtered.map(({ term, definition }) => (
+                        <div key={term} className="border border-gray-200 rounded-lg p-3">
+                          <dt className="text-sm font-semibold text-gray-900">{term}</dt>
+                          <dd className="text-sm text-gray-600 mt-1">{definition}</dd>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
