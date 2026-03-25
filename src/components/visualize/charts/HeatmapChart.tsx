@@ -57,6 +57,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
   const [title, setTitle] = useState('Heatmap');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   const svgContent = useMemo(() => {
     if (!rowCol || !colCol) return '';
@@ -356,6 +357,32 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
           tip="Use sequential color schemes (light-to-dark) for heatmaps. Avoid rainbow palettes, which create false boundaries."
           context="Heatmaps excel at revealing patterns in two-dimensional categorical data"
         />
+
+        <div className="border border-blue-100 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowGuide(!showGuide)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              When to Use This Chart
+            </span>
+            <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showGuide && (
+            <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+              <p>• Cross-tabulating two categorical variables (e.g., age group × week)</p>
+              <p>• Identifying clusters, hotspots, or patterns in two dimensions</p>
+              <p>• Displaying surveillance data by location and time period</p>
+              <p>• Showing contact matrices or exposure-outcome associations</p>
+              <p className="text-blue-500 italic mt-2">Heat maps are widely used for spatial-temporal epidemiological analysis. Use sequential single-hue palettes for accessibility — avoid rainbow color scales. — CDC</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chart area */}

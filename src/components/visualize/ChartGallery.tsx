@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { Dataset, DataColumn } from '../../types/analysis';
 
 export type ChartType =
@@ -11,7 +11,9 @@ export type ChartType =
   | 'waffle'
   | 'dot'
   | 'heatmap'
-  | 'paired';
+  | 'paired'
+  | 'dumbbell'
+  | 'forest';
 
 interface ChartInfo {
   type: ChartType;
@@ -183,13 +185,10 @@ function HeatmapThumbnail() {
 function PairedBarThumbnail() {
   return (
     <svg width="80" height="60" viewBox="0 0 80 60" className={THUMBNAIL_CLASSES}>
-      {/* Left bars (e.g., male) */}
       <rect x="10" y="8" width="26" height="8" fill="currentColor" rx="1" />
       <rect x="16" y="22" width="20" height="8" fill="currentColor" rx="1" />
       <rect x="6" y="36" width="30" height="8" fill="currentColor" rx="1" />
-      {/* Center axis */}
       <line x1="40" y1="4" x2="40" y2="54" stroke="#999" strokeWidth="1" />
-      {/* Right bars (e.g., female) */}
       <rect x="44" y="8" width="22" height="8" fill="#E57A3A" rx="1" />
       <rect x="44" y="22" width="28" height="8" fill="#E57A3A" rx="1" />
       <rect x="44" y="36" width="18" height="8" fill="#E57A3A" rx="1" />
@@ -197,35 +196,91 @@ function PairedBarThumbnail() {
   );
 }
 
+function DumbbellThumbnail() {
+  return (
+    <svg width="80" height="60" viewBox="0 0 80 60" className={THUMBNAIL_CLASSES}>
+      <line x1="12" y1="6" x2="12" y2="54" stroke="#E0E0E0" strokeWidth="1" />
+      {/* Row 1 */}
+      <line x1="30" y1="12" x2="60" y2="12" stroke="#BBBFC4" strokeWidth="2" />
+      <circle cx="30" cy="12" r="4" fill="currentColor" />
+      <circle cx="60" cy="12" r="4" fill="#E57A3A" />
+      {/* Row 2 */}
+      <line x1="24" y1="26" x2="52" y2="26" stroke="#BBBFC4" strokeWidth="2" />
+      <circle cx="24" cy="26" r="4" fill="currentColor" />
+      <circle cx="52" cy="26" r="4" fill="#E57A3A" />
+      {/* Row 3 */}
+      <line x1="36" y1="40" x2="66" y2="40" stroke="#BBBFC4" strokeWidth="2" />
+      <circle cx="36" cy="40" r="4" fill="currentColor" />
+      <circle cx="66" cy="40" r="4" fill="#E57A3A" />
+      {/* Row 4 */}
+      <line x1="20" y1="54" x2="48" y2="54" stroke="#BBBFC4" strokeWidth="2" />
+      <circle cx="20" cy="54" r="4" fill="currentColor" />
+      <circle cx="48" cy="54" r="4" fill="#E57A3A" />
+    </svg>
+  );
+}
+
+function ForestPlotThumbnail() {
+  return (
+    <svg width="80" height="60" viewBox="0 0 80 60" className={THUMBNAIL_CLASSES}>
+      {/* Null line (dashed) */}
+      <line x1="40" y1="4" x2="40" y2="52" stroke="#999" strokeWidth="1" strokeDasharray="3,2" />
+      {/* Study 1: CI line + square */}
+      <line x1="28" y1="12" x2="58" y2="12" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="39" y="8" width="8" height="8" fill="currentColor" />
+      {/* Study 2: CI line + square */}
+      <line x1="22" y1="26" x2="50" y2="26" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="32" y="22" width="6" height="6" fill="currentColor" />
+      {/* Study 3: CI line + square */}
+      <line x1="34" y1="40" x2="64" y2="40" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="45" y="36" width="7" height="7" fill="currentColor" />
+      {/* Pooled diamond */}
+      <polygon points="40,48 48,52 40,56 32,52" fill="currentColor" />
+    </svg>
+  );
+}
+
 interface ChartGroup {
   label: string;
+  description: string;
   charts: ChartInfo[];
 }
 
 const CHART_GROUPS: ChartGroup[] = [
   {
-    label: 'Core Charts',
+    label: 'Describe & Count',
+    description: 'Show frequencies, proportions, and single metrics',
     charts: [
-      { type: 'bar', name: 'Bar Chart', description: 'Compare categories with horizontal or vertical bars', thumbnail: BarThumbnail },
-      { type: 'line', name: 'Line Chart', description: 'Show trends over time with connected data points', thumbnail: LineThumbnail },
-      { type: 'slope', name: 'Slope Chart', description: 'Compare changes between two time points', thumbnail: SlopeThumbnail },
+      { type: 'bar', name: 'Bar Chart', description: 'Compare categories with horizontal bars and direct labels', thumbnail: BarThumbnail },
       { type: 'lollipop', name: 'Lollipop Chart', description: 'A lighter alternative to bar charts with dot endpoints', thumbnail: LollipopThumbnail },
-    ],
-  },
-  {
-    label: 'Comparison Charts',
-    charts: [
-      { type: 'grouped', name: 'Grouped Bar Chart', description: 'Compare multiple series side by side', thumbnail: GroupedBarThumbnail },
+      { type: 'dot', name: 'Dot Plot', description: 'Plot individual values along a single axis with precision', thumbnail: DotPlotThumbnail },
+      { type: 'waffle', name: 'Waffle Chart', description: 'Display proportions as filled squares — 1 square = 1%', thumbnail: WaffleThumbnail },
       { type: 'bullet', name: 'Bullet Chart', description: 'Show performance against a target or benchmark', thumbnail: BulletThumbnail },
-      { type: 'waffle', name: 'Waffle Chart', description: 'Display proportions as filled squares in a grid', thumbnail: WaffleThumbnail },
     ],
   },
   {
-    label: 'Advanced Charts',
+    label: 'Compare Groups',
+    description: 'Compare values across two or more groups or subpopulations',
     charts: [
-      { type: 'dot', name: 'Dot Plot', description: 'Plot individual values along a single axis', thumbnail: DotPlotThumbnail },
+      { type: 'grouped', name: 'Grouped/Stacked Bar', description: 'Compare sub-groups side by side, stacked, or as 100% proportions', thumbnail: GroupedBarThumbnail },
+      { type: 'dumbbell', name: 'Dumbbell Chart', description: 'Compare two values per category with connected dots', thumbnail: DumbbellThumbnail },
+      { type: 'paired', name: 'Paired Bar Chart', description: 'Compare two groups as mirrored horizontal bars (population pyramids)', thumbnail: PairedBarThumbnail },
+    ],
+  },
+  {
+    label: 'Show Change Over Time',
+    description: 'Track trends, shifts, and temporal patterns',
+    charts: [
+      { type: 'line', name: 'Line Chart', description: 'Show trends over time with connected data points', thumbnail: LineThumbnail },
+      { type: 'slope', name: 'Slope Chart', description: 'Compare changes between exactly two time points', thumbnail: SlopeThumbnail },
+    ],
+  },
+  {
+    label: 'Analyze Relationships',
+    description: 'Cross-tabulations, effect estimates, and multi-dimensional patterns',
+    charts: [
       { type: 'heatmap', name: 'Heatmap', description: 'Visualize values across two dimensions with color intensity', thumbnail: HeatmapThumbnail },
-      { type: 'paired', name: 'Paired Bar Chart', description: 'Compare two groups as mirrored horizontal bars', thumbnail: PairedBarThumbnail },
+      { type: 'forest', name: 'Forest Plot', description: 'Display effect estimates with confidence intervals across studies or subgroups', thumbnail: ForestPlotThumbnail },
     ],
   },
 ];
@@ -240,6 +295,50 @@ const ALL_CHARTS = CHART_GROUPS.flatMap(g => g.charts);
 const CHART_MAP = new Map(ALL_CHARTS.map(c => [c.type, c]));
 
 /**
+ * Analytical intent categories for the intent-based suggestion layer.
+ */
+type AnalyticalIntent =
+  | 'compare_groups'
+  | 'show_trends'
+  | 'show_proportions'
+  | 'show_effects'
+  | 'cross_tabulate';
+
+const INTENT_LABELS: Record<AnalyticalIntent, string> = {
+  compare_groups: 'Compare Groups',
+  show_trends: 'Show Trends Over Time',
+  show_proportions: 'Display Proportions',
+  show_effects: 'Show Effect Estimates',
+  cross_tabulate: 'Cross-tabulate Variables',
+};
+
+const INTENT_CHARTS: Record<AnalyticalIntent, { type: ChartType; reason: string }[]> = {
+  compare_groups: [
+    { type: 'grouped', reason: 'Compare sub-groups side by side, stacked, or as proportions' },
+    { type: 'dumbbell', reason: 'Show the gap between two values per category' },
+    { type: 'paired', reason: 'Mirror two groups for direct comparison (e.g., age-sex pyramid)' },
+    { type: 'bar', reason: 'Simple comparison across categories' },
+  ],
+  show_trends: [
+    { type: 'line', reason: 'Track continuous trends over time' },
+    { type: 'slope', reason: 'Compare values between two time points' },
+  ],
+  show_proportions: [
+    { type: 'waffle', reason: 'Each square = 1% — intuitive for non-technical audiences' },
+    { type: 'grouped', reason: 'Use 100% stacked mode for proportional composition' },
+    { type: 'bar', reason: 'Rank proportions from highest to lowest' },
+  ],
+  show_effects: [
+    { type: 'forest', reason: 'Display effect estimates (OR, RR) with confidence intervals' },
+    { type: 'dot', reason: 'Plot point estimates for comparison' },
+  ],
+  cross_tabulate: [
+    { type: 'heatmap', reason: 'Cross-tabulate two categorical variables with color intensity' },
+    { type: 'grouped', reason: 'Compare counts or values across two grouping variables' },
+  ],
+};
+
+/**
  * Suggest charts based on the column types present in the dataset.
  */
 function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string }[] {
@@ -248,10 +347,27 @@ function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string
   const dateCols = columns.filter(c => c.type === 'date');
   const suggestions: { type: ChartType; reason: string }[] = [];
 
-  // Binary categorical (exactly 2 values are common) + categorical = paired bar
+  // CI-like columns suggest forest plot
+  const hasCIColumns = numericCols.some(c => {
+    const lower = c.key.toLowerCase();
+    return lower.includes('lower') || lower.includes('ci_lo') || lower.includes('lcl');
+  }) && numericCols.some(c => {
+    const lower = c.key.toLowerCase();
+    return lower.includes('upper') || lower.includes('ci_hi') || lower.includes('ucl');
+  });
+  if (hasCIColumns && categoricalCols.length >= 1) {
+    suggestions.push({ type: 'forest', reason: 'Your data has confidence interval columns — ideal for a forest plot' });
+  }
+
+  // Binary categorical (exactly 2 values) + categorical = paired bar or dumbbell
   const hasBinaryCat = categoricalCols.some(c => c.valueOrder && c.valueOrder.length === 2);
   if (hasBinaryCat && categoricalCols.length >= 2) {
     suggestions.push({ type: 'paired', reason: 'Your data has a binary grouping variable — great for comparing two groups' });
+  }
+
+  // Two numeric columns + categorical = dumbbell
+  if (numericCols.length >= 2 && categoricalCols.length >= 1) {
+    suggestions.push({ type: 'dumbbell', reason: 'Two numeric columns can show the gap between paired values per category' });
   }
 
   // Multiple numeric columns = slope chart
@@ -259,7 +375,7 @@ function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string
     suggestions.push({ type: 'slope', reason: 'Multiple numeric columns can show change between two measures' });
   }
 
-  // Categorical + numeric = bar or lollipop
+  // Categorical + numeric = bar
   if (categoricalCols.length >= 1 && numericCols.length >= 1) {
     suggestions.push({ type: 'bar', reason: 'Compare categories using numeric values' });
   }
@@ -269,7 +385,7 @@ function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string
     suggestions.push({ type: 'line', reason: 'Visualize trends over time with your date and numeric columns' });
   }
 
-  // Two categorical + numeric = heatmap
+  // Two categorical = heatmap
   if (categoricalCols.length >= 2) {
     suggestions.push({ type: 'heatmap', reason: 'Cross-tabulate two categorical variables with color intensity' });
   }
@@ -286,7 +402,7 @@ function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string
     if (seen.has(s.type)) return false;
     seen.add(s.type);
     return true;
-  }).slice(0, 4);
+  }).slice(0, 5);
 }
 
 function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void; reason?: string }) {
@@ -303,7 +419,7 @@ function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void
         <p className="text-sm font-medium text-gray-900 group-hover:text-blue-700 transition-colors">
           {chart.name}
         </p>
-        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">
+        <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
           {chart.description}
         </p>
       </div>
@@ -311,16 +427,82 @@ function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void
   );
 }
 
+/**
+ * Intent-based quick filter buttons for the "What are you trying to do?" prompt.
+ */
+function IntentFilter({
+  selectedIntent,
+  onSelect,
+}: {
+  selectedIntent: AnalyticalIntent | null;
+  onSelect: (intent: AnalyticalIntent | null) => void;
+}) {
+  const intents: AnalyticalIntent[] = ['compare_groups', 'show_trends', 'show_proportions', 'show_effects', 'cross_tabulate'];
+
+  return (
+    <div className="mb-6">
+      <p className="text-sm font-medium text-gray-700 mb-2">What are you trying to do?</p>
+      <div className="flex flex-wrap gap-2">
+        {intents.map((intent) => (
+          <button
+            key={intent}
+            onClick={() => onSelect(selectedIntent === intent ? null : intent)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors cursor-pointer ${
+              selectedIntent === intent
+                ? 'bg-blue-100 border-blue-300 text-blue-800'
+                : 'bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-700'
+            }`}
+          >
+            {INTENT_LABELS[intent]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
+  const [selectedIntent, setSelectedIntent] = useState<AnalyticalIntent | null>(null);
+
   const suggestions = useMemo(() => {
     if (!dataset) return [];
     return suggestCharts(dataset.columns);
   }, [dataset]);
 
+  const intentSuggestions = selectedIntent ? INTENT_CHARTS[selectedIntent] : null;
+
   return (
     <div className="space-y-8">
-      {/* Suggested charts section */}
-      {suggestions.length > 0 && (
+      {/* Intent-based filter */}
+      <IntentFilter selectedIntent={selectedIntent} onSelect={setSelectedIntent} />
+
+      {/* Intent-based recommendations */}
+      {intentSuggestions && (
+        <div>
+          <h4 className="text-sm font-semibold text-blue-700 uppercase tracking-wide mb-1 flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Recommended for: {INTENT_LABELS[selectedIntent!]}
+          </h4>
+          <p className="text-xs text-gray-500 mb-3">Charts best suited to this analytical goal</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {intentSuggestions.map(({ type, reason }) => {
+              const chart = CHART_MAP.get(type);
+              if (!chart) return null;
+              return (
+                <div key={type} className="relative">
+                  <ChartCard chart={chart} onSelect={() => onSelectChart(type)} />
+                  <p className="text-xs text-blue-600 mt-1 ml-1">{reason}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Data-driven suggestions */}
+      {suggestions.length > 0 && !selectedIntent && (
         <div>
           <h4 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-1 flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -344,11 +526,13 @@ export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
         </div>
       )}
 
+      {/* All charts by workflow category */}
       {CHART_GROUPS.map((group) => (
         <div key={group.label}>
-          <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
             {group.label}
           </h4>
+          <p className="text-xs text-gray-400 mb-3">{group.description}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {group.charts.map((chart) => (
               <ChartCard

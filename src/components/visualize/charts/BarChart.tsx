@@ -3,6 +3,7 @@ import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
 import { getChartColors } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
@@ -25,6 +26,117 @@ type ValueMode = 'count' | 'sum' | 'mean';
 interface BarData {
   label: string;
   value: number;
+  lower?: number;
+  upper?: number;
+}
+
+/** Generate SVG for bar chart from sorted data. */
+function generateBarSvg(
+  sortedData: BarData[],
+  colorScheme: ChartColorScheme,
+  showDataLabels: boolean,
+  chartTitle: string,
+  chartSubtitle: string,
+  chartSource: string
+): string {
+  if (sortedData.length === 0) return '';
+
+  const dims = getDefaultDimensions('bar');
+  const { width, height, margin } = dims;
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+
+  const maxValue = Math.max(...sortedData.map(d => d.value), 0);
+  const niceMax = maxValue === 0 ? 10 : getNiceMax(maxValue);
+  const barCount = sortedData.length;
+  const barGap = 4;
+  const barHeight = Math.min(
+    Math.max((plotHeight - barGap * (barCount - 1)) / barCount, 8),
+    40
+  );
+  const totalBarsHeight = barCount * barHeight + (barCount - 1) * barGap;
+  const adjustedHeight = Math.max(height, totalBarsHeight + margin.top + margin.bottom + 20);
+  const adjustedPlotHeight = adjustedHeight - margin.top - margin.bottom;
+
+  const colors = getChartColors(barCount, colorScheme);
+
+  let svg = '';
+
+  if (chartTitle) {
+    svg += svgTitle(width, chartTitle, chartSubtitle || undefined);
+  }
+
+  const tickCount = 5;
+  for (let i = 1; i <= tickCount; i++) {
+    const x = margin.left + (i / tickCount) * plotWidth;
+    svg += svgGridLine(x, margin.top, x, margin.top + adjustedPlotHeight);
+  }
+
+  for (let i = 0; i <= tickCount; i++) {
+    const x = margin.left + (i / tickCount) * plotWidth;
+    const tickValue = (niceMax * i) / tickCount;
+    const label = Number.isInteger(tickValue) ? String(tickValue) : tickValue.toFixed(1);
+    svg += svgText(x, margin.top + adjustedPlotHeight + 20, label, {
+      anchor: 'middle',
+      fontSize: 11,
+      fill: '#666',
+    });
+  }
+
+  sortedData.forEach((d, i) => {
+    const barY = margin.top + i * (barHeight + barGap);
+    const barW = maxValue > 0 ? (d.value / niceMax) * plotWidth : 0;
+    const color = colors[i % colors.length];
+
+    if (d.lower !== undefined && d.upper !== undefined) {
+      const ciLowerX = maxValue > 0 ? margin.left + (d.lower / niceMax) * plotWidth : margin.left;
+      const ciUpperX = maxValue > 0 ? margin.left + (d.upper / niceMax) * plotWidth : margin.left;
+      const ciCenterY = barY + barHeight / 2;
+      const capHeight = 3;
+
+      svg += `<line x1="${Math.min(ciLowerX, ciUpperX)}" y1="${ciCenterY}" x2="${Math.max(ciLowerX, ciUpperX)}" y2="${ciCenterY}" stroke="#333" stroke-width="1.5"/>`;
+      svg += `<line x1="${Math.min(ciLowerX, ciUpperX)}" y1="${ciCenterY - capHeight}" x2="${Math.min(ciLowerX, ciUpperX)}" y2="${ciCenterY + capHeight}" stroke="#333" stroke-width="1.5"/>`;
+      svg += `<line x1="${Math.max(ciLowerX, ciUpperX)}" y1="${ciCenterY - capHeight}" x2="${Math.max(ciLowerX, ciUpperX)}" y2="${ciCenterY + capHeight}" stroke="#333" stroke-width="1.5"/>`;
+    }
+
+    svg += `<rect x="${margin.left}" y="${barY}" width="${Math.max(barW, 0)}" height="${barHeight}" fill="${color}" rx="2"/>`;
+
+    const labelText = d.label.length > 22 ? d.label.substring(0, 20) + '...' : d.label;
+    svg += svgText(margin.left - 8, barY + barHeight / 2, labelText, {
+      anchor: 'end',
+      fontSize: 12,
+      fill: '#333',
+      dy: '0.35em',
+    });
+
+    if (showDataLabels) {
+      const displayValue = Number.isInteger(d.value) ? String(d.value) : d.value.toFixed(1);
+      const labelWidth = displayValue.length * 7 + 8;
+      if (barW > labelWidth + 10) {
+        svg += svgText(margin.left + barW - 6, barY + barHeight / 2, displayValue, {
+          anchor: 'end',
+          fontSize: 11,
+          fontWeight: 'bold',
+          fill: '#fff',
+          dy: '0.35em',
+        });
+      } else {
+        svg += svgText(margin.left + barW + 6, barY + barHeight / 2, displayValue, {
+          anchor: 'start',
+          fontSize: 11,
+          fontWeight: 'bold',
+          fill: '#333',
+          dy: '0.35em',
+        });
+      }
+    }
+  });
+
+  if (chartSource) {
+    svg += svgSource(width, adjustedHeight, chartSource);
+  }
+
+  return svgWrapper(width, adjustedHeight, svg);
 }
 
 export function BarChart({ dataset }: BarChartProps) {
@@ -32,12 +144,16 @@ export function BarChart({ dataset }: BarChartProps) {
   const [categoryVar, setCategoryVar] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
   const [valueVar, setValueVar] = useState('');
+  const [lowerCICol, setLowerCICol] = useState('');
+  const [upperCICol, setUpperCICol] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('value');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showDataLabels, setShowDataLabels] = useState(true);
+  const [facetCol, setFacetCol] = useState('');
   const [chartTitle, setChartTitle] = useState('');
   const [chartSubtitle, setChartSubtitle] = useState('');
   const [chartSource, setChartSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   // Check if selected category column has valueOrder for custom sorting
   const selectedColumn = useMemo(
@@ -60,6 +176,9 @@ export function BarChart({ dataset }: BarChartProps) {
     if (!valueVar) return [];
 
     const groups = new Map<string, number[]>();
+    const ciLowerGroups = new Map<string, number[]>();
+    const ciUpperGroups = new Map<string, number[]>();
+
     for (const record of dataset.records) {
       const cat = record[categoryVar];
       if (cat === null || cat === undefined || cat === '') continue;
@@ -68,19 +187,48 @@ export function BarChart({ dataset }: BarChartProps) {
       if (isNaN(numVal)) continue;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(numVal);
+
+      if (lowerCICol) {
+        const ciLower = Number(record[lowerCICol]);
+        if (!isNaN(ciLower)) {
+          if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
+          ciLowerGroups.get(key)!.push(ciLower);
+        }
+      }
+
+      if (upperCICol) {
+        const ciUpper = Number(record[upperCICol]);
+        if (!isNaN(ciUpper)) {
+          if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
+          ciUpperGroups.get(key)!.push(ciUpper);
+        }
+      }
     }
 
     const result: BarData[] = [];
     for (const [label, values] of groups) {
+      let barData: BarData;
       if (valueMode === 'sum') {
-        result.push({ label, value: values.reduce((a, b) => a + b, 0) });
+        barData = { label, value: values.reduce((a, b) => a + b, 0) };
       } else {
         // mean
-        result.push({ label, value: values.reduce((a, b) => a + b, 0) / values.length });
+        barData = { label, value: values.reduce((a, b) => a + b, 0) / values.length };
       }
+
+      if (lowerCICol && ciLowerGroups.has(label) && ciLowerGroups.get(label)!.length > 0) {
+        const ciLowerVals = ciLowerGroups.get(label)!;
+        barData.lower = ciLowerVals.reduce((a, b) => a + b, 0) / ciLowerVals.length;
+      }
+
+      if (upperCICol && ciUpperGroups.has(label) && ciUpperGroups.get(label)!.length > 0) {
+        const ciUpperVals = ciUpperGroups.get(label)!;
+        barData.upper = ciUpperVals.reduce((a, b) => a + b, 0) / ciUpperVals.length;
+      }
+
+      result.push(barData);
     }
     return result;
-  }, [categoryVar, valueMode, valueVar, dataset.records]);
+  }, [categoryVar, valueMode, valueVar, lowerCICol, upperCICol, dataset.records]);
 
   // Sort bar data
   const sortedData = useMemo(() => {
@@ -107,106 +255,7 @@ export function BarChart({ dataset }: BarChartProps) {
 
   // Generate SVG string
   const svgContent = useMemo(() => {
-    if (sortedData.length === 0) return '';
-
-    const dims = getDefaultDimensions('bar');
-    const { width, height, margin } = dims;
-    const plotWidth = width - margin.left - margin.right;
-    const plotHeight = height - margin.top - margin.bottom;
-
-    const maxValue = Math.max(...sortedData.map(d => d.value), 0);
-    // Round up to a nice number for the axis
-    const niceMax = maxValue === 0 ? 10 : getNiceMax(maxValue);
-    const barCount = sortedData.length;
-    const barGap = 4;
-    const barHeight = Math.min(
-      Math.max((plotHeight - barGap * (barCount - 1)) / barCount, 8),
-      40
-    );
-    // Adjust total chart height if bars would overflow
-    const totalBarsHeight = barCount * barHeight + (barCount - 1) * barGap;
-    const adjustedHeight = Math.max(height, totalBarsHeight + margin.top + margin.bottom + 20);
-    const adjustedPlotHeight = adjustedHeight - margin.top - margin.bottom;
-
-    const colors = getChartColors(barCount, colorScheme);
-
-    let svg = '';
-
-    // Title and subtitle
-    if (chartTitle) {
-      svg += svgTitle(width, chartTitle, chartSubtitle || undefined);
-    }
-
-    // Vertical gridlines (light, minimal)
-    const tickCount = 5;
-    for (let i = 1; i <= tickCount; i++) {
-      const x = margin.left + (i / tickCount) * plotWidth;
-      svg += svgGridLine(x, margin.top, x, margin.top + adjustedPlotHeight);
-    }
-
-    // X-axis tick labels
-    for (let i = 0; i <= tickCount; i++) {
-      const x = margin.left + (i / tickCount) * plotWidth;
-      const tickValue = (niceMax * i) / tickCount;
-      const label = Number.isInteger(tickValue) ? String(tickValue) : tickValue.toFixed(1);
-      svg += svgText(x, margin.top + adjustedPlotHeight + 20, label, {
-        anchor: 'middle',
-        fontSize: 11,
-        fill: '#666',
-      });
-    }
-
-    // Bars and labels
-    sortedData.forEach((d, i) => {
-      const barY = margin.top + i * (barHeight + barGap);
-      const barW = maxValue > 0 ? (d.value / niceMax) * plotWidth : 0;
-      const color = colors[i % colors.length];
-
-      // Bar
-      svg += `<rect x="${margin.left}" y="${barY}" width="${Math.max(barW, 0)}" height="${barHeight}" fill="${color}" rx="2"/>`;
-
-      // Category label on the left
-      const labelText = d.label.length > 22 ? d.label.substring(0, 20) + '...' : d.label;
-      svg += svgText(margin.left - 8, barY + barHeight / 2, labelText, {
-        anchor: 'end',
-        fontSize: 12,
-        fill: '#333',
-        dy: '0.35em',
-      });
-
-      // Data label on the bar
-      if (showDataLabels) {
-        const displayValue = Number.isInteger(d.value) ? String(d.value) : d.value.toFixed(1);
-        // Place label inside bar if bar is wide enough, otherwise outside
-        const labelWidth = displayValue.length * 7 + 8;
-        if (barW > labelWidth + 10) {
-          // Inside bar, right-aligned
-          svg += svgText(margin.left + barW - 6, barY + barHeight / 2, displayValue, {
-            anchor: 'end',
-            fontSize: 11,
-            fontWeight: 'bold',
-            fill: '#fff',
-            dy: '0.35em',
-          });
-        } else {
-          // Outside bar, right of the bar
-          svg += svgText(margin.left + barW + 6, barY + barHeight / 2, displayValue, {
-            anchor: 'start',
-            fontSize: 11,
-            fontWeight: 'bold',
-            fill: '#333',
-            dy: '0.35em',
-          });
-        }
-      }
-    });
-
-    // Source
-    if (chartSource) {
-      svg += svgSource(width, adjustedHeight, chartSource);
-    }
-
-    return svgWrapper(width, adjustedHeight, svg);
+    return generateBarSvg(sortedData, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource);
   }, [sortedData, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource]);
 
   return (
@@ -222,9 +271,35 @@ export function BarChart({ dataset }: BarChartProps) {
           </div>
 
           <VisualizationTip
-            tip="Horizontal bars are easier to read than vertical bars because labels are left-aligned and the eye naturally compares lengths."
-            context="Best practice: prefer horizontal bars for categorical data"
+            tip="Horizontal bars are easier to read than vertical bars because labels are left-aligned and the eye naturally compares lengths. Sort by value (descending) so the most important categories appear at the top."
+            context="Best practice from CDC: prefer horizontal bars for categorical data. Consider a lollipop chart if you have many categories and want less visual weight."
           />
+
+          <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                When to Use This Chart
+              </span>
+              <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showGuide && (
+              <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+                <p>• Comparing frequency, counts, or values across categories</p>
+                <p>• Ranking items from highest to lowest (sort by value)</p>
+                <p>• Showing attack rates, case counts, or proportions by group</p>
+                <p>• When category labels are long (horizontal bars keep them readable)</p>
+                <p className="text-blue-500 italic mt-2">CDC recommends horizontal bars when category labels are long. Sort by value (descending) to emphasize the most important categories. — CDC COVE Best Practices</p>
+              </div>
+            )}
+          </div>
 
           {/* Category variable */}
           <VariableMapper
@@ -264,6 +339,31 @@ export function BarChart({ dataset }: BarChartProps) {
               required
               placeholder="Select numeric variable..."
             />
+          )}
+
+          {/* Confidence interval columns */}
+          {valueMode !== 'count' && (
+            <div className="mt-2 pl-2 border-l-2 border-gray-200">
+              <p className="text-xs text-gray-500 mb-2">Optional: Confidence Intervals</p>
+              <VariableMapper
+                label="Lower CI"
+                description="Lower confidence limit"
+                columns={dataset.columns}
+                value={lowerCICol}
+                onChange={setLowerCICol}
+                filterTypes={['number']}
+                placeholder="None"
+              />
+              <VariableMapper
+                label="Upper CI"
+                description="Upper confidence limit"
+                columns={dataset.columns}
+                value={upperCICol}
+                onChange={setUpperCICol}
+                filterTypes={['number']}
+                placeholder="None"
+              />
+            </div>
           )}
 
           {/* Sort */}
@@ -312,6 +412,13 @@ export function BarChart({ dataset }: BarChartProps) {
             </label>
           </div>
 
+          {/* Small Multiples / Faceting */}
+          <FacetControl
+            columns={dataset.columns}
+            value={facetCol}
+            onChange={setFacetCol}
+          />
+
           {/* Chart labels */}
           <div className="space-y-3 pt-3 border-t border-gray-200">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart Labels</p>
@@ -352,15 +459,106 @@ export function BarChart({ dataset }: BarChartProps) {
       {/* Right Panel - Chart */}
       <div className="flex-1 overflow-auto p-4 lg:p-6">
         {sortedData.length > 0 ? (
-          <ChartContainer
-            title={chartTitle || 'Bar Chart'}
-            subtitle={chartSubtitle || undefined}
-            source={chartSource || undefined}
-            svgContent={svgContent}
-            filename={chartTitle ? chartTitle.replace(/\s+/g, '_') : 'bar_chart'}
-          >
-            <div dangerouslySetInnerHTML={{ __html: svgContent }} />
-          </ChartContainer>
+          facetCol ? (
+            <FacetWrapper
+              dataset={dataset}
+              facetCol={facetCol}
+              renderChart={(fd) => {
+                // Compute sorted data for this facet
+                let facetBarData: BarData[] = [];
+                if (valueMode === 'count') {
+                  const values = fd.records.map(r => r[categoryVar]);
+                  const freq = calculateFrequency(values);
+                  facetBarData = freq.map(f => ({ label: f.value, value: f.count }));
+                } else if (valueVar) {
+                  const groups = new Map<string, number[]>();
+                  const ciLowerGroups = new Map<string, number[]>();
+                  const ciUpperGroups = new Map<string, number[]>();
+
+                  for (const record of fd.records) {
+                    const cat = record[categoryVar];
+                    if (cat === null || cat === undefined || cat === '') continue;
+                    const key = String(cat);
+                    const numVal = Number(record[valueVar]);
+                    if (isNaN(numVal)) continue;
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key)!.push(numVal);
+
+                    if (lowerCICol) {
+                      const ciLower = Number(record[lowerCICol]);
+                      if (!isNaN(ciLower)) {
+                        if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
+                        ciLowerGroups.get(key)!.push(ciLower);
+                      }
+                    }
+
+                    if (upperCICol) {
+                      const ciUpper = Number(record[upperCICol]);
+                      if (!isNaN(ciUpper)) {
+                        if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
+                        ciUpperGroups.get(key)!.push(ciUpper);
+                      }
+                    }
+                  }
+
+                  for (const [label, values] of groups) {
+                    let barData: BarData;
+                    if (valueMode === 'sum') {
+                      barData = { label, value: values.reduce((a, b) => a + b, 0) };
+                    } else {
+                      barData = { label, value: values.reduce((a, b) => a + b, 0) / values.length };
+                    }
+
+                    if (lowerCICol && ciLowerGroups.has(label) && ciLowerGroups.get(label)!.length > 0) {
+                      const ciLowerVals = ciLowerGroups.get(label)!;
+                      barData.lower = ciLowerVals.reduce((a, b) => a + b, 0) / ciLowerVals.length;
+                    }
+
+                    if (upperCICol && ciUpperGroups.has(label) && ciUpperGroups.get(label)!.length > 0) {
+                      const ciUpperVals = ciUpperGroups.get(label)!;
+                      barData.upper = ciUpperVals.reduce((a, b) => a + b, 0) / ciUpperVals.length;
+                    }
+
+                    facetBarData.push(barData);
+                  }
+                }
+
+                // Sort facet data
+                let sortedFacetData = [...facetBarData];
+                if (sortMode === 'value') {
+                  sortedFacetData.sort((a, b) => b.value - a.value);
+                } else if (sortMode === 'alpha') {
+                  sortedFacetData.sort((a, b) => a.label.localeCompare(b.label));
+                } else if (sortMode === 'custom' && selectedColumn?.valueOrder) {
+                  const order = selectedColumn.valueOrder;
+                  sortedFacetData.sort((a, b) => {
+                    const ia = order.indexOf(a.label);
+                    const ib = order.indexOf(b.label);
+                    const posA = ia === -1 ? order.length : ia;
+                    const posB = ib === -1 ? order.length : ib;
+                    return posA - posB;
+                  });
+                }
+
+                if (sortedFacetData.length === 0) {
+                  return <div className="text-gray-400 text-xs p-2">No data</div>;
+                }
+
+                const facetSvg = generateBarSvg(sortedFacetData, colorScheme, showDataLabels, '', '', '');
+                return <div dangerouslySetInnerHTML={{ __html: facetSvg }} />;
+              }}
+            />
+          ) : (
+            <ChartContainer
+              title={chartTitle || 'Bar Chart'}
+              subtitle={chartSubtitle || undefined}
+              source={chartSource || undefined}
+              svgContent={svgContent}
+              filename={chartTitle ? chartTitle.replace(/\s+/g, '_') : 'bar_chart'}
+            >
+              <div dangerouslySetInnerHTML={{ __html: svgContent }} />
+            </ChartContainer>
+          )
         ) : (
           <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
             {categoryVar

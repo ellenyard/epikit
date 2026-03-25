@@ -19,7 +19,7 @@ interface GroupedBarChartProps {
   dataset: Dataset;
 }
 
-type DisplayMode = 'grouped' | 'stacked';
+type DisplayMode = 'grouped' | 'stacked' | 'percent';
 type ValueMode = 'count' | 'column';
 
 export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
@@ -33,6 +33,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
   const [title, setTitle] = useState('Grouped Bar Chart');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   const svgContent = useMemo(() => {
     if (!categoryVar || !groupVar) return '';
@@ -87,7 +88,9 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
 
     // Determine max value
     let maxValue = 0;
-    if (displayMode === 'stacked') {
+    if (displayMode === 'percent') {
+      maxValue = 100;
+    } else if (displayMode === 'stacked') {
       for (const catGroups of dataMap.values()) {
         let total = 0;
         for (const v of catGroups.values()) total += v;
@@ -101,7 +104,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       }
     }
 
-    const niceMax = ceilToNice(maxValue);
+    const niceMax = displayMode === 'percent' ? 100 : ceilToNice(maxValue);
 
     // Compute bar widths
     const categoryCount = categoryOrder.length;
@@ -122,7 +125,8 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       const val = (niceMax / tickCount) * i;
       const y = plotBottom - (val / niceMax) * plotHeight;
       svg += svgGridLine(plotLeft, y, plotRight, y);
-      svg += svgText(plotLeft - 10, y, formatNumber(val), {
+      const tickLabel = displayMode === 'percent' ? `${Math.round(val)}%` : formatNumber(val);
+      svg += svgText(plotLeft - 10, y, tickLabel, {
         anchor: 'end',
         fontSize: 11,
         fill: '#666',
@@ -139,6 +143,13 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       svg += drawGroupedBars(
         categoryOrder, groupValues, dataMap, colors,
         plotLeft, plotBottom, plotHeight, niceMax,
+        categoryWidth, categoryPadding, barAreaWidth,
+        showDataLabels
+      );
+    } else if (displayMode === 'percent') {
+      svg += drawPercentBars(
+        categoryOrder, groupValues, dataMap, colors,
+        plotLeft, plotBottom, plotHeight,
         categoryWidth, categoryPadding, barAreaWidth,
         showDataLabels
       );
@@ -204,9 +215,34 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     <div className="flex gap-6">
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
+        <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
+          <button
+            onClick={() => setShowGuide(!showGuide)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              When to Use This Chart
+            </span>
+            <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showGuide && (
+            <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+              <p>• <strong>Grouped:</strong> Compare sub-group values side by side (e.g., cases by age group and sex)</p>
+              <p>• <strong>Stacked:</strong> Show how sub-groups contribute to category totals</p>
+              <p>• <strong>100%:</strong> Show proportional composition across categories (e.g., case classification by district)</p>
+              <p className="text-blue-500 italic mt-2">Keep to 2–4 groups for readability. 100% stacked bars are common in outbreak investigation reports.</p>
+            </div>
+          )}
+        </div>
+
         <VisualizationTip
-          tip="Use grouped bars to compare values across sub-groups; use stacked bars to show how parts contribute to totals. Avoid too many groups - 2 to 4 is ideal."
-          context="Grouped mode highlights comparison; stacked mode highlights composition."
+          tip="Use grouped bars to compare values across sub-groups; use stacked bars to show how parts contribute to totals. The 100% mode is ideal for showing proportional composition across categories."
+          context="Grouped mode highlights comparison; stacked mode highlights composition; 100% mode highlights proportions."
         />
 
         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
@@ -285,6 +321,16 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
                 }`}
               >
                 Stacked
+              </button>
+              <button
+                onClick={() => setDisplayMode('percent')}
+                className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer ${
+                  displayMode === 'percent'
+                    ? 'bg-white text-gray-900 shadow-sm font-medium'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                100%
               </button>
             </div>
           </div>
@@ -488,6 +534,64 @@ function drawStackedBars(
         fill: '#333',
         fontWeight: 'bold',
       });
+    }
+  }
+
+  return svg;
+}
+
+/** Draw bars in 100% stacked layout (proportional) */
+function drawPercentBars(
+  categories: string[],
+  groupValues: string[],
+  dataMap: Map<string, Map<string, number>>,
+  colors: string[],
+  plotLeft: number,
+  plotBottom: number,
+  plotHeight: number,
+  categoryWidth: number,
+  categoryPadding: number,
+  barAreaWidth: number,
+  showLabels: boolean,
+): string {
+  let svg = '';
+
+  for (let ci = 0; ci < categories.length; ci++) {
+    const cat = categories[ci];
+    const groupMap = dataMap.get(cat);
+    if (!groupMap) continue;
+
+    // Compute total for this category
+    let total = 0;
+    for (const v of groupMap.values()) total += v;
+    if (total === 0) continue;
+
+    const x = plotLeft + ci * categoryWidth + categoryPadding;
+    const w = barAreaWidth;
+    let currentY = plotBottom;
+
+    // Draw segments bottom to top as percentages
+    for (let gi = 0; gi < groupValues.length; gi++) {
+      const grp = groupValues[gi];
+      const value = groupMap.get(grp) || 0;
+      if (value === 0) continue;
+
+      const pct = (value / total) * 100;
+      const segH = (pct / 100) * plotHeight;
+      currentY -= segH;
+
+      svg += `<rect x="${x}" y="${currentY}" width="${w}" height="${segH}" fill="${escapeXml(colors[gi])}" rx="${gi === groupValues.length - 1 ? 2 : 0}"/>`;
+
+      // Segment label if enough space
+      if (showLabels && segH > 16) {
+        svg += svgText(x + w / 2, currentY + segH / 2, `${pct.toFixed(1)}%`, {
+          anchor: 'middle',
+          fontSize: 10,
+          fill: '#fff',
+          fontWeight: 'bold',
+          dy: '0.35em',
+        });
+      }
     }
   }
 
