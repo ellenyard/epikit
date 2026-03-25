@@ -35,7 +35,7 @@ import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
 import { VisualizeWorkflow } from './components/visualize/VisualizeWorkflow';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords } from './data/demoData';
+import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords, surveillanceDemoColumns, surveillanceDemoRecords } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
@@ -53,9 +53,10 @@ type Module = 'dashboard' | 'review' | 'epicurve' | 'spotmap' | 'analysis' | 'vi
 
 const DEMO_DATASET_ID = 'demo-outbreak-2024';
 const DEMO_NUTRITION_DATASET_ID = 'demo-nutrition-survey-2025';
+const DEMO_SURVEILLANCE_DATASET_ID = 'demo-surveillance-monthly-2025';
 // Bump this version whenever demo data in demoData.ts changes.
 // Existing users with stale demo data will get the updated version automatically.
-const DEMO_DATA_VERSION = 5;
+const DEMO_DATA_VERSION = 6;
 
 /** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({
@@ -75,6 +76,17 @@ const createNutritionDemoDataset = (): Dataset => ({
   source: 'form',
   columns: nutritionDemoColumns,
   records: nutritionDemoRecords,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+});
+
+/** Creates the disease surveillance time-series demo dataset */
+const createSurveillanceDemoDataset = (): Dataset => ({
+  id: DEMO_SURVEILLANCE_DATASET_ID,
+  name: 'Disease Surveillance - Monthly Reports',
+  source: 'form',
+  columns: surveillanceDemoColumns,
+  records: surveillanceDemoRecords,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 });
@@ -107,7 +119,7 @@ function App() {
   // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
     const saved = localStorage.getItem('epikit_datasets');
-    return saved ? JSON.parse(saved) : [createDemoDataset(), createNutritionDemoDataset()];
+    return saved ? JSON.parse(saved) : [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
   });
 
   // Which dataset is currently selected for viewing/editing
@@ -213,9 +225,9 @@ function App() {
     if (!savedVersion || Number(savedVersion) < DEMO_DATA_VERSION) {
       setDatasets(prev => {
         const withoutOldDemos = prev.filter(
-          d => d.id !== DEMO_DATASET_ID && d.id !== DEMO_NUTRITION_DATASET_ID
+          d => d.id !== DEMO_DATASET_ID && d.id !== DEMO_NUTRITION_DATASET_ID && d.id !== DEMO_SURVEILLANCE_DATASET_ID
         );
-        return [createDemoDataset(), createNutritionDemoDataset(), ...withoutOldDemos];
+        return [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset(), ...withoutOldDemos];
       });
       localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
     }
