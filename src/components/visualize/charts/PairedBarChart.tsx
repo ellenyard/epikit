@@ -12,6 +12,7 @@ import {
   svgText,
   svgAxisLine,
   svgGridLine,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface PairedBarChartProps {
@@ -52,14 +53,15 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
     return Array.from(unique).sort();
   }, [inputMode, groupCol, dataset]);
 
-  const svgContent = useMemo(() => {
-    if (!categoryCol) return '';
+  // Build paired data
+  const pairedRows = useMemo(() => {
+    if (!categoryCol) return null;
 
     // Determine if we have valid config
     const isTwoCol = inputMode === 'two-columns' && leftValueCol && rightValueCol;
     const isGroupSplit = inputMode === 'group-split' && numericCol && groupCol && groupValues.length === 2;
 
-    if (!isTwoCol && !isGroupSplit) return '';
+    if (!isTwoCol && !isGroupSplit) return null;
 
     // Build data: { category, leftVal, rightVal }
     const categoryMap = new Map<string, {
@@ -113,9 +115,17 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
     // Sort alphabetically by category
     rows.sort((a, b) => a.category.localeCompare(b.category));
 
-    if (rows.length === 0) return '';
+    if (rows.length === 0) return null;
 
-    // Group labels
+    return rows;
+  }, [categoryCol, inputMode, leftValueCol, rightValueCol, numericCol, groupCol, groupValues, aggMode, dataset.records]);
+
+  const svgContent = useMemo(() => {
+    if (!categoryCol) return '';
+    if (!pairedRows) return '';
+
+    // Get group labels
+    const isTwoCol = inputMode === 'two-columns' && leftValueCol && rightValueCol;
     let leftLabel: string;
     let rightLabel: string;
     if (isTwoCol) {
@@ -128,7 +138,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
 
     // Determine max value for scaling
     let maxVal = 0;
-    for (const r of rows) {
+    for (const r of pairedRows) {
       if (r.leftVal > maxVal) maxVal = r.leftVal;
       if (r.rightVal > maxVal) maxVal = r.rightVal;
     }
@@ -141,8 +151,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
 
     const halfW = plotW / 2;
     const centerX = margin.left + halfW;
-    const barHeight = Math.min(plotH / rows.length - 4, 20);
-    const rowHeight = plotH / rows.length;
+    const barHeight = Math.min(plotH / pairedRows.length - 4, 20);
+    const rowHeight = plotH / pairedRows.length;
     const colors = getChartColors(2, colorScheme);
 
     // Scale: value -> pixel width of bar
@@ -181,8 +191,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
     svg += svgAxisLine(margin.left, margin.top + plotH, margin.left + plotW, margin.top + plotH);
 
     // Bars
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+    for (let i = 0; i < pairedRows.length; i++) {
+      const row = pairedRows[i];
       const cy = margin.top + i * rowHeight + rowHeight / 2;
 
       // Category label (center)
@@ -220,7 +230,41 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [categoryCol, inputMode, leftValueCol, rightValueCol, numericCol, groupCol, groupValues, aggMode, colorScheme, showLabels, title, subtitle, source, dataset]);
+  }, [pairedRows, inputMode, leftValueCol, rightValueCol, groupValues, colorScheme, showLabels, title, subtitle, source, dataset.columns]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    if (!pairedRows) {
+      return { columns: [], rows: [] };
+    }
+    const isTwoCol = inputMode === 'two-columns' && leftValueCol && rightValueCol;
+    let leftLabel: string;
+    let rightLabel: string;
+    if (isTwoCol) {
+      leftLabel = dataset.columns.find(c => c.key === leftValueCol)?.label || leftValueCol;
+      rightLabel = dataset.columns.find(c => c.key === rightValueCol)?.label || rightValueCol;
+    } else {
+      leftLabel = groupValues[0];
+      rightLabel = groupValues[1];
+    }
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: leftLabel, key: 'leftVal' },
+      { header: rightLabel, key: 'rightVal' },
+    ];
+    const rows = pairedRows.map(r => ({
+      category: r.category,
+      leftVal: r.leftVal,
+      rightVal: r.rightVal,
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [pairedRows, inputMode, leftValueCol, rightValueCol, groupValues, title, subtitle, source, dataset.columns]);
 
   return (
     <div className="flex gap-6">
@@ -423,6 +467,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
             subtitle={subtitle}
             source={source}
             svgContent={svgContent}
+            excelData={excelData}
             filename="paired-bar-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

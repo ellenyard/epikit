@@ -11,6 +11,7 @@ import {
   svgText,
   svgAxisLine,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 import { INCREASE_COLOR, DECREASE_COLOR, NEUTRAL_COLOR } from '../../../utils/chartColors';
 import { aggregatePairByCategory, type AggregationMode } from '../../../utils/chartAggregation';
@@ -215,6 +216,33 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
 
     return svgWrapper(width, height, svg);
   }, [slopeData, showValues, title, subtitle, source, startCol, endCol, inputMode, groupValues, dataset.columns]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const startLabel = inputMode === 'two-columns'
+      ? (dataset.columns.find(c => c.key === startCol)?.label || 'Start')
+      : groupValues[0] || 'Start';
+    const endLabel = inputMode === 'two-columns'
+      ? (dataset.columns.find(c => c.key === endCol)?.label || 'End')
+      : groupValues[1] || 'End';
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: startLabel, key: 'startValue' },
+      { header: endLabel, key: 'endValue' },
+    ];
+    const rows = slopeData.map(d => ({
+      category: d.category,
+      startValue: d.startValue,
+      endValue: d.endValue,
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [slopeData, inputMode, startCol, endCol, groupValues, title, subtitle, source, dataset.columns]);
 
   const displayTitle = title || 'Slope Chart';
 
@@ -424,6 +452,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="slope-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

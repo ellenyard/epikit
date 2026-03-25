@@ -13,6 +13,7 @@ import {
   svgText,
   svgAxisLine,
   svgGridLine,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface DotPlotProps {
@@ -246,6 +247,39 @@ export function DotPlot({ dataset }: DotPlotProps) {
     return generateDotSvg(rows, value1Col, value2Col, colorScheme, showLabels, title, subtitle, source, dataset);
   }, [rows, value1Col, value2Col, colorScheme, showLabels, title, subtitle, source, dataset]);
 
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const hasCI = rows.some(r => r.lower1 !== undefined && r.upper1 !== undefined);
+    const hasValue2 = rows.some(r => r.val2 !== null);
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: 'Value 1', key: 'val1' },
+    ];
+    if (hasValue2) {
+      columns.push({ header: 'Value 2', key: 'val2' });
+    }
+    if (hasCI) {
+      columns.push({ header: 'Lower CI', key: 'lower1' });
+      columns.push({ header: 'Upper CI', key: 'upper1' });
+    }
+    const excelRows = rows.map(r => {
+      const row: Record<string, string | number | null> = {
+        category: r.category,
+        val1: r.val1,
+        ...(hasValue2 ? { val2: r.val2 } : {}),
+        ...(hasCI ? { lower1: r.lower1 ?? null, upper1: r.upper1 ?? null } : {}),
+      };
+      return row;
+    });
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows: excelRows,
+    };
+  }, [rows, title, subtitle, source]);
+
   return (
     <div className="flex gap-6">
       {/* Config panel */}
@@ -447,6 +481,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
               subtitle={subtitle}
               source={source}
               svgContent={svgContent}
+              excelData={excelData}
               filename="dot-plot"
             >
               <div dangerouslySetInnerHTML={{ __html: svgContent }} />

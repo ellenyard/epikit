@@ -1,14 +1,16 @@
 import React, { useRef, useState } from 'react';
 import { ResultsActions, ExportIcons } from '../../shared/ResultsActions';
-import { exportSVG, exportPNG } from '../../../utils/chartExport';
+import { exportPNG, copyChartToClipboard, exportExcel } from '../../../utils/chartExport';
+import type { ExcelExportData } from '../../../utils/chartExport';
 
 interface ChartContainerProps {
   title: string;
   subtitle?: string;
   source?: string;
-  svgContent?: string;  // For SVG export
+  svgContent?: string;  // SVG string used for PNG export and clipboard
   children: React.ReactNode;
   filename?: string;
+  excelData?: ExcelExportData;  // Structured data for Excel export
 }
 
 const ClipboardIcon = (
@@ -17,95 +19,45 @@ const ClipboardIcon = (
   </svg>
 );
 
-export function ChartContainer({ title, subtitle, source, svgContent, children, filename = 'chart' }: ChartContainerProps) {
+const ExcelIcon = (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+  </svg>
+);
+
+export function ChartContainer({ title, subtitle, source, svgContent, children, filename = 'chart', excelData }: ChartContainerProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const [copyLabel, setCopyLabel] = useState('Copy to Clipboard');
 
-  const handleExportSVG = () => {
-    if (svgContent) {
-      exportSVG(svgContent, `${filename}.svg`);
-    }
-  };
-
   const handleExportPNG = async () => {
-    if (chartRef.current) {
-      await exportPNG(chartRef.current, `${filename}.png`);
+    if (svgContent) {
+      await exportPNG(svgContent, `${filename}.png`);
     }
   };
 
   const handleCopyToClipboard = async () => {
-    if (!chartRef.current) return;
-    try {
-      const canvas = document.createElement('canvas');
-      const rect = chartRef.current.getBoundingClientRect();
-      const scale = 2; // retina quality
-      canvas.width = rect.width * scale;
-      canvas.height = rect.height * scale;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+    if (!svgContent) return;
+    const result = await copyChartToClipboard(svgContent);
+    if (result === 'copied') {
+      setCopyLabel('Copied!');
+    } else if (result === 'copied-svg') {
+      setCopyLabel('Copied SVG!');
+    } else {
+      setCopyLabel('Copy failed');
+    }
+    setTimeout(() => setCopyLabel('Copy to Clipboard'), 2000);
+  };
 
-      // Use html2canvas-like approach via SVG foreignObject
-      const svgData = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}">
-          <foreignObject width="100%" height="100%">
-            <div xmlns="http://www.w3.org/1999/xhtml">
-              ${chartRef.current.innerHTML}
-            </div>
-          </foreignObject>
-        </svg>`;
-
-      const img = new Image();
-      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => {
-          ctx.scale(scale, scale);
-          ctx.drawImage(img, 0, 0);
-          URL.revokeObjectURL(url);
-          resolve();
-        };
-        img.onerror = reject;
-        img.src = url;
-      });
-
-      canvas.toBlob(async (pngBlob) => {
-        if (pngBlob) {
-          try {
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': pngBlob }),
-            ]);
-            setCopyLabel('Copied!');
-            setTimeout(() => setCopyLabel('Copy to Clipboard'), 2000);
-          } catch {
-            // Fallback: copy SVG as text
-            if (svgContent) {
-              await navigator.clipboard.writeText(svgContent);
-              setCopyLabel('Copied SVG!');
-              setTimeout(() => setCopyLabel('Copy to Clipboard'), 2000);
-            }
-          }
-        }
-      }, 'image/png');
-    } catch {
-      // Final fallback: copy raw SVG
-      if (svgContent) {
-        try {
-          await navigator.clipboard.writeText(svgContent);
-          setCopyLabel('Copied SVG!');
-          setTimeout(() => setCopyLabel('Copy to Clipboard'), 2000);
-        } catch {
-          setCopyLabel('Copy failed');
-          setTimeout(() => setCopyLabel('Copy to Clipboard'), 2000);
-        }
-      }
+  const handleExportExcel = async () => {
+    if (excelData) {
+      await exportExcel(excelData, `${filename}.xlsx`);
     }
   };
 
   const actions = [
-    { label: 'Export SVG', onClick: handleExportSVG, icon: ExportIcons.download, disabled: !svgContent },
-    { label: 'Export PNG', onClick: handleExportPNG, icon: ExportIcons.image, variant: 'secondary' as const },
-    { label: copyLabel, onClick: handleCopyToClipboard, icon: ClipboardIcon, variant: 'secondary' as const },
+    { label: 'Export PNG', onClick: handleExportPNG, icon: ExportIcons.image, disabled: !svgContent },
+    { label: copyLabel, onClick: handleCopyToClipboard, icon: ClipboardIcon, variant: 'secondary' as const, disabled: !svgContent },
+    { label: 'Export to Excel', onClick: handleExportExcel, icon: ExcelIcon, variant: 'secondary' as const, disabled: !excelData },
   ];
 
   return (

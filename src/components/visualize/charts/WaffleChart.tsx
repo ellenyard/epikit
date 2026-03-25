@@ -12,6 +12,7 @@ import {
   svgSource,
   svgText,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface WaffleChartProps {
@@ -121,6 +122,33 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
 
     return svgWrapper(width, height, svg);
   }, [categoryVar, colorScheme, title, subtitle, source, dataset.records]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    if (!categoryVar) {
+      return { columns: [], rows: [] };
+    }
+    const values = dataset.records.map(r => r[categoryVar]).filter(v => v != null && v !== '');
+    const freq = calculateFrequency(values);
+    const rounded = roundToHundred(freq.map(f => f.percent));
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: 'Count', key: 'count' },
+      { header: 'Percentage', key: 'percent' },
+    ];
+    const rows = freq.map((f, i) => ({
+      category: f.value,
+      count: f.count,
+      percent: rounded[i],
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [categoryVar, title, subtitle, source, dataset.records]);
 
   const isReady = !!categoryVar;
 
@@ -237,6 +265,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="waffle-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

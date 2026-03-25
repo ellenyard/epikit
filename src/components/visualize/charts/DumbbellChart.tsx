@@ -13,6 +13,7 @@ import {
   svgAxisLine,
   svgGridLine,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 type SortMode = 'gap-desc' | 'gap-asc' | 'value1' | 'alpha';
@@ -179,6 +180,31 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
     return svgWrapper(width, height, svg);
   }, [dumbbellData, showLabels, colorScheme, title, subtitle, source, value1Col, value2Col, dataset.columns]);
 
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const col1Label = dataset.columns.find(c => c.key === value1Col)?.label || value1Col;
+    const col2Label = dataset.columns.find(c => c.key === value2Col)?.label || value2Col;
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: col1Label, key: 'value1' },
+      { header: col2Label, key: 'value2' },
+      { header: 'Gap', key: 'gap' },
+    ];
+    const rows = dumbbellData.map(d => ({
+      category: d.category,
+      value1: d.value1,
+      value2: d.value2,
+      gap: d.gap,
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [dumbbellData, title, subtitle, source, value1Col, value2Col, dataset.columns]);
+
   const displayTitle = title || 'Dumbbell Chart';
 
   return (
@@ -337,6 +363,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="dumbbell-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

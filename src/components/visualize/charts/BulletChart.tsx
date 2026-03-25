@@ -13,6 +13,7 @@ import {
   svgAxisLine,
   svgGridLine,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 import { aggregatePairByCategory, type AggregationMode } from '../../../utils/chartAggregation';
 
@@ -165,6 +166,31 @@ export function BulletChart({ dataset }: BulletChartProps) {
 
     return svgWrapper(width, height, svg);
   }, [categoryVar, actualVar, targetVar, aggMode, colorScheme, showValueLabels, title, subtitle, source, dataset.records]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    if (!categoryVar || !actualVar || !targetVar) {
+      return { columns: [], rows: [] };
+    }
+    const aggregated = aggregatePairByCategory(dataset.records, categoryVar, actualVar, targetVar, aggMode);
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: 'Actual', key: 'actual' },
+      { header: 'Target', key: 'target' },
+    ];
+    const rows = aggregated.map(a => ({
+      category: a.category,
+      actual: a.valueA,
+      target: a.valueB,
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [categoryVar, actualVar, targetVar, aggMode, title, subtitle, source, dataset.records]);
 
   const isReady = categoryVar && actualVar && targetVar;
 
@@ -334,6 +360,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="bullet-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />
