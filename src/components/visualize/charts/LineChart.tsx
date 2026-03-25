@@ -14,6 +14,7 @@ import {
   svgText,
   svgAxisLine,
   svgGridLine,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface LineChartProps {
@@ -303,6 +304,29 @@ export function LineChart({ dataset }: LineChartProps) {
     return generateLineSvg(seriesData, xValues, showDataPoints, showGridlines, chartTitle, chartSubtitle, chartSource);
   }, [seriesData, xValues, showDataPoints, showGridlines, chartTitle, chartSubtitle, chartSource]);
 
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const columns = [
+      { header: 'X-Axis', key: 'xLabel' },
+      ...seriesData.map(series => ({ header: series.name, key: series.name })),
+    ];
+    const rows = xValues.map(xVal => {
+      const row: Record<string, string | number | null> = { xLabel: xVal };
+      for (const series of seriesData) {
+        const point = series.points.find(p => p.label === xVal);
+        row[series.name] = point ? point.y : null;
+      }
+      return row;
+    });
+    return {
+      title: chartTitle,
+      subtitle: chartSubtitle || undefined,
+      source: chartSource || undefined,
+      columns,
+      rows,
+    };
+  }, [seriesData, xValues, chartTitle, chartSubtitle, chartSource]);
+
   return (
     <div className="h-full flex flex-col lg:flex-row">
       {/* Left Panel - Config */}
@@ -572,6 +596,7 @@ export function LineChart({ dataset }: LineChartProps) {
               subtitle={chartSubtitle || undefined}
               source={chartSource || undefined}
               svgContent={svgContent}
+              excelData={excelData}
               filename={chartTitle ? chartTitle.replace(/\s+/g, '_') : 'line_chart'}
             >
               <div dangerouslySetInnerHTML={{ __html: svgContent }} />

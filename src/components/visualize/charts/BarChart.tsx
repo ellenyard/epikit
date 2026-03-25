@@ -13,6 +13,7 @@ import {
   svgSource,
   svgText,
   svgGridLine,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 import { calculateFrequency } from '../../../utils/statistics';
 
@@ -257,6 +258,31 @@ export function BarChart({ dataset }: BarChartProps) {
   const svgContent = useMemo(() => {
     return generateBarSvg(sortedData, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource);
   }, [sortedData, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const hasCI = sortedData.some(d => d.lower !== undefined && d.upper !== undefined);
+    const columns = [
+      { header: 'Category', key: 'label' },
+      { header: 'Value', key: 'value' },
+    ];
+    if (hasCI) {
+      columns.push({ header: 'Lower CI', key: 'lower' });
+      columns.push({ header: 'Upper CI', key: 'upper' });
+    }
+    const rows = sortedData.map(d => ({
+      label: d.label,
+      value: d.value,
+      ...(hasCI ? { lower: d.lower ?? null, upper: d.upper ?? null } : {}),
+    }));
+    return {
+      title: chartTitle,
+      subtitle: chartSubtitle || undefined,
+      source: chartSource || undefined,
+      columns,
+      rows,
+    };
+  }, [sortedData, chartTitle, chartSubtitle, chartSource]);
 
   return (
     <div className="h-full flex flex-col lg:flex-row">
@@ -554,6 +580,7 @@ export function BarChart({ dataset }: BarChartProps) {
               subtitle={chartSubtitle || undefined}
               source={chartSource || undefined}
               svgContent={svgContent}
+              excelData={excelData}
               filename={chartTitle ? chartTitle.replace(/\s+/g, '_') : 'bar_chart'}
             >
               <div dangerouslySetInnerHTML={{ __html: svgContent }} />

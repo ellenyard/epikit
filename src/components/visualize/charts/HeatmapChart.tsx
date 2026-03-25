@@ -10,6 +10,7 @@ import {
   svgTitle,
   svgSource,
   svgText,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface HeatmapChartProps {
@@ -59,12 +60,10 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
-  const svgContent = useMemo(() => {
-    if (!rowCol || !colCol) return '';
-    if (valueMode === 'average' && !valueCol) return '';
-
-    const dims = getDefaultDimensions('heatmap');
-    const { width, margin } = dims;
+  // Build heatmap data
+  const heatmapData = useMemo(() => {
+    if (!rowCol || !colCol) return null;
+    if (valueMode === 'average' && !valueCol) return null;
 
     // Collect unique row and column values
     const rowValues = new Set<string>();
@@ -80,7 +79,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     const rows = Array.from(rowValues).sort();
     const cols = Array.from(colValues).sort();
 
-    if (rows.length === 0 || cols.length === 0) return '';
+    if (rows.length === 0 || cols.length === 0) return null;
 
     // Build matrix
     const matrix = new Map<string, { sum: number; count: number }>();
@@ -125,7 +124,17 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       }
     }
 
+    return { rows, cols, cellValues, matrix, globalMin, globalMax };
+  }, [rowCol, colCol, valueMode, valueCol, dataset.records]);
+
+  const svgContent = useMemo(() => {
+    if (!heatmapData) return '';
+
+    const { rows, cols, cellValues, globalMin, globalMax } = heatmapData;
     const valRange = globalMax - globalMin || 1;
+
+    const dims = getDefaultDimensions('heatmap');
+    const { width, margin } = dims;
 
     // Dynamic sizing
     const maxColLabelLen = Math.max(...cols.map(c => c.length));
@@ -236,7 +245,33 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     }
 
     return svgWrapper(width, adjustedHeight, svg);
-  }, [rowCol, colCol, valueMode, valueCol, colorScheme, showCellLabels, title, subtitle, source, dataset]);
+  }, [heatmapData, colorScheme, showCellLabels, title, subtitle, source]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    if (!heatmapData) {
+      return { columns: [], rows: [] };
+    }
+    const { rows, cols, cellValues } = heatmapData;
+    const columns = [
+      { header: 'Row', key: 'rowLabel' },
+      ...cols.map(col => ({ header: col, key: col })),
+    ];
+    const excelRows = rows.map((rowLabel, ri) => {
+      const row: Record<string, string | number | null> = { rowLabel };
+      for (let ci = 0; ci < cols.length; ci++) {
+        row[cols[ci]] = cellValues[ri][ci];
+      }
+      return row;
+    });
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows: excelRows,
+    };
+  }, [heatmapData, title, subtitle, source]);
 
   return (
     <div className="flex gap-6">
@@ -393,6 +428,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
             subtitle={subtitle}
             source={source}
             svgContent={svgContent}
+            excelData={excelData}
             filename="heatmap"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

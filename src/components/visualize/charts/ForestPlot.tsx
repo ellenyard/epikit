@@ -13,6 +13,7 @@ import {
   svgAxisLine,
   svgGridLine,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface ForestRow {
@@ -223,6 +224,31 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     return svgWrapper(width, height, svg);
   }, [forestData, effectMeasure, showNullLine, showLabels, colorScheme, title, subtitle, source]);
 
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const columns = [
+      { header: 'Study', key: 'label' },
+      { header: 'Estimate', key: 'estimate' },
+      { header: 'Lower CI', key: 'lower' },
+      { header: 'Upper CI', key: 'upper' },
+      { header: 'Weight', key: 'weight' },
+    ];
+    const rows = forestData.map(r => ({
+      label: r.label,
+      estimate: r.estimate,
+      lower: r.lower,
+      upper: r.upper,
+      weight: r.weight,
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [forestData, title, subtitle, source]);
+
   const displayTitle = title || 'Forest Plot';
 
   return (
@@ -412,6 +438,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="forest-plot"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

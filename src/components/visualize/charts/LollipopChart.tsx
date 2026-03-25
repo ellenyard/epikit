@@ -13,6 +13,7 @@ import {
   svgAxisLine,
   svgGridLine,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 import { getChartColor, type ChartColorScheme } from '../../../utils/chartColors';
 
@@ -120,6 +121,31 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
 
     return points;
   }, [categoryCol, valueMode, numericCol, lowerCICol, upperCICol, sortMode, dataset.records]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    const hasCI = lollipopData.some(d => d.lower !== undefined && d.upper !== undefined);
+    const columns = [
+      { header: 'Category', key: 'category' },
+      { header: 'Value', key: 'value' },
+    ];
+    if (hasCI) {
+      columns.push({ header: 'Lower CI', key: 'lower' });
+      columns.push({ header: 'Upper CI', key: 'upper' });
+    }
+    const rows = lollipopData.map(d => ({
+      category: d.category,
+      value: d.value,
+      ...(hasCI ? { lower: d.lower ?? null, upper: d.upper ?? null } : {}),
+    }));
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [lollipopData, title, subtitle, source]);
 
   // Generate SVG
   const svgContent = useMemo(() => {
@@ -423,6 +449,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="lollipop-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />

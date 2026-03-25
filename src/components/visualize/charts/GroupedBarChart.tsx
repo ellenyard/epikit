@@ -13,6 +13,7 @@ import {
   svgAxisLine,
   svgGridLine,
   escapeXml,
+  type ExcelExportData,
 } from '../../../utils/chartExport';
 
 interface GroupedBarChartProps {
@@ -35,11 +36,11 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
-  const svgContent = useMemo(() => {
-    if (!categoryVar || !groupVar) return '';
-    if (valueMode === 'column' && !valueVar) return '';
+  // Build data structure: category -> group -> value
+  const chartData = useMemo(() => {
+    if (!categoryVar || !groupVar) return null;
+    if (valueMode === 'column' && !valueVar) return null;
 
-    // Build data structure: category -> group -> value
     const dataMap = new Map<string, Map<string, number>>();
     const groupValuesSet = new Set<string>();
     const categoryOrder: string[] = [];
@@ -71,9 +72,16 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       }
     }
 
-    if (categoryOrder.length === 0) return '';
+    if (categoryOrder.length === 0) return null;
 
     const groupValues = Array.from(groupValuesSet).sort();
+    return { dataMap, groupValues, categoryOrder };
+  }, [categoryVar, groupVar, valueMode, valueVar, dataset.records]);
+
+  const svgContent = useMemo(() => {
+    if (!chartData) return '';
+
+    const { dataMap, groupValues, categoryOrder } = chartData;
     const colors = getChartColors(groupValues.length, colorScheme);
 
     const dims = getDefaultDimensions('grouped');
@@ -207,7 +215,34 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [categoryVar, groupVar, valueMode, valueVar, displayMode, colorScheme, showDataLabels, title, subtitle, source, dataset.records]);
+  }, [chartData, displayMode, colorScheme, showDataLabels, title, subtitle, source]);
+
+  // Build Excel export data
+  const excelData = useMemo((): ExcelExportData => {
+    if (!chartData) {
+      return { columns: [], rows: [] };
+    }
+    const { dataMap, groupValues, categoryOrder } = chartData;
+    const columns = [
+      { header: 'Category', key: 'category' },
+      ...groupValues.map(gv => ({ header: gv, key: gv })),
+    ];
+    const rows = categoryOrder.map(cat => {
+      const row: Record<string, string | number | null> = { category: cat };
+      const groupMap = dataMap.get(cat);
+      for (const gv of groupValues) {
+        row[gv] = groupMap?.get(gv) ?? null;
+      }
+      return row;
+    });
+    return {
+      title,
+      subtitle: subtitle || undefined,
+      source: source || undefined,
+      columns,
+      rows,
+    };
+  }, [chartData, title, subtitle, source]);
 
   const isReady = categoryVar && groupVar && (valueMode === 'count' || valueVar);
 
@@ -406,6 +441,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
             subtitle={subtitle || undefined}
             source={source || undefined}
             svgContent={svgContent}
+            excelData={excelData}
             filename="grouped-bar-chart"
           >
             <div dangerouslySetInnerHTML={{ __html: svgContent }} />
