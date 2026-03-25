@@ -24,6 +24,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
   const [title, setTitle] = useState('Waffle Chart');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   const svgContent = useMemo(() => {
     if (!categoryVar) return '';
@@ -128,9 +129,35 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
         <VisualizationTip
-          tip="Waffle charts make proportions tangible: each square equals 1%, making it easy for audiences to grasp part-to-whole relationships."
-          context="Best used when you have a small number of categories (2-6)."
+          tip="Waffle charts make proportions tangible — each square represents 1% of the whole. They are more accurate than pie charts and easier for audiences to interpret quickly."
+          context="Officially supported in CDC COVE. Best for single metrics like vaccination coverage or test positivity rates."
         />
+
+        <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
+          <button
+            onClick={() => setShowGuide(!showGuide)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              When to Use This Chart
+            </span>
+            <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showGuide && (
+            <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+              <p>• Displaying a single percentage or proportion visually</p>
+              <p>• Showing vaccination coverage, positivity rates, or case resolution</p>
+              <p>• When you need an intuitive alternative to pie charts</p>
+              <p>• Communicating proportions to non-technical audiences</p>
+              <p className="text-blue-500 italic mt-2">CDC COVE officially features waffle charts. Each square represents 1% — more accurate and intuitive than pie charts for showing proportions.</p>
+            </div>
+          )}
+        </div>
 
         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
           <h4 className="text-sm font-semibold text-gray-700">Variables</h4>

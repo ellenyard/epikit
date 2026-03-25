@@ -54,6 +54,8 @@ export function getDefaultDimensions(chartType: string): ChartDimensions {
     dot: { width: 800, height: 500, margin: { top: 50, right: 60, bottom: 60, left: 180 } },
     heatmap: { width: 700, height: 500, margin: { top: 60, right: 80, bottom: 80, left: 120 } },
     paired: { width: 800, height: 500, margin: { top: 50, right: 60, bottom: 60, left: 120 } },
+    dumbbell: { width: 800, height: 500, margin: { top: 60, right: 60, bottom: 60, left: 180 } },
+    forest: { width: 800, height: 500, margin: { top: 60, right: 60, bottom: 60, left: 180 } },
   };
   return defaults[chartType] || defaults.bar;
 }

@@ -39,6 +39,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   const [title, setTitle] = useState('Paired Bar Chart');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   // Detect the two unique group values when in group-split mode
   const groupValues = useMemo(() => {
@@ -386,6 +387,32 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           tip="Paired bar charts (population pyramids) are ideal for comparing two groups across the same categories, such as age-sex distributions. Use Count mode to compare group sizes."
           context="Try this: Category=Age Group, Group=Sex, Aggregation=Count — to see a population pyramid by age and sex"
         />
+
+        <div className="border border-blue-100 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowGuide(!showGuide)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              When to Use This Chart
+            </span>
+            <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {showGuide && (
+            <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+              <p>• Comparing two groups as mirrored bars (e.g., age-sex pyramids)</p>
+              <p>• Displaying population structure by age and sex</p>
+              <p>• Comparing disease burden between two demographic groups</p>
+              <p>• When you have a binary grouping variable (male/female, exposed/unexposed)</p>
+              <p className="text-blue-500 italic mt-2">Age-sex pyramids are standard tools in CDC field epidemiology for understanding population structure in outbreak contexts.</p>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chart area */}

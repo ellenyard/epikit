@@ -3,6 +3,7 @@ import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
 import { getChartColor, getChartColors } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
@@ -33,18 +34,182 @@ interface Series {
   color: string;
 }
 
+/** Generate SVG for line chart from series data. */
+function generateLineSvg(
+  seriesData: Series[],
+  xValues: string[],
+  showDataPoints: boolean,
+  showGridlines: boolean,
+  chartTitle: string,
+  chartSubtitle: string,
+  chartSource: string
+): string {
+  if (seriesData.length === 0 || xValues.length === 0) return '';
+
+  const dims = getDefaultDimensions('line');
+  const { width, height, margin } = dims;
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  for (const series of seriesData) {
+    for (const pt of series.points) {
+      if (pt.y < yMin) yMin = pt.y;
+      if (pt.y > yMax) yMax = pt.y;
+    }
+  }
+  if (!isFinite(yMin)) yMin = 0;
+  if (!isFinite(yMax)) yMax = 10;
+  if (yMin === yMax) {
+    yMin = Math.max(0, yMin - 1);
+    yMax = yMax + 1;
+  }
+  if (yMin >= 0) yMin = 0;
+
+  const niceYMax = getNiceMax(yMax);
+  const yRange = niceYMax - yMin;
+
+  const xPointCount = xValues.length;
+  const xStep = xPointCount > 1 ? plotWidth / (xPointCount - 1) : plotWidth / 2;
+
+  const toPixelX = (index: number): number => {
+    if (xPointCount === 1) return margin.left + plotWidth / 2;
+    return margin.left + index * xStep;
+  };
+
+  const toPixelY = (value: number): number => {
+    if (yRange === 0) return margin.top + plotHeight / 2;
+    return margin.top + plotHeight - ((value - yMin) / yRange) * plotHeight;
+  };
+
+  let svg = '';
+
+  if (chartTitle) {
+    svg += svgTitle(width, chartTitle, chartSubtitle || undefined);
+  }
+
+  if (showGridlines) {
+    const tickCount = 5;
+    for (let i = 0; i <= tickCount; i++) {
+      const yVal = yMin + (i / tickCount) * yRange;
+      const py = toPixelY(yVal);
+      svg += svgGridLine(margin.left, py, margin.left + plotWidth, py);
+    }
+  }
+
+  svg += svgAxisLine(margin.left, margin.top, margin.left, margin.top + plotHeight);
+  svg += svgAxisLine(margin.left, margin.top + plotHeight, margin.left + plotWidth, margin.top + plotHeight);
+
+  const yTickCount = 5;
+  for (let i = 0; i <= yTickCount; i++) {
+    const yVal = yMin + (i / yTickCount) * yRange;
+    const py = toPixelY(yVal);
+    const label = Number.isInteger(yVal) ? String(yVal) : yVal.toFixed(1);
+    svg += svgText(margin.left - 10, py, label, {
+      anchor: 'end',
+      fontSize: 11,
+      fill: '#666',
+      dy: '0.35em',
+    });
+  }
+
+  const avgLabelLen = xValues.reduce((sum, v) => sum + formatXLabel(v).length, 0) / xValues.length;
+  const labelSpacing = xPointCount > 1 ? xStep : plotWidth;
+  const needsRotation = labelSpacing < avgLabelLen * 7 + 10;
+  const maxLabels = Math.floor(plotWidth / 50);
+  const labelStep = xPointCount > maxLabels ? Math.ceil(xPointCount / maxLabels) : 1;
+
+  xValues.forEach((xVal, i) => {
+    if (i % labelStep !== 0 && i !== xPointCount - 1) return;
+    const px = toPixelX(i);
+    const label = formatXLabel(xVal);
+
+    if (needsRotation) {
+      svg += svgText(px, margin.top + plotHeight + 12, label, {
+        anchor: 'end',
+        fontSize: 11,
+        fill: '#666',
+        rotate: -45,
+      });
+    } else {
+      svg += svgText(px, margin.top + plotHeight + 18, label, {
+        anchor: 'middle',
+        fontSize: 11,
+        fill: '#666',
+      });
+    }
+  });
+
+  for (const series of seriesData) {
+    if (series.points.length < 2) {
+      if (series.points.length === 1) {
+        const pt = series.points[0];
+        const px = toPixelX(pt.x);
+        const py = toPixelY(pt.y);
+        svg += `<circle cx="${px}" cy="${py}" r="4" fill="${series.color}"/>`;
+      }
+      continue;
+    }
+
+    const pointsStr = series.points
+      .map(pt => `${toPixelX(pt.x)},${toPixelY(pt.y)}`)
+      .join(' ');
+
+    svg += `<polyline points="${pointsStr}" fill="none" stroke="${series.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+    if (showDataPoints) {
+      for (const pt of series.points) {
+        const px = toPixelX(pt.x);
+        const py = toPixelY(pt.y);
+        svg += `<circle cx="${px}" cy="${py}" r="3.5" fill="${series.color}" stroke="#fff" stroke-width="1.5"/>`;
+      }
+    }
+  }
+
+  if (seriesData.length > 1) {
+    const legendY = margin.top - 15;
+    const itemWidth = 100;
+    const totalLegendWidth = seriesData.length * itemWidth;
+    const legendStartX = Math.max(margin.left, (width - totalLegendWidth) / 2);
+
+    seriesData.forEach((series, i) => {
+      const lx = legendStartX + i * itemWidth;
+      const truncName = series.name.length > 12 ? series.name.substring(0, 10) + '...' : series.name;
+      svg += `<line x1="${lx}" y1="${legendY}" x2="${lx + 16}" y2="${legendY}" stroke="${series.color}" stroke-width="2.5" stroke-linecap="round"/>`;
+      if (showDataPoints) {
+        svg += `<circle cx="${lx + 8}" cy="${legendY}" r="3" fill="${series.color}" stroke="#fff" stroke-width="1"/>`;
+      }
+      svg += svgText(lx + 22, legendY, truncName, {
+        anchor: 'start',
+        fontSize: 11,
+        fill: '#333',
+        dy: '0.35em',
+      });
+    });
+  }
+
+  if (chartSource) {
+    svg += svgSource(width, height, chartSource);
+  }
+
+  return svgWrapper(width, height, svg);
+}
+
 export function LineChart({ dataset }: LineChartProps) {
   // Config state
   const [xVar, setXVar] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
   const [yVar, setYVar] = useState('');
   const [strataVar, setStrataVar] = useState('');
+  const [facetCol, setFacetCol] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showDataPoints, setShowDataPoints] = useState(true);
   const [showGridlines, setShowGridlines] = useState(true);
   const [chartTitle, setChartTitle] = useState('');
   const [chartSubtitle, setChartSubtitle] = useState('');
   const [chartSource, setChartSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   // Derive x-axis values (sorted dates or ordered categories)
   const xValues = useMemo(() => {
@@ -135,176 +300,7 @@ export function LineChart({ dataset }: LineChartProps) {
 
   // Generate SVG string
   const svgContent = useMemo(() => {
-    if (seriesData.length === 0 || xValues.length === 0) return '';
-
-    const dims = getDefaultDimensions('line');
-    const { width, height, margin } = dims;
-    const plotWidth = width - margin.left - margin.right;
-    const plotHeight = height - margin.top - margin.bottom;
-
-    // Find y range
-    let yMin = Infinity;
-    let yMax = -Infinity;
-    for (const series of seriesData) {
-      for (const pt of series.points) {
-        if (pt.y < yMin) yMin = pt.y;
-        if (pt.y > yMax) yMax = pt.y;
-      }
-    }
-    if (!isFinite(yMin)) yMin = 0;
-    if (!isFinite(yMax)) yMax = 10;
-    if (yMin === yMax) {
-      yMin = Math.max(0, yMin - 1);
-      yMax = yMax + 1;
-    }
-    // Start y-axis at 0 if all values are positive
-    if (yMin >= 0) yMin = 0;
-
-    const niceYMax = getNiceMax(yMax);
-    const yRange = niceYMax - yMin;
-
-    const xPointCount = xValues.length;
-    const xStep = xPointCount > 1 ? plotWidth / (xPointCount - 1) : plotWidth / 2;
-
-    // Convert data point to pixel coordinates
-    const toPixelX = (index: number): number => {
-      if (xPointCount === 1) return margin.left + plotWidth / 2;
-      return margin.left + index * xStep;
-    };
-
-    const toPixelY = (value: number): number => {
-      if (yRange === 0) return margin.top + plotHeight / 2;
-      return margin.top + plotHeight - ((value - yMin) / yRange) * plotHeight;
-    };
-
-    let svg = '';
-
-    // Title and subtitle
-    if (chartTitle) {
-      svg += svgTitle(width, chartTitle, chartSubtitle || undefined);
-    }
-
-    // Horizontal gridlines
-    if (showGridlines) {
-      const tickCount = 5;
-      for (let i = 0; i <= tickCount; i++) {
-        const yVal = yMin + (i / tickCount) * yRange;
-        const py = toPixelY(yVal);
-        svg += svgGridLine(margin.left, py, margin.left + plotWidth, py);
-      }
-    }
-
-    // Y-axis line
-    svg += svgAxisLine(margin.left, margin.top, margin.left, margin.top + plotHeight);
-
-    // X-axis line
-    svg += svgAxisLine(margin.left, margin.top + plotHeight, margin.left + plotWidth, margin.top + plotHeight);
-
-    // Y-axis tick labels
-    const yTickCount = 5;
-    for (let i = 0; i <= yTickCount; i++) {
-      const yVal = yMin + (i / yTickCount) * yRange;
-      const py = toPixelY(yVal);
-      const label = Number.isInteger(yVal) ? String(yVal) : yVal.toFixed(1);
-      svg += svgText(margin.left - 10, py, label, {
-        anchor: 'end',
-        fontSize: 11,
-        fill: '#666',
-        dy: '0.35em',
-      });
-    }
-
-    // X-axis tick labels
-    // Determine if labels need rotation based on count and length
-    const avgLabelLen = xValues.reduce((sum, v) => sum + formatXLabel(v).length, 0) / xValues.length;
-    const labelSpacing = xPointCount > 1 ? xStep : plotWidth;
-    const needsRotation = labelSpacing < avgLabelLen * 7 + 10;
-
-    // Thin out labels if too many to fit
-    const maxLabels = Math.floor(plotWidth / 50);
-    const labelStep = xPointCount > maxLabels ? Math.ceil(xPointCount / maxLabels) : 1;
-
-    xValues.forEach((xVal, i) => {
-      if (i % labelStep !== 0 && i !== xPointCount - 1) return;
-      const px = toPixelX(i);
-      const label = formatXLabel(xVal);
-
-      if (needsRotation) {
-        svg += svgText(px, margin.top + plotHeight + 12, label, {
-          anchor: 'end',
-          fontSize: 11,
-          fill: '#666',
-          rotate: -45,
-        });
-      } else {
-        svg += svgText(px, margin.top + plotHeight + 18, label, {
-          anchor: 'middle',
-          fontSize: 11,
-          fill: '#666',
-        });
-      }
-    });
-
-    // Draw lines for each series
-    for (const series of seriesData) {
-      if (series.points.length < 2) {
-        // Single point -- just draw a circle
-        if (series.points.length === 1) {
-          const pt = series.points[0];
-          const px = toPixelX(pt.x);
-          const py = toPixelY(pt.y);
-          svg += `<circle cx="${px}" cy="${py}" r="4" fill="${series.color}"/>`;
-        }
-        continue;
-      }
-
-      // Build polyline points string
-      const pointsStr = series.points
-        .map(pt => `${toPixelX(pt.x)},${toPixelY(pt.y)}`)
-        .join(' ');
-
-      svg += `<polyline points="${pointsStr}" fill="none" stroke="${series.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
-
-      // Data point circles
-      if (showDataPoints) {
-        for (const pt of series.points) {
-          const px = toPixelX(pt.x);
-          const py = toPixelY(pt.y);
-          svg += `<circle cx="${px}" cy="${py}" r="3.5" fill="${series.color}" stroke="#fff" stroke-width="1.5"/>`;
-        }
-      }
-    }
-
-    // Legend (if multiple series)
-    if (seriesData.length > 1) {
-      const legendY = margin.top - 15;
-      const itemWidth = 100;
-      const totalLegendWidth = seriesData.length * itemWidth;
-      const legendStartX = Math.max(margin.left, (width - totalLegendWidth) / 2);
-
-      seriesData.forEach((series, i) => {
-        const lx = legendStartX + i * itemWidth;
-        const truncName = series.name.length > 12 ? series.name.substring(0, 10) + '...' : series.name;
-        // Line swatch
-        svg += `<line x1="${lx}" y1="${legendY}" x2="${lx + 16}" y2="${legendY}" stroke="${series.color}" stroke-width="2.5" stroke-linecap="round"/>`;
-        if (showDataPoints) {
-          svg += `<circle cx="${lx + 8}" cy="${legendY}" r="3" fill="${series.color}" stroke="#fff" stroke-width="1"/>`;
-        }
-        svg += svgText(lx + 22, legendY, truncName, {
-          anchor: 'start',
-          fontSize: 11,
-          fill: '#333',
-          dy: '0.35em',
-        });
-      });
-    }
-
-    // Source
-    if (chartSource) {
-      svg += svgSource(width, height, chartSource);
-    }
-
-    return svgWrapper(width, height, svg);
+    return generateLineSvg(seriesData, xValues, showDataPoints, showGridlines, chartTitle, chartSubtitle, chartSource);
   }, [seriesData, xValues, showDataPoints, showGridlines, chartTitle, chartSubtitle, chartSource]);
 
   return (
@@ -320,9 +316,35 @@ export function LineChart({ dataset }: LineChartProps) {
           </div>
 
           <VisualizationTip
-            tip="Line charts imply continuity between data points. Use them for time series or ordered data, never for unrelated categories."
-            context="Best practice: use lines only when a connection between points is meaningful"
+            tip="Line charts are ideal for showing trends over time. The connected points imply continuity, so use them only for time-ordered data. For unordered categories, a bar chart is more appropriate."
+            context="Use date columns on the x-axis. Multiple series can compare trends across groups (e.g., cases by district over time)."
           />
+
+          <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                When to Use This Chart
+              </span>
+              <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showGuide && (
+              <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+                <p>• Showing trends over time (daily, weekly, monthly case counts)</p>
+                <p>• Comparing trends across multiple groups or strata</p>
+                <p>• Displaying surveillance data over continuous time periods</p>
+                <p>• When the connection between data points implies continuity</p>
+                <p className="text-blue-500 italic mt-2">Line charts imply continuity between points — only use them for time-ordered or naturally sequential data. For unordered categories, use a bar chart instead. — CDC Principles of Epidemiology</p>
+              </div>
+            )}
+          </div>
 
           {/* X-axis variable */}
           <VariableMapper
@@ -413,6 +435,13 @@ export function LineChart({ dataset }: LineChartProps) {
             </label>
           </div>
 
+          {/* Small Multiples / Faceting */}
+          <FacetControl
+            columns={dataset.columns}
+            value={facetCol}
+            onChange={setFacetCol}
+          />
+
           {/* Chart labels */}
           <div className="space-y-3 pt-3 border-t border-gray-200">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart Labels</p>
@@ -453,15 +482,101 @@ export function LineChart({ dataset }: LineChartProps) {
       {/* Right Panel - Chart */}
       <div className="flex-1 overflow-auto p-4 lg:p-6">
         {seriesData.length > 0 && xValues.length > 0 ? (
-          <ChartContainer
-            title={chartTitle || 'Line Chart'}
-            subtitle={chartSubtitle || undefined}
-            source={chartSource || undefined}
-            svgContent={svgContent}
-            filename={chartTitle ? chartTitle.replace(/\s+/g, '_') : 'line_chart'}
-          >
-            <div dangerouslySetInnerHTML={{ __html: svgContent }} />
-          </ChartContainer>
+          facetCol ? (
+            <FacetWrapper
+              dataset={dataset}
+              facetCol={facetCol}
+              renderChart={(fd) => {
+                // Get x-values for this facet
+                const col = dataset.columns.find(c => c.key === xVar);
+                let facetXValues: string[] = [];
+                const rawValues = fd.records
+                  .map(r => r[xVar])
+                  .filter(v => v !== null && v !== undefined && v !== '');
+
+                if (col?.type === 'date') {
+                  const dateSet = new Set(rawValues.map(v => String(v)));
+                  facetXValues = Array.from(dateSet).sort((a, b) => {
+                    const da = new Date(a).getTime();
+                    const db = new Date(b).getTime();
+                    return da - db;
+                  });
+                } else if (col?.valueOrder && col.valueOrder.length > 0) {
+                  facetXValues = col.valueOrder.filter(v => rawValues.some(rv => String(rv) === v));
+                } else {
+                  const unique = new Set(rawValues.map(v => String(v)));
+                  facetXValues = Array.from(unique).sort();
+                }
+
+                // Build series for facet
+                const xIndexMap = new Map(facetXValues.map((v, i) => [v, i]));
+                let facetSeries: Series[] = [];
+
+                if (!strataVar) {
+                  const points = buildSeriesPoints(
+                    fd.records,
+                    xVar,
+                    valueMode,
+                    yVar,
+                    facetXValues,
+                    xIndexMap
+                  );
+                  facetSeries = [{
+                    name: 'All',
+                    points,
+                    color: getChartColor(0, colorScheme),
+                  }];
+                } else {
+                  const strataValues = new Set<string>();
+                  for (const record of fd.records) {
+                    const sv = record[strataVar];
+                    if (sv !== null && sv !== undefined && sv !== '') {
+                      strataValues.add(String(sv));
+                    }
+                  }
+
+                  const strataList = Array.from(strataValues).sort();
+                  const colors = getChartColors(strataList.length, colorScheme);
+
+                  facetSeries = strataList.map((strataValue, i) => {
+                    const filteredRecords = fd.records.filter(
+                      r => String(r[strataVar] ?? '') === strataValue
+                    );
+                    const points = buildSeriesPoints(
+                      filteredRecords,
+                      xVar,
+                      valueMode,
+                      yVar,
+                      facetXValues,
+                      xIndexMap
+                    );
+                    return {
+                      name: strataValue,
+                      points,
+                      color: colors[i],
+                    };
+                  });
+                }
+
+                if (facetSeries.length === 0 || facetXValues.length === 0) {
+                  return <div className="text-gray-400 text-xs p-2">No data</div>;
+                }
+
+                const facetSvg = generateLineSvg(facetSeries, facetXValues, showDataPoints, showGridlines, '', '', '');
+                return <div dangerouslySetInnerHTML={{ __html: facetSvg }} />;
+              }}
+            />
+          ) : (
+            <ChartContainer
+              title={chartTitle || 'Line Chart'}
+              subtitle={chartSubtitle || undefined}
+              source={chartSource || undefined}
+              svgContent={svgContent}
+              filename={chartTitle ? chartTitle.replace(/\s+/g, '_') : 'line_chart'}
+            >
+              <div dangerouslySetInnerHTML={{ __html: svgContent }} />
+            </ChartContainer>
+          )
         ) : (
           <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
             {xVar

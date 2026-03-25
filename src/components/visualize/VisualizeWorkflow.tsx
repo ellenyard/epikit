@@ -14,6 +14,8 @@ import { WaffleChart } from './charts/WaffleChart';
 import { DotPlot } from './charts/DotPlot';
 import { HeatmapChart } from './charts/HeatmapChart';
 import { PairedBarChart } from './charts/PairedBarChart';
+import { DumbbellChart } from './charts/DumbbellChart';
+import { ForestPlot } from './charts/ForestPlot';
 
 interface VisualizeWorkflowProps {
   dataset: Dataset;
@@ -30,6 +32,8 @@ const chartComponents: Record<ChartType, React.ComponentType<{ dataset: Dataset 
   dot: DotPlot,
   heatmap: HeatmapChart,
   paired: PairedBarChart,
+  dumbbell: DumbbellChart,
+  forest: ForestPlot,
 };
 
 export function VisualizeWorkflow({ dataset }: VisualizeWorkflowProps) {

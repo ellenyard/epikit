@@ -39,6 +39,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   // Detect two unique group values for single-column mode
   const groupValues = useMemo(() => {
@@ -225,9 +226,35 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
 
           <VisualizationTip
-            tip="Slope charts excel at showing change between exactly two time points or conditions. They reveal both direction and magnitude of change at a glance. Data is automatically aggregated by category."
-            context="Try this: Category=Age Group, use Value+Group mode with Value=Vitamin A Coverage (%), Group=Survey Year"
+            tip="Slope charts excel at showing change between exactly two time points. Color-coding by direction (green for increase, red for decrease) makes trends immediately visible across many categories."
+            context="Best for comparing before/after or two-period data. If you need more than two time points, use a line chart instead."
           />
+
+          <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                When to Use This Chart
+              </span>
+              <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {showGuide && (
+              <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
+                <p>• Comparing values between exactly two time points or conditions</p>
+                <p>• Highlighting which categories increased vs. decreased</p>
+                <p>• Showing pre/post intervention results across multiple groups</p>
+                <p>• When you want to emphasize direction and magnitude of change</p>
+                <p className="text-blue-500 italic mt-2">CDC training resources reference slopegraphs as effective for showing change over time. Best with 5–15 categories. — CDC Principles of Epidemiology</p>
+              </div>
+            )}
+          </div>
 
           {/* Data point warning */}
           {slopeData.length > 50 && (
