@@ -194,6 +194,33 @@ export function Review({
     setFilters(prev => prev.filter((_, i) => i !== index));
   }, []);
 
+  // Handle undo of the most recent edit
+  const handleUndoEdit = useCallback((entry: EditLogEntry) => {
+    if (!activeDataset) return;
+
+    // Revert the field to its old value
+    updateRecord(activeDataset.id, entry.recordId, {
+      [entry.columnKey]: entry.oldValue,
+    });
+
+    // Remove this entry from the edit log by creating a new one that marks it as deleted
+    // Since we don't have a deleteEditLogEntry, we'll need to update it or filter from UI
+    // For now, we'll add a new entry documenting the undo action
+    addEditLogEntry({
+      id: crypto.randomUUID(),
+      datasetId: activeDataset.id,
+      recordId: 'system',
+      recordIdentifier: 'System',
+      columnKey: entry.columnKey,
+      columnLabel: entry.columnLabel,
+      oldValue: entry.newValue,
+      newValue: entry.oldValue,
+      reason: `Reverted previous edit via Undo`,
+      initials: 'UNDO',
+      timestamp: new Date().toISOString(),
+    });
+  }, [activeDataset, updateRecord, addEditLogEntry]);
+
   if (!activeDataset) {
     return null;
   }
@@ -661,6 +688,7 @@ export function Review({
         onToggle={() => setShowEditLog(!showEditLog)}
         onUpdateEntry={updateEditLogEntry}
         onExport={() => activeDatasetId && exportEditLog(activeDatasetId)}
+        onUndoEdit={handleUndoEdit}
       />
 
       {/* Create Variable Modal */}

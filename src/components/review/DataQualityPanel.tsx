@@ -10,6 +10,7 @@ import {
   getCategoryName,
   groupIssuesByCategory,
 } from '../../utils/dataQuality';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
 
 interface DataQualityPanelProps {
   issues: DataQualityIssue[];
@@ -207,7 +208,7 @@ export function DataQualityPanel({
           </div>
         ) : (
           <p className="text-sm text-gray-500">
-            {issues.length > 0 ? 'All issues reviewed' : 'No issues found'}
+            {issues.length > 0 ? 'All issues reviewed' : hasRunChecks ? 'No issues found' : 'Checks not yet run'}
           </p>
         )}
       </div>
@@ -551,8 +552,14 @@ export function DataQualityPanel({
         )}
       </div>
 
-      {/* Issues List */}
+      {/* Issues List or Loading Spinner */}
       <div className="flex-1 overflow-auto">
+        {isRunning ? (
+          <div className="flex items-center justify-center h-full">
+            <LoadingSpinner message="Running checks..." size="md" />
+          </div>
+        ) : (
+          <>
         {(['duplicate', 'temporal', 'range'] as CategoryKey[]).map(category => {
           const categoryIssues = groupedIssues[category];
           if (categoryIssues.length === 0) return null;
@@ -650,6 +657,8 @@ export function DataQualityPanel({
             </div>
           );
         })}
+          </>
+        )}
       </div>
     </div>
   );

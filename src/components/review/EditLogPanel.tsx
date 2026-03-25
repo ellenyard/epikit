@@ -8,6 +8,7 @@ interface EditLogPanelProps {
   onToggle: () => void;
   onUpdateEntry: (id: string, updates: Partial<EditLogEntry>) => void;
   onExport: () => void;
+  onUndoEdit: (entry: EditLogEntry) => void;
 }
 
 export function EditLogPanel({
@@ -16,6 +17,7 @@ export function EditLogPanel({
   onToggle,
   onUpdateEntry,
   onExport,
+  onUndoEdit,
 }: EditLogPanelProps) {
   const [editingCell, setEditingCell] = useState<{ id: string; field: 'reason' | 'initials' } | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -52,6 +54,19 @@ export function EditLogPanel({
     });
   };
 
+  // Get the most recent individual record edit (not system/bulk operations)
+  const getMostRecentEditableEntry = (): EditLogEntry | null => {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry.recordId !== 'system' && entry.recordId !== 'bulk') {
+        return entry;
+      }
+    }
+    return null;
+  };
+
+  const mostRecentEdit = getMostRecentEditableEntry();
+
   return (
     <ContextualSidebar
       isOpen={isOpen}
@@ -79,6 +94,22 @@ export function EditLogPanel({
         ) : undefined
       }
     >
+      {/* Undo Button - shown when there are editable entries */}
+      {mostRecentEdit && (
+        <div className="px-4 py-3 border-b border-gray-200 bg-blue-50">
+          <button
+            onClick={() => onUndoEdit(mostRecentEdit)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+            title={`Undo: ${mostRecentEdit.recordIdentifier} - ${mostRecentEdit.columnLabel}`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m0 0l-6 6" />
+            </svg>
+            Undo Last Edit
+          </button>
+        </div>
+      )}
+
       {entries.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-full text-gray-400 p-4">
           <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

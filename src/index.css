@@ -207,6 +207,56 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
+/* Tablet and smaller screen improvements */
+@media (max-width: 1024px) {
+  /* Make nav scrollable on tablets */
+  nav .flex.gap-0\.5 {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+  }
+  nav .flex.gap-0\.5::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Stack the dataset selector on mobile */
+  .bg-gray-100.border-b {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  /* Make tables horizontally scrollable */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Reduce padding on mobile */
+  .px-4 {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+/* Slide-up animation for toast notifications */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(1rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
 /* Print styles */
 @media print {
   /* Hide interactive elements when printing */

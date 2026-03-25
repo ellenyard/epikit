@@ -34,6 +34,7 @@ import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
 import { VisualizeWorkflow } from './components/visualize/VisualizeWorkflow';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
@@ -96,6 +97,7 @@ function App() {
   const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
   const [showLocaleSettings, setShowLocaleSettings] = useState(false);
   const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
+  const [showBackupReminder, setShowBackupReminder] = useState(false);
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
   // ---------------------------------------------------------------------------
@@ -238,7 +240,18 @@ function App() {
   }, [activeDatasetId]);
 
   const addEditLogEntry = useCallback((entry: EditLogEntry) => {
-    setEditLog(prev => [...prev, entry]);
+    setEditLog(prev => {
+      const next = [...prev, entry];
+      // Show backup reminder every 20 edits if not already shown recently
+      const lastReminder = localStorage.getItem('epikit_lastBackupReminder');
+      const lastReminderTime = lastReminder ? Number(lastReminder) : 0;
+      const hoursSinceReminder = (Date.now() - lastReminderTime) / (1000 * 60 * 60);
+      if (next.length > 0 && next.length % 20 === 0 && hoursSinceReminder > 4) {
+        setShowBackupReminder(true);
+        localStorage.setItem('epikit_lastBackupReminder', String(Date.now()));
+      }
+      return next;
+    });
   }, []);
 
   const updateEditLogEntry = useCallback((id: string, updates: Partial<EditLogEntry>) => {
@@ -462,7 +475,7 @@ function App() {
                 onClick={() => setActiveModule('review')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'review'
-                    ? 'bg-slate-700 text-white'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
@@ -473,7 +486,7 @@ function App() {
                 onClick={() => setActiveModule('epicurve')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'epicurve'
-                    ? 'bg-slate-700 text-white'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
@@ -483,7 +496,7 @@ function App() {
                 onClick={() => setActiveModule('spotmap')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'spotmap'
-                    ? 'bg-slate-700 text-white'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
@@ -493,7 +506,7 @@ function App() {
                 onClick={() => setActiveModule('analysis')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'analysis'
-                    ? 'bg-slate-700 text-white'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
@@ -503,7 +516,7 @@ function App() {
                 onClick={() => setActiveModule('visualize')}
                 className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
                   activeModule === 'visualize'
-                    ? 'bg-slate-700 text-white'
+                    ? 'bg-blue-600 text-white shadow-sm'
                     : 'text-slate-300 hover:text-white hover:bg-slate-700'
                 }`}
               >
@@ -632,33 +645,43 @@ function App() {
         ) : activeDataset ? (
           // Modules that require a dataset
           activeModule === 'review' ? (
-            <Review
-              datasets={datasets}
-              activeDatasetId={activeDatasetId}
-              setActiveDatasetId={setActiveDatasetId}
-              createDataset={createDataset}
-              updateDataset={updateDataset}
-              deleteDataset={deleteDataset}
-              addRecord={addRecord}
-              updateRecord={updateRecord}
-              deleteRecord={deleteRecord}
-              addEditLogEntry={addEditLogEntry}
-              updateEditLogEntry={updateEditLogEntry}
-              getEditLogForDataset={getEditLogForDataset}
-              exportEditLog={exportEditLog}
-            />
+            <ErrorBoundary moduleName="Review/Clean" onReset={() => {}}>
+              <Review
+                datasets={datasets}
+                activeDatasetId={activeDatasetId}
+                setActiveDatasetId={setActiveDatasetId}
+                createDataset={createDataset}
+                updateDataset={updateDataset}
+                deleteDataset={deleteDataset}
+                addRecord={addRecord}
+                updateRecord={updateRecord}
+                deleteRecord={deleteRecord}
+                addEditLogEntry={addEditLogEntry}
+                updateEditLogEntry={updateEditLogEntry}
+                getEditLogForDataset={getEditLogForDataset}
+                exportEditLog={exportEditLog}
+              />
+            </ErrorBoundary>
           ) : activeModule === 'epicurve' ? (
-            <EpiCurve dataset={activeDataset} onExportDataset={handleDatasetExport} />
+            <ErrorBoundary moduleName="Epi Curve" onReset={() => {}}>
+              <EpiCurve dataset={activeDataset} onExportDataset={handleDatasetExport} />
+            </ErrorBoundary>
           ) : activeModule === 'spotmap' ? (
-            <SpotMap dataset={activeDataset} />
+            <ErrorBoundary moduleName="Spot Map" onReset={() => {}}>
+              <SpotMap dataset={activeDataset} />
+            </ErrorBoundary>
           ) : activeModule === 'analysis' ? (
-            <AnalysisWorkflow
-              dataset={activeDataset}
-              onCreateVariable={handleCreateVariable}
-              onUpdateRecords={handleUpdateRecords}
-            />
+            <ErrorBoundary moduleName="Analysis" onReset={() => {}}>
+              <AnalysisWorkflow
+                dataset={activeDataset}
+                onCreateVariable={handleCreateVariable}
+                onUpdateRecords={handleUpdateRecords}
+              />
+            </ErrorBoundary>
           ) : activeModule === 'visualize' ? (
-            <VisualizeWorkflow dataset={activeDataset} />
+            <ErrorBoundary moduleName="Visualize" onReset={() => {}}>
+              <VisualizeWorkflow dataset={activeDataset} />
+            </ErrorBoundary>
           ) : null
         ) : (
           // No dataset selected - show prompt
@@ -716,6 +739,40 @@ function App() {
         isOpen={showLocaleSettings}
         onClose={() => setShowLocaleSettings(false)}
       />
+
+      {/* Project Load Confirmation Modal */}
+      {/* Backup Reminder Toast */}
+      {showBackupReminder && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-sm animate-slide-up">
+          <div className="bg-white rounded-xl shadow-lg border border-amber-200 p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Back up your work?</p>
+                <p className="text-xs text-gray-500 mt-1">Your data only exists in this browser. Save a project backup to keep it safe.</p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => { handleSaveProject(); setShowBackupReminder(false); }}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    Save Backup
+                  </button>
+                  <button
+                    onClick={() => setShowBackupReminder(false)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Project Load Confirmation Modal */}
       {showProjectLoadConfirm && (

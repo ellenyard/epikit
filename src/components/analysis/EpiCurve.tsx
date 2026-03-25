@@ -22,6 +22,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartBodyRef = useRef<HTMLDivElement>(null);
+  const userChangedBinSize = useRef(false);
 
   // Persistence key for this dataset
   const persistenceKey = `epikit_epicurve_${dataset.id}`;
@@ -214,6 +215,43 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       }
     }
   }, [dateColumn, timeColumns, timeColumn]);
+
+  // Auto-suggest bin size based on date range (only if user hasn't manually changed it)
+  useEffect(() => {
+    if (!dateColumn || userChangedBinSize.current) return;
+
+    // Extract valid dates from the data (use full dataset for range estimation)
+    const validDates = dataset.records
+      .map(r => {
+        const dateVal = r[dateColumn];
+        if (!dateVal) return null;
+        const date = parseLocalDate(String(dateVal));
+        return isNaN(date.getTime()) ? null : date;
+      })
+      .filter((d): d is Date => d !== null);
+
+    if (validDates.length === 0) return;
+
+    // Calculate date range in days
+    const minTime = Math.min(...validDates.map(d => d.getTime()));
+    const maxTime = Math.max(...validDates.map(d => d.getTime()));
+    const daysDiff = (maxTime - minTime) / (1000 * 60 * 60 * 24);
+
+    // Suggest bin size based on date range
+    let suggestedBinSize: BinSize;
+    if (daysDiff < 7) {
+      suggestedBinSize = 'hourly';
+    } else if (daysDiff < 60) {
+      suggestedBinSize = 'daily';
+    } else {
+      suggestedBinSize = 'weekly-cdc';
+    }
+
+    // Only update if different from current
+    if (suggestedBinSize !== binSize) {
+      setBinSize(suggestedBinSize);
+    }
+  }, [dateColumn, dataset.records, binSize]);
 
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
@@ -720,6 +758,18 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     return barWidth < (estimatedLabelWidth + 10);
   }, [displayData.bins, barWidth]);
 
+  // Determine which x-axis labels should be shown (skip labels when too many bins)
+  const shouldShowLabel = useMemo(() => {
+    if (displayData.bins.length <= 50) {
+      // Show all labels if 50 or fewer bins
+      return (_index: number) => true;
+    }
+
+    // For more than 50 bins, skip labels to show ~30 labels at most
+    const skipInterval = Math.ceil(displayData.bins.length / 30);
+    return (index: number) => index % skipInterval === 0;
+  }, [displayData.bins.length]);
+
   return (
     <div ref={containerRef} className={`h-full flex flex-col lg:flex-row ${isResizing ? 'select-none' : ''}`}>
       {/* Left Panel - Controls */}
@@ -834,7 +884,10 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Bin Size</label>
             <select
               value={binSize}
-              onChange={(e) => setBinSize(e.target.value as BinSize)}
+              onChange={(e) => {
+                setBinSize(e.target.value as BinSize);
+                userChangedBinSize.current = true;
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="hourly">Hourly</option>
@@ -1451,26 +1504,28 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                           className="relative"
                           style={{ width: barWidth, height: shouldRotateLabels ? 60 : 30 }}
                         >
-                          <span
-                            className="text-sm text-gray-500 absolute whitespace-nowrap"
-                            style={
-                              shouldRotateLabels
-                                ? {
-                                    transform: 'rotate(-45deg)',
-                                    transformOrigin: '0 0',
-                                    left: barWidth / 2,
-                                    top: 5,
-                                  }
-                                : {
-                                    left: '50%',
-                                    transform: 'translateX(-50%)',
-                                    top: 5,
-                                    textAlign: 'center',
-                                  }
-                            }
-                          >
-                            {bin.label}
-                          </span>
+                          {shouldShowLabel(index) && (
+                            <span
+                              className="text-sm text-gray-500 absolute whitespace-nowrap"
+                              style={
+                                shouldRotateLabels
+                                  ? {
+                                      transform: 'rotate(-45deg)',
+                                      transformOrigin: '0 0',
+                                      left: barWidth / 2,
+                                      top: 5,
+                                    }
+                                  : {
+                                      left: '50%',
+                                      transform: 'translateX(-50%)',
+                                      top: 5,
+                                      textAlign: 'center',
+                                    }
+                              }
+                            >
+                              {bin.label}
+                            </span>
+                          )}
                         </div>
                       ))}
                     </div>
