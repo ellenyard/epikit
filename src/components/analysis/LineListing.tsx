@@ -13,6 +13,10 @@ interface PendingEdit {
   newValue: unknown;
 }
 
+interface ColumnVisibilityState {
+  [key: string]: boolean;
+}
+
 interface LineListingProps {
   dataset: Dataset;
   onUpdateRecord: (recordId: string, updates: Partial<CaseRecord>) => void;
@@ -46,6 +50,15 @@ export function LineListing({
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [newRowData, setNewRowData] = useState<Record<string, unknown>>({});
   const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnVisibilityState>(() => {
+    const state: ColumnVisibilityState = {};
+    dataset.columns.forEach(col => {
+      state[col.key] = true;
+    });
+    return state;
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef<HTMLDivElement>(null);
   const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
   const tableContainerRef = useRef<HTMLDivElement>(null);
 
@@ -58,6 +71,20 @@ export function LineListing({
       }
     }
   }, [scrollToRecordId]);
+
+  // Close column menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
+        setShowColumnMenu(false);
+      }
+    };
+
+    if (showColumnMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showColumnMenu]);
 
   const processedRecords = useMemo(() => {
     const filtered = filterRecords(dataset.records, filters);
@@ -199,6 +226,31 @@ export function LineListing({
     setPendingEdit(null);
   };
 
+  const toggleColumnVisibility = (columnKey: string) => {
+    setVisibleColumns(prev => ({
+      ...prev,
+      [columnKey]: !prev[columnKey],
+    }));
+  };
+
+  const showAllColumns = () => {
+    const newState: ColumnVisibilityState = {};
+    dataset.columns.forEach(col => {
+      newState[col.key] = true;
+    });
+    setVisibleColumns(newState);
+  };
+
+  const hideAllColumns = () => {
+    const newState: ColumnVisibilityState = {};
+    dataset.columns.forEach(col => {
+      newState[col.key] = false;
+    });
+    setVisibleColumns(newState);
+  };
+
+  const visibleColumnCount = Object.values(visibleColumns).filter(Boolean).length;
+
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
@@ -210,14 +262,75 @@ export function LineListing({
               {processedRecords.length} of {dataset.records.length} records
             </span>
           </div>
-          {selectedRows.size > 0 && (
-            <button
-              onClick={deleteSelectedRows}
-              className="px-3 py-1.5 text-sm font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-50"
-            >
-              Delete ({selectedRows.size})
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Columns Button */}
+            <div className="relative" ref={columnMenuRef}>
+              <button
+                onClick={() => setShowColumnMenu(!showColumnMenu)}
+                className="px-3 py-1.5 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2"
+                title="Show/hide columns"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3H5a2 2 0 00-2 2v4m0 6v4a2 2 0 002 2h4m0 0h4a2 2 0 002-2v-4m0-6V5a2 2 0 00-2-2h-4m0 0V3m0 6h0m0 0v0m0 0h0" />
+                </svg>
+                Columns
+                {visibleColumnCount < dataset.columns.length && (
+                  <span className="text-xs text-gray-500">({visibleColumnCount}/{dataset.columns.length})</span>
+                )}
+              </button>
+
+              {/* Column Dropdown Menu */}
+              {showColumnMenu && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setShowColumnMenu(false)} />
+                  <div className="absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20 max-h-96 overflow-y-auto">
+                    {/* Quick Actions */}
+                    <div className="px-3 py-2 border-b border-gray-200 space-y-1">
+                      <button
+                        onClick={showAllColumns}
+                        className="w-full text-left px-2 py-1.5 text-sm text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                      >
+                        Show All
+                      </button>
+                      <button
+                        onClick={hideAllColumns}
+                        className="w-full text-left px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                      >
+                        Hide All
+                      </button>
+                    </div>
+
+                    {/* Column List */}
+                    <div className="px-2 py-1">
+                      {dataset.columns.map(col => (
+                        <label
+                          key={col.key}
+                          className="flex items-center gap-2 px-2 py-1.5 hover:bg-gray-50 rounded cursor-pointer transition-colors"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={visibleColumns[col.key] ?? true}
+                            onChange={() => toggleColumnVisibility(col.key)}
+                            className="rounded border-gray-300"
+                          />
+                          <span className="text-sm text-gray-700 flex-1 truncate">{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {selectedRows.size > 0 && (
+              <button
+                onClick={deleteSelectedRows}
+                className="px-3 py-1.5 text-sm font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-50"
+              >
+                Delete ({selectedRows.size})
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -226,7 +339,7 @@ export function LineListing({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50 sticky top-0">
             <tr>
-              <th className="w-10 px-3 py-3">
+              <th className="sticky left-0 z-20 w-10 px-3 py-3 bg-gray-50 border-r border-gray-200">
                 <input
                   type="checkbox"
                   checked={selectedRows.size === processedRecords.length && processedRecords.length > 0}
@@ -234,14 +347,23 @@ export function LineListing({
                   className="rounded border-gray-300"
                 />
               </th>
-              <th className="w-10 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+              <th className="sticky left-10 z-20 w-10 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase bg-gray-50 border-r border-gray-200">
                 #
               </th>
-              {dataset.columns.map(col => (
+              {dataset.columns.map((col, index) => {
+                const isFirstDataColumn = index === 0;
+                const isVisible = visibleColumns[col.key] ?? true;
+                if (!isVisible) return null;
+
+                return (
                 <th
                   key={col.key}
                   onClick={() => handleSort(col.key)}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
+                  className={`px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 ${
+                    isFirstDataColumn
+                      ? 'sticky left-20 z-19 bg-gray-50 border-r border-gray-200'
+                      : ''
+                  }`}
                 >
                   <div className="flex items-center gap-1">
                     {col.label}
@@ -250,17 +372,27 @@ export function LineListing({
                     )}
                   </div>
                 </th>
-              ))}
+                );
+              })}
               <th className="w-20 px-3 py-3"></th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {showAddRow && (
               <tr className="bg-green-50">
-                <td className="px-3 py-2"></td>
-                <td className="px-3 py-2 text-sm text-gray-500">New</td>
-                {dataset.columns.map(col => (
-                  <td key={col.key} className="px-4 py-2">
+                <td className="sticky left-0 z-10 px-3 py-2 bg-green-50 border-r border-green-200"></td>
+                <td className="sticky left-10 z-10 px-3 py-2 text-sm text-gray-500 bg-green-50 border-r border-green-200">New</td>
+                {dataset.columns.map((col, index) => {
+                  const isFirstDataColumn = index === 0;
+                  const isVisible = visibleColumns[col.key] ?? true;
+                  if (!isVisible) return null;
+
+                  return (
+                  <td key={col.key} className={`px-4 py-2 ${
+                    isFirstDataColumn
+                      ? 'sticky left-20 z-10 bg-green-50 border-r border-green-200'
+                      : ''
+                  }`}>
                     <input
                       type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
                       value={String(newRowData[col.key] ?? '')}
@@ -268,7 +400,8 @@ export function LineListing({
                       className="w-full px-2 py-1 text-sm border border-green-300 rounded focus:ring-green-500 focus:border-green-500"
                     />
                   </td>
-                ))}
+                  );
+                })}
                 <td className="px-3 py-2">
                   <div className="flex gap-1">
                     <button
@@ -308,7 +441,7 @@ export function LineListing({
                   ${!selectedRows.has(record.id) && !isHighlighted ? 'hover:bg-gray-50' : ''}
                 `}
               >
-                <td className="px-3 py-2">
+                <td className="sticky left-0 z-10 px-3 py-2 border-r border-gray-200 bg-inherit">
                   <input
                     type="checkbox"
                     checked={selectedRows.has(record.id)}
@@ -316,13 +449,21 @@ export function LineListing({
                     className="rounded border-gray-300"
                   />
                 </td>
-                <td className="px-3 py-2 text-sm text-gray-500">{index + 1}</td>
-                {dataset.columns.map(col => {
+                <td className="sticky left-10 z-10 px-3 py-2 text-sm text-gray-500 border-r border-gray-200 bg-inherit">{index + 1}</td>
+                {dataset.columns.map((col, colIndex) => {
+                  const isFirstDataColumn = colIndex === 0;
                   const isHighlightedField = isHighlighted && highlightField === col.key;
+                  const isVisible = visibleColumns[col.key] ?? true;
+                  if (!isVisible) return null;
+
                   return (
                   <td
                     key={col.key}
-                    className={`px-4 py-2 text-sm text-gray-900 ${isHighlightedField ? 'bg-amber-200' : ''}`}
+                    className={`px-4 py-2 text-sm text-gray-900 ${isHighlightedField ? 'bg-amber-200' : ''} ${
+                      isFirstDataColumn
+                        ? 'sticky left-20 z-10 border-r border-gray-200 bg-inherit'
+                        : ''
+                    }`}
                     onDoubleClick={() => startEdit(record.id, col.key, record[col.key])}
                   >
                     {editingCell?.recordId === record.id && editingCell?.column === col.key ? (
