@@ -382,3 +382,208 @@ function generateNutritionRecords(): CaseRecord[] {
 
 export const nutritionDemoRecords: CaseRecord[] = generateNutritionRecords();
 export const nutritionDemoDatasetName = 'Child Nutrition Survey - Rapid Assessment';
+
+// =============================================================================
+// DEMO DATASET 3: Disease Surveillance — Monthly Reports
+//
+// Aggregated monthly surveillance data from a fictional sub-national health
+// region with 5 districts, tracking 3 notifiable diseases over 4 years
+// (Jan 2022 – Dec 2025). Each record is one district-disease-month report.
+//
+// Designed to showcase time-series visualisation charts:
+//   - Line chart:    report_date × cases, grouped by disease or district
+//   - Slope chart:   disease as category, survey_year as group, cases as value
+//   - Heatmap:       month × district with cases (seasonal patterns)
+//   - Grouped bar:   quarter × disease for case totals
+//   - Bullet chart:  reporting_completeness vs target_completeness
+//   - Dumbbell:      incidence_per_10k between first and last year
+//   - Paired bar:    district-level cases in 2022 vs 2025
+//
+// Realistic seasonal patterns are built in:
+//   - Malaria peaks Jun–Sep (rainy season), declines over the 4 years
+//   - AWD (acute watery diarrhea) peaks Mar–May (dry/hot season), stable
+//   - Measles peaks Jan–Apr (dry season), drops sharply after 2023 campaign
+//
+// 5 districts × 3 diseases × 48 months = 720 records
+// =============================================================================
+
+export const surveillanceDemoColumns: DataColumn[] = [
+  { key: 'report_id', label: 'Report ID', type: 'text' },
+  { key: 'report_date', label: 'Report Date', type: 'date' },
+  {
+    key: 'year', label: 'Year', type: 'categorical',
+    valueOrder: ['2022', '2023', '2024', '2025'],
+  },
+  {
+    key: 'quarter', label: 'Quarter', type: 'categorical',
+    valueOrder: ['Q1', 'Q2', 'Q3', 'Q4'],
+  },
+  {
+    key: 'month_name', label: 'Month', type: 'categorical',
+    valueOrder: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  },
+  {
+    key: 'district', label: 'District', type: 'categorical',
+    valueOrder: ['Lakeside', 'Hillcrest', 'Riverside', 'Central', 'Eastfield'],
+  },
+  {
+    key: 'disease', label: 'Disease', type: 'categorical',
+    valueOrder: ['Malaria', 'AWD', 'Measles'],
+  },
+  { key: 'cases', label: 'Cases Reported', type: 'number' },
+  { key: 'deaths', label: 'Deaths', type: 'number' },
+  { key: 'cfr_pct', label: 'Case Fatality Rate (%)', type: 'number' },
+  { key: 'population', label: 'District Population', type: 'number' },
+  { key: 'incidence_per_10k', label: 'Incidence per 10,000', type: 'number' },
+  { key: 'reporting_completeness', label: 'Reporting Completeness (%)', type: 'number' },
+  { key: 'target_completeness', label: 'Target Completeness (%)', type: 'number' },
+  { key: 'facilities_reporting', label: 'Facilities Reporting', type: 'number' },
+  { key: 'total_facilities', label: 'Total Facilities', type: 'number' },
+];
+
+function generateSurveillanceRecords(): CaseRecord[] {
+  const rand = makeLCG(7777);
+
+  function round1(n: number) { return Math.round(n * 10) / 10; }
+
+  const districts = ['Lakeside', 'Hillcrest', 'Riverside', 'Central', 'Eastfield'];
+  const diseases = ['Malaria', 'AWD', 'Measles'];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  // District populations (stable over 4 years for simplicity)
+  const distPop: Record<string, number> = {
+    Lakeside: 82000,
+    Hillcrest: 54000,
+    Riverside: 71000,
+    Central: 120000,
+    Eastfield: 63000,
+  };
+
+  // Total facilities per district
+  const distFacilities: Record<string, number> = {
+    Lakeside: 12,
+    Hillcrest: 8,
+    Riverside: 10,
+    Central: 18,
+    Eastfield: 9,
+  };
+
+  // District-level baseline case multipliers (some districts have higher burden)
+  const distMultiplier: Record<string, number> = {
+    Lakeside: 1.3,
+    Hillcrest: 0.7,
+    Riverside: 1.0,
+    Central: 1.5,
+    Eastfield: 0.85,
+  };
+
+  // Seasonal patterns by month index (0 = Jan): amplitude multiplier
+  // Malaria: peaks Jun–Sep (rainy season)
+  const malariaSeason = [0.4, 0.3, 0.4, 0.5, 0.7, 1.3, 1.8, 2.0, 1.6, 0.9, 0.6, 0.5];
+  // AWD: peaks Mar–May (dry/hot season)
+  const awdSeason = [0.6, 0.8, 1.4, 1.7, 1.5, 1.0, 0.7, 0.6, 0.6, 0.7, 0.8, 0.7];
+  // Measles: peaks Jan–Apr (dry season)
+  const measlesSeason = [1.6, 1.8, 1.5, 1.2, 0.7, 0.4, 0.3, 0.3, 0.4, 0.6, 0.8, 1.1];
+
+  // Year-over-year trends (multiplicative factors relative to 2022 baseline)
+  const yearTrend: Record<string, Record<string, number>> = {
+    Malaria: { '2022': 1.0, '2023': 0.92, '2024': 0.80, '2025': 0.68 },    // declining — bed-net distribution
+    AWD:     { '2022': 1.0, '2023': 1.05, '2024': 0.95, '2025': 0.90 },     // mostly stable, slight decline
+    Measles: { '2022': 1.0, '2023': 1.15, '2024': 0.45, '2025': 0.30 },     // spike in 2023, then mass campaign effect
+  };
+
+  // Baseline monthly case counts per disease (at population 100k)
+  const baseCases: Record<string, number> = {
+    Malaria: 85,
+    AWD: 35,
+    Measles: 18,
+  };
+
+  // CFR ranges by disease
+  const cfrBase: Record<string, number> = {
+    Malaria: 0.8,
+    AWD: 1.5,
+    Measles: 2.0,
+  };
+
+  const records: CaseRecord[] = [];
+  let id = 0;
+
+  for (let yearIdx = 0; yearIdx < 4; yearIdx++) {
+    const year = String(2022 + yearIdx);
+
+    for (let month = 0; month < 12; month++) {
+      const monthStr = String(month + 1).padStart(2, '0');
+      const report_date = `${year}-${monthStr}-01`;
+      const quarter = month < 3 ? 'Q1' : month < 6 ? 'Q2' : month < 9 ? 'Q3' : 'Q4';
+
+      for (const district of districts) {
+        const popFactor = distPop[district] / 100000;
+        const dMult = distMultiplier[district];
+
+        for (const disease of diseases) {
+          id++;
+
+          // Seasonal multiplier
+          const seasonArr =
+            disease === 'Malaria' ? malariaSeason :
+            disease === 'AWD' ? awdSeason : measlesSeason;
+          const seasonMult = seasonArr[month];
+
+          // Year trend
+          const yTrend = yearTrend[disease][year];
+
+          // Expected cases
+          const expected = baseCases[disease] * popFactor * dMult * seasonMult * yTrend;
+
+          // Add random noise (±25%)
+          const noise = 0.75 + rand() * 0.50;
+          const cases = Math.max(0, Math.round(expected * noise));
+
+          // Deaths: based on CFR with noise
+          const cfrNoise = 0.5 + rand() * 1.0;
+          const expectedDeaths = cases * (cfrBase[disease] / 100) * cfrNoise;
+          const deaths = Math.min(cases, Math.max(0, Math.round(expectedDeaths)));
+
+          const cfr_pct = cases > 0 ? round1((deaths / cases) * 100) : 0;
+          const incidence_per_10k = round1((cases / distPop[district]) * 10000);
+
+          // Reporting completeness: improves over the years
+          const baseCompleteness = 72 + yearIdx * 5;
+          const compNoise = -8 + rand() * 16;
+          const reporting_completeness = Math.min(100, Math.max(50, Math.round(baseCompleteness + compNoise)));
+          const target_completeness = 90;
+
+          // Facilities reporting
+          const totalFac = distFacilities[district];
+          const facilities_reporting = Math.min(totalFac, Math.max(1, Math.round(totalFac * reporting_completeness / 100)));
+
+          records.push({
+            id: String(id),
+            report_id: `SR${String(id).padStart(4, '0')}`,
+            report_date,
+            year,
+            quarter,
+            month_name: monthNames[month],
+            district,
+            disease,
+            cases,
+            deaths,
+            cfr_pct,
+            population: distPop[district],
+            incidence_per_10k,
+            reporting_completeness,
+            target_completeness,
+            facilities_reporting,
+            total_facilities: totalFac,
+          });
+        }
+      }
+    }
+  }
+
+  return records;
+}
+
+export const surveillanceDemoRecords: CaseRecord[] = generateSurveillanceRecords();
+export const surveillanceDemoDatasetName = 'Disease Surveillance - Monthly Reports';
