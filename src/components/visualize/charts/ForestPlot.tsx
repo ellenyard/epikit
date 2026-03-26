@@ -30,6 +30,16 @@ type DataMode = 'manual' | 'calculate';
 type MeasureType = 'oddsRatio' | 'riskRatio' | 'riskDifference';
 
 export function ForestPlot({ dataset }: { dataset: Dataset }) {
+  // --- Load saved 2×2 analysis settings so forest plot matches ---
+  const twoByTwoSaved = useMemo(() => {
+    try {
+      const raw = localStorage.getItem(`epikit_twobytwo_${dataset.id}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }, [dataset.id]);
+
   // --- Data mode toggle ---
   const [dataMode, setDataMode] = useState<DataMode>('calculate');
 
@@ -40,11 +50,21 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   const [upperCICol, setUpperCICol] = useState('');
   const [weightCol, setWeightCol] = useState('');
 
-  // --- Calculate mode state ---
-  const [outcomeVar, setOutcomeVar] = useState('');
-  const [caseValues, setCaseValues] = useState<Set<string>>(new Set());
-  const [selectedExposures, setSelectedExposures] = useState<string[]>([]);
-  const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>({});
+  // --- Calculate mode state (initialized from 2×2 analysis if available) ---
+  const [outcomeVar, setOutcomeVar] = useState<string>(() =>
+    (twoByTwoSaved.outcomeVar as string) || ''
+  );
+  const [caseValues, setCaseValues] = useState<Set<string>>(() => {
+    const arr = twoByTwoSaved.caseValues;
+    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
+  });
+  const [selectedExposures, setSelectedExposures] = useState<string[]>(() => {
+    const arr = twoByTwoSaved.selectedExposures;
+    return Array.isArray(arr) ? arr as string[] : [];
+  });
+  const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>(() =>
+    (twoByTwoSaved.exposurePositiveValues as Record<string, string>) || {}
+  );
   const [measureType, setMeasureType] = useState<MeasureType>('oddsRatio');
 
   // --- Shared state ---
@@ -90,7 +110,36 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     });
   }, [dataset, outcomeVar]);
 
-  // Auto-detect outcome variable
+  // Sync forest plot settings back to the shared 2×2 persistence key
+  // so both tabs always use the same case definition and exposures
+  useEffect(() => {
+    if (dataMode !== 'calculate') return;
+    if (!outcomeVar) return;
+    try {
+      const persistenceKey = `epikit_twobytwo_${dataset.id}`;
+      // Read existing saved state to preserve fields we don't manage (studyDesign, filterBy, etc.)
+      const existing = (() => {
+        try {
+          const raw = localStorage.getItem(persistenceKey);
+          return raw ? JSON.parse(raw) : {};
+        } catch {
+          return {};
+        }
+      })();
+      const toSave = {
+        ...existing,
+        outcomeVar,
+        caseValues: Array.from(caseValues),
+        selectedExposures,
+        exposurePositiveValues,
+      };
+      localStorage.setItem(persistenceKey, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('Failed to sync forest plot settings:', e);
+    }
+  }, [dataMode, dataset.id, outcomeVar, caseValues, selectedExposures, exposurePositiveValues]);
+
+  // Auto-detect outcome variable (only if nothing was loaded from 2×2 settings)
   useEffect(() => {
     if (dataMode !== 'calculate' || outcomeVar) return;
     const commonCaseColumns = ['ill', 'case_status', 'case', 'status', 'outcome'];
