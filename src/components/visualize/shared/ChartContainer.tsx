@@ -1,7 +1,26 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { ResultsActions, ExportIcons } from '../../shared/ResultsActions';
 import { exportPNG, copyChartToClipboard, exportExcel } from '../../../utils/chartExport';
 import type { ExcelExportData } from '../../../utils/chartExport';
+
+/** Hook that tracks the width of a container element */
+export function useContainerWidth(ref: React.RefObject<HTMLElement | null>): number {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+
+  return width;
+}
 
 interface ChartContainerProps {
   title: string;
@@ -62,15 +81,15 @@ export function ChartContainer({ title, subtitle, source, svgContent, children, 
 
   return (
     <div>
-      <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-6">
+      <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-6">
         {/* Chart header */}
         <div className="mb-4">
-          <h3 className="text-lg font-bold text-gray-900">{title}</h3>
-          {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+          <h3 className="text-base sm:text-lg font-bold text-gray-900">{title}</h3>
+          {subtitle && <p className="text-xs sm:text-sm text-gray-500 mt-1">{subtitle}</p>}
         </div>
 
-        {/* Chart content */}
-        <div className="overflow-x-auto">
+        {/* Chart content - scales SVGs to fit container on mobile */}
+        <div className="overflow-x-auto [&_svg]:max-w-full [&_svg]:h-auto">
           {children}
         </div>
 

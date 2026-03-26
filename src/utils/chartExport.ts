@@ -159,7 +159,7 @@ export interface ChartDimensions {
   margin: { top: number; right: number; bottom: number; left: number };
 }
 
-export function getDefaultDimensions(chartType: string): ChartDimensions {
+export function getDefaultDimensions(chartType: string, containerWidth?: number): ChartDimensions {
   // Return sensible defaults per chart type
   const defaults: Record<string, ChartDimensions> = {
     bar: { width: 800, height: 500, margin: { top: 50, right: 40, bottom: 60, left: 180 } }, // Wide left margin for labels
@@ -175,7 +175,23 @@ export function getDefaultDimensions(chartType: string): ChartDimensions {
     dumbbell: { width: 800, height: 500, margin: { top: 60, right: 60, bottom: 60, left: 180 } },
     forest: { width: 800, height: 500, margin: { top: 60, right: 60, bottom: 60, left: 180 } },
   };
-  return defaults[chartType] || defaults.bar;
+  const dims = defaults[chartType] || defaults.bar;
+
+  // If a container width is provided and it's smaller than the default, scale down
+  if (containerWidth && containerWidth < dims.width) {
+    const scale = containerWidth / dims.width;
+    return {
+      width: containerWidth,
+      height: Math.round(dims.height * scale),
+      margin: {
+        top: Math.round(dims.margin.top * scale),
+        right: Math.max(15, Math.round(dims.margin.right * scale)),
+        bottom: Math.round(dims.margin.bottom * scale),
+        left: Math.max(40, Math.round(dims.margin.left * scale)),
+      },
+    };
+  }
+  return dims;
 }
 
 // SVG helper: escape XML special characters

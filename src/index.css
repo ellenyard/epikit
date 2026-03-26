@@ -239,6 +239,18 @@ textarea:focus-visible {
     padding-left: 0.75rem;
     padding-right: 0.75rem;
   }
+
+  /* Scale SVG charts to fit the viewport on mobile */
+  svg[xmlns="http://www.w3.org/2000/svg"] {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Override fixed min-height on nav buttons to avoid oversized hamburger targets */
+  nav button {
+    min-height: 36px;
+    padding: 0.375rem 0.5rem;
+  }
 }
 
 /* Slide-up animation for toast notifications */

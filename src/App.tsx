@@ -110,6 +110,7 @@ function App() {
   const [showLocaleSettings, setShowLocaleSettings] = useState(false);
   const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
   // ---------------------------------------------------------------------------
@@ -473,67 +474,38 @@ function App() {
   return (
     <div className="h-screen flex flex-col">
       {/* Top Navigation */}
-      <nav className="bg-slate-800 text-white px-3 sm:px-6 py-2">
+      <nav className="bg-slate-800 text-white px-3 sm:px-6 py-2 relative">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-4">
             <button
-              onClick={() => setActiveModule('dashboard')}
+              onClick={() => { setActiveModule('dashboard'); setShowMobileMenu(false); }}
               className="text-lg sm:text-xl font-bold text-blue-400 hover:text-blue-300 transition-colors"
             >
               EpiKit
             </button>
-            <div className="flex gap-0.5 overflow-x-auto">
-              <button
-                onClick={() => setActiveModule('review')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'review'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Review/Clean
-              </button>
-              <span className="hidden sm:block w-px bg-slate-600 mx-1" />
-              <button
-                onClick={() => setActiveModule('epicurve')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'epicurve'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Epi Curve
-              </button>
-              <button
-                onClick={() => setActiveModule('spotmap')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'spotmap'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Spot Map
-              </button>
-              <button
-                onClick={() => setActiveModule('analysis')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'analysis'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Analysis
-              </button>
-              <button
-                onClick={() => setActiveModule('visualize')}
-                className={`px-2 sm:px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
-                  activeModule === 'visualize'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-              >
-                Visualize
-              </button>
+            {/* Desktop nav links */}
+            <div className="hidden md:flex gap-0.5">
+              {([
+                ['review', 'Review/Clean'],
+                ['epicurve', 'Epi Curve'],
+                ['spotmap', 'Spot Map'],
+                ['analysis', 'Analysis'],
+                ['visualize', 'Visualize'],
+              ] as const).map(([mod, label], i) => (
+                <span key={mod} className="contents">
+                  {i === 1 && <span className="w-px bg-slate-600 mx-1" />}
+                  <button
+                    onClick={() => setActiveModule(mod as Module)}
+                    className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${
+                      activeModule === mod
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                </span>
+              ))}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -545,73 +517,182 @@ function App() {
               onChange={handleProjectFileChange}
               className="hidden"
             />
-            <button
-              onClick={handleSaveProject}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-              aria-label="Save Project"
-              title="Save Project"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-            </button>
-            <button
-              onClick={handleLoadProjectClick}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-              aria-label="Load Project"
-              title="Load Project"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-              </svg>
-            </button>
-            <span className="hidden sm:block w-px h-6 bg-slate-600 mx-1" />
-            <button
-              onClick={() => setShowLocaleSettings(true)}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-              aria-label="Language & Region Settings"
-              title="Language & Region Settings"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setShowAccessibilitySettings(true)}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-              aria-label="Accessibility Settings"
-              title="Accessibility Settings"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
-            <button
-              onClick={() => setShowHelpCenter(true)}
-              className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
-              aria-label="Help & Tutorials"
-              title="Help & Tutorials"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </button>
+            {/* Desktop toolbar buttons */}
+            <div className="hidden sm:flex items-center gap-2">
+              <button
+                onClick={handleSaveProject}
+                className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                aria-label="Save Project"
+                title="Save Project"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+              </button>
+              <button
+                onClick={handleLoadProjectClick}
+                className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                aria-label="Load Project"
+                title="Load Project"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+              </button>
+              <span className="w-px h-6 bg-slate-600 mx-1" />
+              <button
+                onClick={() => setShowLocaleSettings(true)}
+                className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                aria-label="Language & Region Settings"
+                title="Language & Region Settings"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowAccessibilitySettings(true)}
+                className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                aria-label="Accessibility Settings"
+                title="Accessibility Settings"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setShowHelpCenter(true)}
+                className="p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                aria-label="Help & Tutorials"
+                title="Help & Tutorials"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </button>
+            </div>
             <div className="text-sm text-slate-400 hidden lg:block">
               Epidemiology Toolkit
             </div>
+            {/* Mobile hamburger button */}
+            <button
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="md:hidden p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label="Menu"
+              title="Menu"
+            >
+              {showMobileMenu ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
+
+        {/* Mobile dropdown menu */}
+        {showMobileMenu && (
+          <div className="md:hidden absolute left-0 right-0 top-full bg-slate-800 border-t border-slate-700 shadow-lg z-50">
+            <div className="px-3 py-2 space-y-1">
+              {([
+                ['review', 'Review/Clean'],
+                ['epicurve', 'Epi Curve'],
+                ['spotmap', 'Spot Map'],
+                ['analysis', 'Analysis'],
+                ['visualize', 'Visualize'],
+              ] as const).map(([mod, label]) => (
+                <button
+                  key={mod}
+                  onClick={() => { setActiveModule(mod as Module); setShowMobileMenu(false); }}
+                  className={`w-full text-left px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                    activeModule === mod
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="border-t border-slate-700 px-3 py-2">
+              <div className="flex items-center justify-around">
+                <button
+                  onClick={() => { handleSaveProject(); setShowMobileMenu(false); }}
+                  className="flex flex-col items-center gap-1 p-2 text-slate-300 hover:text-white rounded-lg transition-colors"
+                  aria-label="Save Project"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  <span className="text-xs">Save</span>
+                </button>
+                <button
+                  onClick={() => { handleLoadProjectClick(); setShowMobileMenu(false); }}
+                  className="flex flex-col items-center gap-1 p-2 text-slate-300 hover:text-white rounded-lg transition-colors"
+                  aria-label="Load Project"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  <span className="text-xs">Load</span>
+                </button>
+                <button
+                  onClick={() => { setShowLocaleSettings(true); setShowMobileMenu(false); }}
+                  className="flex flex-col items-center gap-1 p-2 text-slate-300 hover:text-white rounded-lg transition-colors"
+                  aria-label="Language"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                  </svg>
+                  <span className="text-xs">Language</span>
+                </button>
+                <button
+                  onClick={() => { setShowAccessibilitySettings(true); setShowMobileMenu(false); }}
+                  className="flex flex-col items-center gap-1 p-2 text-slate-300 hover:text-white rounded-lg transition-colors"
+                  aria-label="Accessibility"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs">Access.</span>
+                </button>
+                <button
+                  onClick={() => { setShowHelpCenter(true); setShowMobileMenu(false); }}
+                  className="flex flex-col items-center gap-1 p-2 text-slate-300 hover:text-white rounded-lg transition-colors"
+                  aria-label="Help"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-xs">Help</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
+
+      {/* Mobile menu backdrop */}
+      {showMobileMenu && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/30 z-40"
+          onClick={() => setShowMobileMenu(false)}
+        />
+      )}
 
       {/* Dataset selector bar */}
       {showDatasetSelector && (
-        <div className="bg-gray-100 border-b border-gray-200 px-4 py-2 flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Dataset:</label>
+        <div className="bg-gray-100 border-b border-gray-200 px-3 sm:px-4 py-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <label className="text-sm font-medium text-gray-700 shrink-0">Dataset:</label>
             <select
               value={activeDatasetId || ''}
               onChange={(e) => setActiveDatasetId(e.target.value || null)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white min-w-[200px]"
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white min-w-0 w-full sm:w-auto sm:min-w-[200px]"
             >
               <option value="">Select a dataset...</option>
               {datasets.map(d => (
