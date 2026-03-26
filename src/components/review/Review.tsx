@@ -50,6 +50,7 @@ interface ReviewProps {
   deleteRecord: (datasetId: string, recordId: string) => void;
   addEditLogEntry: (entry: EditLogEntry) => void;
   updateEditLogEntry: (id: string, updates: Partial<EditLogEntry>) => void;
+  removeEditLogEntry: (id: string) => void;
   getEditLogForDataset: (datasetId: string) => EditLogEntry[];
   exportEditLog: (datasetId: string) => void;
 }
@@ -64,6 +65,7 @@ export function Review({
   addRecord,
   addEditLogEntry,
   updateEditLogEntry,
+  removeEditLogEntry,
   getEditLogForDataset,
   exportEditLog,
 }: ReviewProps) {
@@ -203,23 +205,9 @@ export function Review({
       [entry.columnKey]: entry.oldValue,
     });
 
-    // Remove this entry from the edit log by creating a new one that marks it as deleted
-    // Since we don't have a deleteEditLogEntry, we'll need to update it or filter from UI
-    // For now, we'll add a new entry documenting the undo action
-    addEditLogEntry({
-      id: crypto.randomUUID(),
-      datasetId: activeDataset.id,
-      recordId: 'system',
-      recordIdentifier: 'System',
-      columnKey: entry.columnKey,
-      columnLabel: entry.columnLabel,
-      oldValue: entry.newValue,
-      newValue: entry.oldValue,
-      reason: `Reverted previous edit via Undo`,
-      initials: 'UNDO',
-      timestamp: new Date().toISOString(),
-    });
-  }, [activeDataset, updateRecord, addEditLogEntry]);
+    // Remove the undone entry from the edit log
+    removeEditLogEntry(entry.id);
+  }, [activeDataset, updateRecord, removeEditLogEntry]);
 
   if (!activeDataset) {
     return null;
