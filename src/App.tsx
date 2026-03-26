@@ -273,6 +273,10 @@ function App() {
     ));
   }, []);
 
+  const removeEditLogEntry = useCallback((id: string) => {
+    setEditLog(prev => prev.filter(entry => entry.id !== id));
+  }, []);
+
   const getEditLogForDataset = useCallback((datasetId: string) => {
     return editLog.filter(entry => entry.datasetId === datasetId);
   }, [editLog]);
@@ -751,6 +755,7 @@ function App() {
                 deleteRecord={deleteRecord}
                 addEditLogEntry={addEditLogEntry}
                 updateEditLogEntry={updateEditLogEntry}
+                removeEditLogEntry={removeEditLogEntry}
                 getEditLogForDataset={getEditLogForDataset}
                 exportEditLog={exportEditLog}
               />

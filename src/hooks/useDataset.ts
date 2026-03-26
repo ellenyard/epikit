@@ -81,6 +81,10 @@ export function useDataset(options?: UseDatasetOptions) {
     ));
   }, []);
 
+  const removeEditLogEntry = useCallback((id: string) => {
+    setEditLog(prev => prev.filter(entry => entry.id !== id));
+  }, []);
+
   const getEditLogForDataset = useCallback((datasetId: string) => {
     return editLog.filter(entry => entry.datasetId === datasetId);
   }, [editLog]);
@@ -131,6 +135,7 @@ export function useDataset(options?: UseDatasetOptions) {
     editLog,
     addEditLogEntry,
     updateEditLogEntry,
+    removeEditLogEntry,
     getEditLogForDataset,
     exportEditLog,
   };
