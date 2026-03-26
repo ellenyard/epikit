@@ -774,8 +774,8 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
     <div ref={containerRef} className={`h-full flex flex-col lg:flex-row ${isResizing ? 'select-none' : ''}`}>
       {/* Left Panel - Controls */}
       <div
-        className="w-full flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 p-4 overflow-y-auto"
-        style={{ width: window.innerWidth >= 1024 ? panelWidth : '100%' }}
+        className="w-full lg:w-auto flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 p-4 overflow-y-auto max-h-[40vh] lg:max-h-none"
+        style={{ width: typeof window !== 'undefined' && window.innerWidth >= 1024 ? panelWidth : undefined }}
       >
         <div className="space-y-4">
           {/* Header */}
