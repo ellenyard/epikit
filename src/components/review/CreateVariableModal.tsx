@@ -406,7 +406,7 @@ export function CreateVariableModal({
               >
                 <option value="">Select a variable...</option>
                 {existingColumns
-                  .filter(col => method === 'categorize' ? (col.type === 'number' || col.type === 'text') : true)
+                  .filter(col => method === 'categorize' ? (col.type === 'number' || col.type === 'text' || col.type === 'categorical') : true)
                   .map((col) => (
                     <option key={col.key} value={col.key}>
                       {col.label} ({col.type})
