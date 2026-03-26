@@ -57,9 +57,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="max-w-5xl mx-auto px-4 py-12">
         {/* Hero Section */}
         <div className="text-center mb-12">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-500 rounded-2xl shadow-lg mb-6">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-800 rounded-2xl shadow-lg mb-6">
+            <svg className="w-12 h-12" viewBox="0 0 32 32" fill="none">
+              {/* Epi curve bars */}
+              <rect x="4" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.6"/>
+              <rect x="8" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.75"/>
+              <rect x="12" y="10" width="3" height="16" rx="0.5" fill="#3b82f6"/>
+              <rect x="16" y="14" width="3" height="12" rx="0.5" fill="#3b82f6" opacity="0.85"/>
+              <rect x="20" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.7"/>
+              <rect x="24" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.5"/>
+              {/* Baseline */}
+              <line x1="3" y1="27" x2="29" y2="27" stroke="#64748b" strokeWidth="1"/>
             </svg>
           </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-3">Welcome to EpiKit</h1>
