@@ -337,6 +337,12 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           return;
         }
 
+        // Skip records with missing outcome values
+        const outcomeValue = record[outcomeVar];
+        if (outcomeValue === null || outcomeValue === undefined || String(outcomeValue).trim() === '') {
+          return;
+        }
+
         const strValue = String(expValue);
 
         // For multi-level variables, only include exposed and reference values
