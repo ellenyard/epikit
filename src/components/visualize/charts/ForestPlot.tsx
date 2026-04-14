@@ -431,16 +431,6 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       }
     }
 
-    // Favors labels below the x-axis
-    if (useLog) {
-      const nullX = xScale(nullValue);
-      svg += svgText(nullX - plotW * 0.2, margin.top + plotH + 54, '\u2190 Favors unexposed', {
-        anchor: 'middle', fontSize: 10, fill: '#888',
-      });
-      svg += svgText(nullX + plotW * 0.2, margin.top + plotH + 54, 'Favors exposed \u2192', {
-        anchor: 'middle', fontSize: 10, fill: '#888',
-      });
-    }
 
     // Source
     if (source) {
