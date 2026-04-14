@@ -342,21 +342,38 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       svg += svgTitle(width, title, subtitle || undefined);
     }
 
-    // Vertical gridlines
-    const tickCount = 5;
-    for (let i = 0; i <= tickCount; i++) {
-      const scaledVal = minVal + (valRange / tickCount) * i;
-      const x = xScale(scaledVal);
-      svg += svgGridLine(x, margin.top, x, margin.top + plotH);
-
-      // Tick label — convert back to original scale for display
-      const displayVal = useLog ? Math.exp(scaledVal) : scaledVal;
-      const label = useLog
-        ? displayVal.toFixed(displayVal < 10 ? 2 : 1)
-        : displayVal.toFixed(2);
-      svg += svgText(x, margin.top + plotH + 18, label, {
-        anchor: 'middle', fontSize: 11, fill: '#666',
+    // Vertical gridlines with clean tick values
+    if (useLog) {
+      // For log scale, use standard round values on the original scale
+      const candidateTicks = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+      const ticks = candidateTicks.filter(t => {
+        const s = toScale(t);
+        return s >= minVal && s <= maxVal;
       });
+      // Always include 1.0 (null line) if in range
+      if (!ticks.includes(1)) {
+        const s = toScale(1);
+        if (s >= minVal && s <= maxVal) ticks.push(1);
+        ticks.sort((a, b) => a - b);
+      }
+      for (const tick of ticks) {
+        const x = xScale(toScale(tick));
+        svg += svgGridLine(x, margin.top, x, margin.top + plotH);
+        const label = tick >= 10 ? tick.toFixed(0) : tick < 0.1 ? tick.toFixed(2) : tick % 1 === 0 ? tick.toFixed(0) : tick.toFixed(1);
+        svg += svgText(x, margin.top + plotH + 18, label, {
+          anchor: 'middle', fontSize: 11, fill: '#666',
+        });
+      }
+    } else {
+      const tickCount = 5;
+      for (let i = 0; i <= tickCount; i++) {
+        const scaledVal = minVal + (valRange / tickCount) * i;
+        const x = xScale(scaledVal);
+        svg += svgGridLine(x, margin.top, x, margin.top + plotH);
+        svg += svgText(x, margin.top + plotH + 18, scaledVal.toFixed(2), {
+          anchor: 'middle', fontSize: 11, fill: '#666',
+        });
+      }
     }
 
     // Null effect reference line (dashed)
