@@ -66,6 +66,8 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     (twoByTwoSaved.exposurePositiveValues as Record<string, string>) || {}
   );
   const [measureType, setMeasureType] = useState<MeasureType>('oddsRatio');
+  // Custom labels for forest plot rows (keyed by exposure variable key)
+  const [customLabels, setCustomLabels] = useState<Record<string, string>>({});
 
   // --- Shared state ---
   const [effectMeasure, setEffectMeasure] = useState<'ratio' | 'difference'>('ratio');
@@ -245,9 +247,11 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       // For ratio measures, skip non-positive
       if (measureType !== 'riskDifference' && (estimate <= 0 || lower <= 0 || upper <= 0)) continue;
 
-      // Use column label for display
+      // Use custom label if set, otherwise show comparison
       const col = dataset.columns.find(c => c.key === expVar);
-      const label = col ? col.label : expVar;
+      const colLabel = col ? col.label : expVar;
+      const label = customLabels[expVar]
+        || `${colLabel} (${exposedValue} vs. rest)`;
 
       rows.push({
         label,
@@ -260,7 +264,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     }
 
     return rows;
-  }, [dataMode, dataset, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, measureType]);
+  }, [dataMode, dataset, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, customLabels, measureType]);
 
   // --- Manual mode: process data from columns ---
   const manualForestData = useMemo((): ForestRow[] => {
@@ -392,7 +396,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       const y = yScale(i);
 
       // Label on left
-      const labelText = row.label.length > 24 ? row.label.slice(0, 22) + '\u2026' : row.label;
+      const labelText = row.label.length > 32 ? row.label.slice(0, 30) + '\u2026' : row.label;
       svg += svgText(margin.left - 8, y, escapeXml(labelText), {
         anchor: 'end', fontSize: 11, fill: row.isPooled ? '#000' : '#333',
         fontWeight: row.isPooled ? 'bold' : 'normal', dy: '0.35em',
@@ -676,7 +680,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                           {col.label}
                         </label>
                         {isSelected && (
-                          <div className="ml-6 mt-1">
+                          <div className="ml-6 mt-1 space-y-1">
                             <select
                               value={exposurePositiveValues[col.key] || ''}
                               onChange={e => setExposurePositiveValues(prev => ({
@@ -689,6 +693,15 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                                 <option key={v} value={v}>{v}</option>
                               ))}
                             </select>
+                            <input
+                              type="text"
+                              value={customLabels[col.key] || ''}
+                              onChange={e => setCustomLabels(prev => ({
+                                ...prev, [col.key]: e.target.value,
+                              }))}
+                              placeholder={`${col.label} (${exposurePositiveValues[col.key] || '...'} vs. rest)`}
+                              className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500"
+                            />
                           </div>
                         )}
                       </div>
