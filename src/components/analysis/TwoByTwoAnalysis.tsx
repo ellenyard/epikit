@@ -53,6 +53,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>(() => {
     return (saved.exposurePositiveValues as Record<string, string>) || {};
   });
+  // For each exposure with >2 levels, store the reference group value
+  const [exposureReferenceValues, setExposureReferenceValues] = useState<Record<string, string>>(() => {
+    return (saved.exposureReferenceValues as Record<string, string>) || {};
+  });
 
   // Filter state
   const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
@@ -71,6 +75,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         caseValues: Array.from(caseValues),
         selectedExposures,
         exposurePositiveValues,
+        exposureReferenceValues,
         filterBy,
         selectedFilterValues: Array.from(selectedFilterValues),
       };
@@ -79,7 +84,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       console.error('Failed to save 2x2 analysis settings:', e);
     }
   }, [persistenceKey, studyDesign, outcomeVar, caseValues, selectedExposures,
-    exposurePositiveValues, filterBy, selectedFilterValues]);
+    exposurePositiveValues, exposureReferenceValues, filterBy, selectedFilterValues]);
 
 
   // Get columns suitable for case definition (categorical columns)
@@ -189,6 +194,11 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           const defaultValue = found || valuesArray[0] || '';
           if (defaultValue) {
             setExposurePositiveValues(prev => ({ ...prev, [initialExposure]: defaultValue }));
+            // Set default reference value for multi-level variables
+            if (valuesArray.length > 2) {
+              const refValue = detectReferenceValue(initialExposure, defaultValue);
+              setExposureReferenceValues(prev => ({ ...prev, [initialExposure]: refValue }));
+            }
           }
         }
       }
@@ -216,6 +226,38 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       positiveKeywords.some(kw => v.toLowerCase() === kw)
     );
     return found || values[0] || '';
+  };
+
+  // Auto-detect reference value for a multi-level exposure (e.g., "No", "None", or most common value)
+  const detectReferenceValue = (expVar: string, excludeValue?: string): string => {
+    const values = getExposureValues(expVar);
+    const candidates = excludeValue ? values.filter(v => v !== excludeValue) : values;
+    // Try common reference/unexposed indicators
+    const refKeywords = ['no', 'none', 'unexposed', 'false', '0', 'negative', 'not exposed', 'neither'];
+    const found = candidates.find(v =>
+      refKeywords.some(kw => v.toLowerCase() === kw)
+    );
+    if (found) return found;
+    // Fall back to the most common value among candidates
+    const counts: Record<string, number> = {};
+    dataset.records.forEach(r => {
+      const v = r[expVar];
+      if (v !== null && v !== undefined && v !== '') {
+        const s = String(v);
+        if (candidates.includes(s)) {
+          counts[s] = (counts[s] || 0) + 1;
+        }
+      }
+    });
+    let maxCount = 0;
+    let mostCommon = candidates[0] || '';
+    for (const [val, count] of Object.entries(counts)) {
+      if (count > maxCount) {
+        maxCount = count;
+        mostCommon = val;
+      }
+    }
+    return mostCommon;
   };
 
   // Check if a record is a case
@@ -280,6 +322,11 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
     const results = selectedExposures.map(expVar => {
       const exposedValue = exposurePositiveValues[expVar] || detectExposedValue(expVar);
+      const values = getExposureValues(expVar);
+      const isMultiLevel = values.length > 2;
+      const referenceValue = isMultiLevel
+        ? (exposureReferenceValues[expVar] || detectReferenceValue(expVar, exposedValue))
+        : null;
       let a = 0, b = 0, c = 0, d = 0;
 
       filteredRecords.forEach((record: CaseRecord) => {
@@ -290,7 +337,14 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           return;
         }
 
-        const exposed = String(expValue) === exposedValue;
+        const strValue = String(expValue);
+
+        // For multi-level variables, only include exposed and reference values
+        if (isMultiLevel && strValue !== exposedValue && strValue !== referenceValue) {
+          return;
+        }
+
+        const exposed = strValue === exposedValue;
         const diseased = isCase(record);
 
         if (exposed && diseased) a++;
@@ -323,7 +377,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         return propB - propA;
       }
     });
-  }, [filteredRecords, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, studyDesign]);
+  }, [filteredRecords, dataset.columns, dataset.records, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, exposureReferenceValues, studyDesign]);
 
   // Count total cases
   const totalCases = useMemo(() => {
@@ -350,6 +404,12 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         if (!exposurePositiveValues[expVar]) {
           const defaultValue = detectExposedValue(expVar);
           setExposurePositiveValues(p => ({ ...p, [expVar]: defaultValue }));
+          // Set default reference value for multi-level variables
+          const values = getExposureValues(expVar);
+          if (values.length > 2 && !exposureReferenceValues[expVar]) {
+            const refValue = detectReferenceValue(expVar, defaultValue);
+            setExposureReferenceValues(p => ({ ...p, [expVar]: refValue }));
+          }
         }
         return [...prev, expVar];
       }
@@ -359,6 +419,20 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   // Update exposed value for a specific exposure
   const updateExposedValue = (expVar: string, value: string) => {
     setExposurePositiveValues(prev => ({ ...prev, [expVar]: value }));
+    // If the new exposed value matches the current reference, auto-pick a new reference
+    const values = getExposureValues(expVar);
+    if (values.length > 2) {
+      const currentRef = exposureReferenceValues[expVar] || detectReferenceValue(expVar, value);
+      if (currentRef === value) {
+        const newRef = detectReferenceValue(expVar, value);
+        setExposureReferenceValues(prev => ({ ...prev, [expVar]: newRef }));
+      }
+    }
+  };
+
+  // Update reference value for a specific exposure
+  const updateReferenceValue = (expVar: string, value: string) => {
+    setExposureReferenceValues(prev => ({ ...prev, [expVar]: value }));
   };
 
   // Render summary table for multiple exposures
@@ -745,7 +819,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-900 mb-3">Exposure Variables</h4>
           <p className="text-xs text-gray-600 mb-3">
-            <strong>Select one or more exposure variables to analyze.</strong> For each selected variable, use the dropdown to specify which value should be treated as the <strong>"exposed"</strong> group (e.g., "Yes" for ate the food, or the specific food item). The other values will be grouped as "unexposed."
+            <strong>Select one or more exposure variables to analyze.</strong> For each selected variable, use the dropdown to specify which value should be treated as the <strong>"exposed"</strong> group. For variables with more than two levels, a second dropdown lets you choose the <strong>reference group</strong> — only these two groups will be compared. For binary variables, the non-exposed value is used automatically.
           </p>
           <div className="flex flex-wrap gap-2">
             {exposureColumns.map(col => {
@@ -773,7 +847,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     {col.label}
                   </button>
                   {isSelected && (
-                    <div className="mt-1">
+                    <div className="mt-1 flex flex-col gap-1">
                       <select
                         value={exposedValue}
                         onChange={(e) => updateExposedValue(col.key, e.target.value)}
@@ -784,6 +858,18 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                           <option key={v} value={v}>{v} = Exposed</option>
                         ))}
                       </select>
+                      {values.length > 2 && (
+                        <select
+                          value={exposureReferenceValues[col.key] || detectReferenceValue(col.key, exposedValue)}
+                          onChange={(e) => updateReferenceValue(col.key, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-gray-500"
+                        >
+                          {values.filter(v => v !== exposedValue).map(v => (
+                            <option key={v} value={v}>{v} = Reference</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   )}
                 </div>
