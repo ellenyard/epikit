@@ -16,16 +16,46 @@ export interface CSVParseOptions {
 /**
  * Detect the delimiter used in a CSV file by analyzing the header row
  */
-function detectDelimiter(headerLine: string): string {
+export function detectDelimiter(headerLine: string): string {
   const possibleDelimiters = [',', ';', '\t', '|'];
   const counts = possibleDelimiters.map(delim => ({
     delimiter: delim,
-    count: (headerLine.match(new RegExp(delim, 'g')) || []).length
+    count: countDelimiterOccurrences(headerLine, delim)
   }));
 
   // Return the delimiter with the most occurrences
   const best = counts.reduce((a, b) => (b.count > a.count ? b : a));
   return best.count > 0 ? best.delimiter : ',';
+}
+
+function countDelimiterOccurrences(line: string, delimiter: string): number {
+  let count = 0;
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"' && nextChar === '"') {
+      i++;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && char === delimiter) {
+      count++;
+    }
+  }
+
+  return count;
+}
+
+function hasCommonDelimiterHint(line: string): boolean {
+  return [',', ';', '\t'].some(delim => countDelimiterOccurrences(line, delim) > 0);
 }
 
 export function parseCSV(content: string, options: CSVParseOptions = {}): ParseResult {
@@ -45,6 +75,12 @@ export function parseCSV(content: string, options: CSVParseOptions = {}): ParseR
 
   if (headers.length === 0) {
     return { columns: [], records: [], errors: ['No columns found in header'] };
+  }
+
+  if (headers.length === 1 && hasCommonDelimiterHint(headerLine)) {
+    errors.push(
+      'Only one column was detected, but the header contains common CSV delimiters. Check that the file delimiter is correct before importing.'
+    );
   }
 
   // Infer column types from first few data rows
