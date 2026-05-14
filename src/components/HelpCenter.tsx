@@ -171,7 +171,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <div className="prose prose-sm text-gray-600">
                     <p className="mb-3">To analyze data in EpiKit:</p>
                     <ol className="list-decimal ml-6 space-y-2">
-                      <li>Navigate to any analysis module (Review/Clean, Epi Curve, Spot Map, etc.)</li>
+                      <li>Navigate to any analysis module (Review/Clean, Epi Curve, Maps, etc.)</li>
                       <li>Click the <strong>"Import Data"</strong> button in the dataset selector bar</li>
                       <li>Select your CSV file (ensure it's de-identified—no PHI!)</li>
                       <li>Review the preview to verify columns are detected correctly</li>
@@ -208,8 +208,8 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <p className="text-xs">Visualize temporal distribution of cases to identify outbreak patterns</p>
                       </div>
                       <div className="border border-gray-200 rounded p-3">
-                        <h5 className="font-medium text-gray-800 mb-1">Spot Map</h5>
-                        <p className="text-xs">Map geographic distribution to identify spatial clusters</p>
+                        <h5 className="font-medium text-gray-800 mb-1">Maps</h5>
+                        <p className="text-xs">Create spot maps from coordinates or area maps from boundaries</p>
                       </div>
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Analysis</h5>
