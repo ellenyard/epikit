@@ -19,6 +19,8 @@ interface SpotMapProps {
 type ColorScheme = 'default' | 'classification' | 'colorblind' | 'sequential';
 type CoordinateAxis = 'lat' | 'lng';
 type ExportPreset = 'powerpoint' | 'report' | 'manuscript' | 'square' | 'highres';
+type MapStyle = 'street' | 'quiet' | 'satellite' | 'topo' | 'none';
+type ExportBaseMap = 'current' | 'quiet' | 'none';
 
 interface MapCase {
   record: CaseRecord;
@@ -394,12 +396,13 @@ export function SpotMap({ dataset }: SpotMapProps) {
   });
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'classification');
   const [markerSize, setMarkerSize] = useState<number>(() => (saved.markerSize as number) ?? 8);
-  const [mapStyle, setMapStyle] = useState<'street' | 'satellite' | 'topo'>(() => (saved.mapStyle as 'street' | 'satellite' | 'topo') || 'street');
+  const [mapStyle, setMapStyle] = useState<MapStyle>(() => (saved.mapStyle as MapStyle) || 'street');
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string>('');
   const [exportError, setExportError] = useState<string>('');
   const [exportPreset, setExportPreset] = useState<ExportPreset>(() => (saved.exportPreset as ExportPreset) || 'powerpoint');
+  const [exportBaseMap, setExportBaseMap] = useState<ExportBaseMap>(() => (saved.exportBaseMap as ExportBaseMap) || 'quiet');
   const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>(() => {
     return isObjectRecord(saved.customCategoryColors) ? saved.customCategoryColors as Record<string, string> : {};
   });
@@ -450,6 +453,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
         filterBy,
         selectedFilterValues: Array.from(selectedFilterValues),
         exportPreset,
+        exportBaseMap,
         customCategoryColors,
         categoryOrder,
         popupColumns,
@@ -461,7 +465,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
     }
   }, [persistenceKey, latColumn, lngColumn, classificationColumn, colorScheme, markerSize,
     mapStyle, obfuscateLocations, jitterDistance, mapTitle, mapCaption, showNorthArrow,
-    enableClustering, filterBy, selectedFilterValues, exportPreset, customCategoryColors,
+    enableClustering, filterBy, selectedFilterValues, exportPreset, exportBaseMap, customCategoryColors,
     categoryOrder, popupColumns, jitterIdColumn]);
 
   useEffect(() => {
@@ -640,6 +644,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
       enableClustering,
       popupColumns,
       exportPreset,
+      exportBaseMap,
     };
 
     const blob = new Blob([JSON.stringify(recipe, null, 2)], { type: 'application/json' });
@@ -680,7 +685,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
       if (isObjectRecord(recipe.customCategoryColors)) setCustomCategoryColors(recipe.customCategoryColors as Record<string, string>);
       if (Array.isArray(recipe.categoryOrder)) setCategoryOrder(recipe.categoryOrder.filter(value => typeof value === 'string'));
       if (typeof recipe.markerSize === 'number') setMarkerSize(recipe.markerSize);
-      if (recipe.mapStyle === 'street' || recipe.mapStyle === 'satellite' || recipe.mapStyle === 'topo') setMapStyle(recipe.mapStyle);
+      if (recipe.mapStyle === 'street' || recipe.mapStyle === 'quiet' || recipe.mapStyle === 'satellite' || recipe.mapStyle === 'topo' || recipe.mapStyle === 'none') setMapStyle(recipe.mapStyle);
+      if (recipe.exportBaseMap === 'current' || recipe.exportBaseMap === 'quiet' || recipe.exportBaseMap === 'none') setExportBaseMap(recipe.exportBaseMap);
       if (typeof recipe.obfuscateLocations === 'boolean') setObfuscateLocations(recipe.obfuscateLocations);
       if (typeof recipe.jitterDistance === 'number') setJitterDistance(recipe.jitterDistance);
       setColumnIfValid(recipe.jitterIdColumn, setJitterIdColumn);
@@ -854,8 +860,12 @@ export function SpotMap({ dataset }: SpotMapProps) {
   }, [filterBy]);
 
   // Map tile URLs
-  const tileUrls: Record<string, { url: string; attribution: string }> = {
+  const tileUrls: Record<Exclude<MapStyle, 'none'>, { url: string; attribution: string }> = {
     street: {
+      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    },
+    quiet: {
       url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     },
@@ -872,6 +882,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // Default center (US)
   const defaultCenter: [number, number] = [39.8283, -98.5795];
   const defaultZoom = 4;
+  const activeMapStyle: MapStyle = isExporting && exportBaseMap !== 'current' ? exportBaseMap : mapStyle;
 
   // Info icon component with tooltip (appears below to avoid cutoff)
   const InfoTooltip = ({ text, link }: { text: string; link?: string }) => (
@@ -1314,15 +1325,17 @@ export function SpotMap({ dataset }: SpotMapProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
               <select
                 value={mapStyle}
-                onChange={(e) => setMapStyle(e.target.value as 'street' | 'satellite' | 'topo')}
+                onChange={(e) => setMapStyle(e.target.value as MapStyle)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
+                <option value="quiet">Quiet publication map</option>
                 <option value="street">Street</option>
                 <option value="satellite">Satellite</option>
                 <option value="topo">Topographic</option>
+                <option value="none">No base map</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Street works well for injuries, facilities, and transport routes. Satellite helps environmental exposures. Topographic helps terrain and remote access.
+                Quiet and no-base options work best for slides and reports. Street works well for transport routes; satellite helps environmental exposures.
               </p>
             </div>
 
@@ -1337,6 +1350,20 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 {Object.entries(exportPresets).map(([value, preset]) => (
                   <option key={value} value={value}>{preset.label}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Export Base Map */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Export Base Map</label>
+              <select
+                value={exportBaseMap}
+                onChange={(e) => setExportBaseMap(e.target.value as ExportBaseMap)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="quiet">Quiet publication map</option>
+                <option value="none">No base map</option>
+                <option value="current">Same as current view</option>
               </select>
             </div>
 
@@ -1457,11 +1484,14 @@ export function SpotMap({ dataset }: SpotMapProps) {
               zoom={defaultZoom}
               style={{ height: '100%', width: '100%' }}
             >
-              <TileLayer
-                url={tileUrls[mapStyle].url}
-                attribution={tileUrls[mapStyle].attribution}
-                crossOrigin="anonymous"
-              />
+              {activeMapStyle !== 'none' && (
+                <TileLayer
+                  url={tileUrls[activeMapStyle].url}
+                  attribution={tileUrls[activeMapStyle].attribution}
+                  opacity={activeMapStyle === 'quiet' ? 0.35 : 1}
+                  crossOrigin="anonymous"
+                />
+              )}
               <ScaleControl position="bottomleft" imperial={true} metric={true} />
 
               {filteredCases.length > 0 && <FitBounds cases={filteredCases} />}
