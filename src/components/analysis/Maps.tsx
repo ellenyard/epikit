@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Dataset } from '../../types/analysis';
 import { AreaMap } from './AreaMap';
+import { SketchMap } from './SketchMap';
 import { SpotMap } from './SpotMap';
 
 interface MapsProps {
@@ -8,7 +9,7 @@ interface MapsProps {
   datasets: Dataset[];
 }
 
-type MapMode = 'spot' | 'area';
+type MapMode = 'spot' | 'area' | 'sketch';
 
 export function Maps({ dataset, datasets }: MapsProps) {
   const [mode, setMode] = useState<MapMode>('spot');
@@ -37,14 +38,26 @@ export function Maps({ dataset, datasets }: MapsProps) {
           >
             Area Map
           </button>
+          <button
+            onClick={() => setMode('sketch')}
+            className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+              mode === 'sketch'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Sketch Map
+          </button>
         </div>
       </div>
 
       <div className="flex-1 overflow-hidden">
         {mode === 'spot' ? (
           <SpotMap dataset={dataset} />
-        ) : (
+        ) : mode === 'area' ? (
           <AreaMap dataset={dataset} datasets={datasets} />
+        ) : (
+          <SketchMap />
         )}
       </div>
     </div>
