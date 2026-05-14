@@ -28,7 +28,8 @@ interface AreaMapProps {
   datasets: Dataset[];
 }
 
-type BaseMap = 'street' | 'quiet' | 'topo';
+type BaseMap = 'street' | 'quiet' | 'topo' | 'none';
+type ExportBaseMap = 'current' | 'quiet' | 'none';
 
 const rateMultipliers = [1000, 10000, 100000];
 
@@ -42,7 +43,7 @@ const choroplethColors = [
   '#172554',
 ];
 
-const tileUrls: Record<BaseMap, { url: string; attribution: string }> = {
+const tileUrls: Record<Exclude<BaseMap, 'none'>, { url: string; attribution: string }> = {
   street: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -118,6 +119,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const [classCount, setClassCount] = useState<number>(() => (saved.classCount as number) || 5);
   const [manualBreaks, setManualBreaks] = useState<string>(() => (saved.manualBreaks as string) || '');
   const [baseMap, setBaseMap] = useState<BaseMap>(() => (saved.baseMap as BaseMap) || 'quiet');
+  const [exportBaseMap, setExportBaseMap] = useState<ExportBaseMap>(() => (saved.exportBaseMap as ExportBaseMap) || 'quiet');
   const [mapTitle, setMapTitle] = useState<string>(() => (saved.mapTitle as string) || '');
   const [mapCaption, setMapCaption] = useState<string>(() => (saved.mapCaption as string) || '');
   const [showLegend, setShowLegend] = useState<boolean>(() => saved.showLegend !== undefined ? saved.showLegend as boolean : true);
@@ -145,6 +147,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
         classCount,
         manualBreaks,
         baseMap,
+        exportBaseMap,
         mapTitle,
         mapCaption,
         showLegend,
@@ -165,6 +168,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     classCount,
     manualBreaks,
     baseMap,
+    exportBaseMap,
     mapTitle,
     mapCaption,
     showLegend,
@@ -248,6 +252,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       })),
     };
   }, [joinResult, metric, rateMultiplier]);
+  const activeBaseMap: BaseMap = isExporting && exportBaseMap !== 'current' ? exportBaseMap : baseMap;
 
   const handleBoundaryFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -593,6 +598,20 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 <option value="quiet">Quiet street map</option>
                 <option value="street">Street map</option>
                 <option value="topo">Topographic</option>
+                <option value="none">No base map</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Export Base Map</label>
+              <select
+                value={exportBaseMap}
+                onChange={(event) => setExportBaseMap(event.target.value as ExportBaseMap)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="quiet">Quiet publication map</option>
+                <option value="none">No base map</option>
+                <option value="current">Same as current view</option>
               </select>
             </div>
 
@@ -676,12 +695,14 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 zoom={2}
                 style={{ height: '100%', width: '100%' }}
               >
-                <TileLayer
-                  url={tileUrls[baseMap].url}
-                  attribution={tileUrls[baseMap].attribution}
-                  opacity={baseMap === 'quiet' ? 0.35 : 1}
-                  crossOrigin="anonymous"
-                />
+                {activeBaseMap !== 'none' && (
+                  <TileLayer
+                    url={tileUrls[activeBaseMap].url}
+                    attribution={tileUrls[activeBaseMap].attribution}
+                    opacity={activeBaseMap === 'quiet' ? 0.35 : 1}
+                    crossOrigin="anonymous"
+                  />
+                )}
                 <ScaleControl position="bottomleft" imperial={false} metric={true} />
                 <FitGeoJsonBounds boundaries={boundaries} />
                 <GeoJSON
