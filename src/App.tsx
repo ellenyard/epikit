@@ -8,7 +8,7 @@
  * - Dashboard: Landing page with quick actions and dataset overview
  * - Review/Clean: Data quality checks, editing, and variable creation
  * - Epi Curve: Epidemic curve visualization with stratification
- * - Spot Map: Geographic visualization using Leaflet/OpenStreetMap
+ * - Maps: Geographic visualization using Leaflet/OpenStreetMap
  * - Analysis: Variable exploration, frequency tables, and 2x2 analysis
  *
  * Data Flow:
@@ -24,7 +24,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
 import { Review } from './components/review/Review';
 import { EpiCurve } from './components/analysis/EpiCurve';
-import { SpotMap } from './components/analysis/SpotMap';
+import { Maps } from './components/analysis/Maps';
 import { AnalysisWorkflow } from './components/analysis/AnalysisWorkflow';
 import { DataImport } from './components/analysis/DataImport';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -43,7 +43,7 @@ import { exportProject, downloadProject, parseProjectFile } from './utils/persis
 import type { VariableConfig } from './types/analysis';
 
 /** Available navigation modules in the app */
-type Module = 'dashboard' | 'review' | 'epicurve' | 'spotmap' | 'analysis' | 'visualize';
+type Module = 'dashboard' | 'review' | 'epicurve' | 'maps' | 'analysis' | 'visualize';
 
 // =============================================================================
 // DEMO DATA SETUP
@@ -91,6 +91,21 @@ const createSurveillanceDemoDataset = (): Dataset => ({
   updatedAt: new Date().toISOString(),
 });
 
+function loadInitialDatasets(): Dataset[] {
+  const saved = localStorage.getItem('epikit_datasets');
+  const datasets = saved ? JSON.parse(saved) as Dataset[] : [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
+  const savedVersion = localStorage.getItem('epikit_demoDataVersion');
+
+  if (savedVersion && Number(savedVersion) >= DEMO_DATA_VERSION) {
+    return datasets;
+  }
+
+  const withoutOldDemos = datasets.filter(
+    d => d.id !== DEMO_DATASET_ID && d.id !== DEMO_NUTRITION_DATASET_ID && d.id !== DEMO_SURVEILLANCE_DATASET_ID
+  );
+  return [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset(), ...withoutOldDemos];
+}
+
 // =============================================================================
 // MAIN APPLICATION COMPONENT
 // =============================================================================
@@ -119,14 +134,23 @@ function App() {
   // Each dataset has columns (schema) and records (rows of data).
   // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
-    const saved = localStorage.getItem('epikit_datasets');
-    return saved ? JSON.parse(saved) : [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
+    return loadInitialDatasets();
   });
 
   // Which dataset is currently selected for viewing/editing
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(() => {
     const saved = localStorage.getItem('epikit_activeDatasetId');
     return saved || DEMO_DATASET_ID;
+  });
+
+  // ---------------------------------------------------------------------------
+  // EDIT LOG - AUDIT TRAIL
+  // Tracks all data modifications for transparency and reproducibility.
+  // Each entry records: what changed, old/new values, reason, and who made it.
+  // ---------------------------------------------------------------------------
+  const [editLog, setEditLog] = useState<EditLogEntry[]>(() => {
+    const saved = localStorage.getItem('epikit_editLog');
+    return saved ? JSON.parse(saved) : [];
   });
 
   // Onboarding wizard can be accessed from Help Center
@@ -207,31 +231,12 @@ function App() {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // EDIT LOG - AUDIT TRAIL
-  // Tracks all data modifications for transparency and reproducibility.
-  // Each entry records: what changed, old/new values, reason, and who made it.
-  // ---------------------------------------------------------------------------
-  const [editLog, setEditLog] = useState<EditLogEntry[]>(() => {
-    const saved = localStorage.getItem('epikit_editLog');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // ---------------------------------------------------------------------------
   // DEMO DATA VERSION CHECK
-  // Refresh the demo dataset if a newer version has been deployed.
-  // Only replaces the demo dataset — user-created datasets are untouched.
+  // Initial dataset loading refreshes stale demo datasets; this effect records
+  // the deployed demo-data version after the initial state has been built.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    const savedVersion = localStorage.getItem('epikit_demoDataVersion');
-    if (!savedVersion || Number(savedVersion) < DEMO_DATA_VERSION) {
-      setDatasets(prev => {
-        const withoutOldDemos = prev.filter(
-          d => d.id !== DEMO_DATASET_ID && d.id !== DEMO_NUTRITION_DATASET_ID && d.id !== DEMO_SURVEILLANCE_DATASET_ID
-        );
-        return [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset(), ...withoutOldDemos];
-      });
-      localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
-    }
+    localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -473,7 +478,7 @@ function App() {
   }, [showProjectLoadConfirm]);
 
   // Check if current module needs dataset selector
-  const showDatasetSelector = ['review', 'epicurve', 'spotmap', 'analysis', 'visualize'].includes(activeModule);
+  const showDatasetSelector = ['review', 'epicurve', 'maps', 'analysis', 'visualize'].includes(activeModule);
 
   return (
     <div className="h-screen flex flex-col">
@@ -492,7 +497,7 @@ function App() {
               {([
                 ['review', 'Review/Clean'],
                 ['epicurve', 'Epi Curve'],
-                ['spotmap', 'Spot Map'],
+                ['maps', 'Maps'],
                 ['analysis', 'Analysis'],
                 ['visualize', 'Visualize'],
               ] as const).map(([mod, label], i) => (
@@ -605,7 +610,7 @@ function App() {
               {([
                 ['review', 'Review/Clean'],
                 ['epicurve', 'Epi Curve'],
-                ['spotmap', 'Spot Map'],
+                ['maps', 'Maps'],
                 ['analysis', 'Analysis'],
                 ['visualize', 'Visualize'],
               ] as const).map(([mod, label]) => (
@@ -764,9 +769,9 @@ function App() {
             <ErrorBoundary moduleName="Epi Curve" onReset={() => {}}>
               <EpiCurve dataset={activeDataset} onExportDataset={handleDatasetExport} />
             </ErrorBoundary>
-          ) : activeModule === 'spotmap' ? (
-            <ErrorBoundary moduleName="Spot Map" onReset={() => {}}>
-              <SpotMap dataset={activeDataset} />
+          ) : activeModule === 'maps' ? (
+            <ErrorBoundary moduleName="Maps" onReset={() => {}}>
+              <Maps dataset={activeDataset} datasets={datasets} />
             </ErrorBoundary>
           ) : activeModule === 'analysis' ? (
             <ErrorBoundary moduleName="Analysis" onReset={() => {}}>
