@@ -1577,55 +1577,73 @@ function makeIrregularBandPoints(start: Point, end: Point): Point[] {
 
 function makeVillageSketchTemplate() {
   const elements: SketchElement[] = [
-    makeAreaElement('area', toCanvasPoint(8, 74), toCanvasPoint(38, 91), {
-      color: '#4B5563',
-      fillColor: '#4B5563',
+    // Livestock pen — top left
+    makeAreaElement('area', toCanvasPoint(5, 8), toCanvasPoint(28, 30), {
+      color: '#374151',
+      fillColor: '#374151',
       fillPattern: 'hatch',
-      legendLabel: 'Agricultural field',
+      legendLabel: 'Livestock pen',
     }),
-    makeAreaElement('area', toCanvasPoint(63, 28), toCanvasPoint(79, 41), {
-      color: '#166534',
-      fillColor: '#166534',
-      fillPattern: 'grid',
-      legendLabel: 'Home garden',
+    createElement({ type: 'label', start: toCanvasPoint(7, 14), text: 'Livestock pen', color: '#111827', size: 18, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    makeMarkerElement('animal-pen', toCanvasPoint(10, 22), { size: 28, strokeWidth: 2 }),
+    makeMarkerElement('animal-pen', toCanvasPoint(20, 22), { size: 28, strokeWidth: 2 }),
+
+    // Stream — runs from near livestock area diagonally down to lower right
+    makeLineElement('wavy', toCanvasPoint(30, 18), toCanvasPoint(50, 40), {
+      color: '#2563EB',
+      strokeWidth: 5,
+      legendLabel: 'Stream',
     }),
-    makeLineElement('curve', toCanvasPoint(18, 48), toCanvasPoint(82, 49), {
+    makeLineElement('wavy', toCanvasPoint(50, 40), toCanvasPoint(75, 65), {
+      color: '#2563EB',
+      strokeWidth: 5,
+    }),
+    makeLineElement('wavy', toCanvasPoint(75, 65), toCanvasPoint(92, 85), {
+      color: '#2563EB',
+      strokeWidth: 5,
+    }),
+
+    // Water collection point along stream
+    makeMarkerElement('water-source', toCanvasPoint(56, 45), { size: 34, strokeWidth: 3 }),
+    createElement({ type: 'label', start: toCanvasPoint(60, 44), text: 'Water collection\npoint', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Road
+    makeLineElement('curve', toCanvasPoint(5, 55), toCanvasPoint(95, 52), {
       color: '#6B7280',
       strokeWidth: 5,
       lineStyle: 'dashed',
-      legendLabel: 'Road or footpath',
+      legendLabel: 'Road',
     }),
-    makeAreaElement('irregularArea', toCanvasPoint(36, 59), toCanvasPoint(70, 70), {
-      points: makeIrregularBandPoints(toCanvasPoint(36, 59), toCanvasPoint(70, 70)),
-      color: '#4B5563',
-      fillColor: '#4B5563',
-      fillPattern: 'waves',
-      legendLabel: 'Ditch, mud, or play area',
-    }),
-    makeLineElement('wavy', toCanvasPoint(50, 67), toCanvasPoint(61, 74), {
-      color: '#2563EB',
-      strokeWidth: 4,
-      legendLabel: 'Water source or runoff',
-    }),
-    makeMarkerElement('tree', toCanvasPoint(41, 54), { size: 36 }),
-    makeMarkerElement('tree', toCanvasPoint(61, 56), { size: 36 }),
-    makeMarkerElement('water-source', toCanvasPoint(54, 72), { size: 34, strokeWidth: 3 }),
-    createElement({ type: 'label', start: toCanvasPoint(42, 66), text: 'Ditch / mud / play area', color: '#111827', size: 19, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Trees along stream
+    makeMarkerElement('tree', toCanvasPoint(38, 28), { size: 32 }),
+    makeMarkerElement('tree', toCanvasPoint(62, 52), { size: 32 }),
+    makeMarkerElement('tree', toCanvasPoint(82, 72), { size: 32 }),
   ];
 
-  const households = [
-    [35, 40, 'case'], [46, 46, 'case'], [58, 43, 'noncase'],
-    [66, 48, 'noncase'], [42, 31, 'noncase'], [54, 34, 'noncase'],
-    [72, 57, 'noncase'],
+  // Upstream houses — near livestock, not along stream, mostly non-cases
+  const upstreamHouses = [
+    [15, 42, 'noncase'], [25, 38, 'noncase'], [36, 44, 'noncase'],
   ] as const;
 
-  for (const [x, y, id] of households) {
+  for (const [x, y, id] of upstreamHouses) {
+    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 34, strokeWidth: 3 }));
+  }
+
+  // Downstream houses — along/below stream after water collection point, cases cluster here
+  const downstreamHouses = [
+    [58, 58, 'case'], [66, 62, 'case'], [74, 56, 'case'],
+    [80, 62, 'case'], [52, 66, 'noncase'], [88, 58, 'noncase'],
+    [68, 72, 'noncase'],
+  ] as const;
+
+  for (const [x, y, id] of downstreamHouses) {
     elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 34, strokeWidth: 3 }));
   }
 
   return {
-    title: 'Simple village sketch',
-    subtitle: 'Case and non-case residences with selected environmental features. Not to scale.',
+    title: 'Sketch of outbreak village',
+    subtitle: 'Cases cluster downstream of livestock pen and water collection point. Not to scale.',
     elements,
   };
 }
