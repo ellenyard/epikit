@@ -1191,7 +1191,7 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" opacity={element.opacity}>
         <path d={`M ${x - half} ${y - eighth} L ${x} ${y - half} L ${x + half} ${y - eighth} Z`} />
         <rect x={x - half * 0.72} y={y - eighth} width={size * 0.72} height={size * 0.58} />
-        <rect x={x - eighth} y={y + q * 0.25} width={q} height={q * 1.15} fill="#FFFFFF" />
+        {!element.filled && <rect x={x - eighth} y={y + q * 0.25} width={q} height={q * 1.15} fill="#FFFFFF" />}
       </g>
     );
   }
