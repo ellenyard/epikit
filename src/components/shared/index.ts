@@ -5,6 +5,8 @@
 export { TabHeader } from './TabHeader';
 export { HelpPanel } from './HelpPanel';
 export { AdvancedOptions } from './AdvancedOptions';
-export { ResultsActions, ExportIcons } from './ResultsActions';
-export { StatTooltip, statDefinitions } from './StatTooltip';
+export { ResultsActions } from './ResultsActions';
+export { ExportIcons } from './ExportIcons';
+export { StatTooltip } from './StatTooltip';
+export { statDefinitions } from './statDefinitions';
 export { LoadingSpinner } from './LoadingSpinner';

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
@@ -177,8 +177,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
-  // Helper function to compute rows from records
-  const computeRows = (records: Dataset['records']): DotPlotRow[] => {
+  const computeRows = useCallback((records: Dataset['records']): DotPlotRow[] => {
     if (!categoryCol || !value1Col) return [];
 
     const categoryMap = new Map<string, { sum1: number; count1: number; sum2: number; count2: number; ciLowerSum: number; ciLowerCount: number; ciUpperSum: number; ciUpperCount: number }>();
@@ -224,7 +223,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
       }
     }
 
-    let rows = Array.from(categoryMap.entries()).map(([cat, agg]) => ({
+    const computedRows = Array.from(categoryMap.entries()).map(([cat, agg]) => ({
       category: cat,
       val1: agg.count1 > 0 ? agg.sum1 / agg.count1 : 0,
       val2: value2Col && agg.count2 > 0 ? agg.sum2 / agg.count2 : null,
@@ -233,15 +232,15 @@ export function DotPlot({ dataset }: DotPlotProps) {
     }));
 
     if (sortMode === 'value') {
-      rows.sort((a, b) => b.val1 - a.val1);
+      computedRows.sort((a, b) => b.val1 - a.val1);
     } else {
-      rows.sort((a, b) => a.category.localeCompare(b.category));
+      computedRows.sort((a, b) => a.category.localeCompare(b.category));
     }
 
-    return rows;
-  };
+    return computedRows;
+  }, [categoryCol, value1Col, value2Col, lowerCICol, upperCICol, sortMode]);
 
-  const rows = useMemo(() => computeRows(dataset.records), [categoryCol, value1Col, value2Col, lowerCICol, upperCICol, sortMode, dataset.records]);
+  const rows = useMemo(() => computeRows(dataset.records), [computeRows, dataset.records]);
 
   const svgContent = useMemo(() => {
     return generateDotSvg(rows, value1Col, value2Col, colorScheme, showLabels, title, subtitle, source, dataset);

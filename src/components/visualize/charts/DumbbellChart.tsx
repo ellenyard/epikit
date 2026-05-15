@@ -56,7 +56,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
       entry.v2.push(v2);
     }
 
-    let points: DumbbellPoint[] = Array.from(grouped.entries()).map(([category, { v1, v2 }]) => {
+    const points: DumbbellPoint[] = Array.from(grouped.entries()).map(([category, { v1, v2 }]) => {
       const value1 = v1.reduce((a, b) => a + b, 0) / v1.length;
       const value2 = v2.reduce((a, b) => a + b, 0) / v2.length;
       return { category, value1, value2, gap: Math.abs(value2 - value1) };

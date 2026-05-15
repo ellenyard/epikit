@@ -390,13 +390,13 @@ export function TableBuilder({
   };
 
   // Helper to get the correct percentage based on percentType
-  const getCellPercent = (cell: CrossTabCell): number => {
+  const getCellPercent = useCallback((cell: CrossTabCell): number => {
     switch (tableOptions.percentType) {
       case 'row': return cell.rowPercent;
       case 'column': return cell.colPercent;
       case 'total': return cell.totalPercent;
     }
-  };
+  }, [tableOptions.percentType]);
 
   const getPercentLabel = (): string => {
     switch (tableOptions.percentType) {
@@ -472,7 +472,7 @@ export function TableBuilder({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [crossTabData, frequencyData, tableOptions, dataset.name]);
+  }, [crossTabData, frequencyData, tableOptions, dataset.name, getCellPercent]);
 
   // Copy table to clipboard
   const copyToClipboard = useCallback(async () => {
@@ -537,7 +537,7 @@ export function TableBuilder({
     } catch {
       console.error('Failed to copy to clipboard');
     }
-  }, [crossTabData, frequencyData, tableOptions]);
+  }, [crossTabData, frequencyData, tableOptions, filteredRecords.length, getCellPercent]);
 
   const hasData = rowVars.length > 0;
 

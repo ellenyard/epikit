@@ -289,7 +289,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
  */
 function roundToHundred(percents: number[]): number[] {
   const floored = percents.map(p => Math.floor(p));
-  let remainder = 100 - floored.reduce((a, b) => a + b, 0);
+  const remainder = 100 - floored.reduce((a, b) => a + b, 0);
 
   // Get fractional parts with their indices
   const fractions = percents.map((p, i) => ({ index: i, frac: p - Math.floor(p) }));

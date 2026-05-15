@@ -116,6 +116,89 @@ export function createBlankVariable(records: CaseRecord[]): unknown[] {
   return records.map(() => '');
 }
 
+function evaluateArithmeticExpression(expression: string): number | null {
+  let index = 0;
+
+  const skipSpaces = () => {
+    while (expression[index] === ' ') index++;
+  };
+
+  const parseExpression = (): number | null => {
+    let value = parseTerm();
+    if (value === null) return null;
+
+    while (true) {
+      skipSpaces();
+      const operator = expression[index];
+      if (operator !== '+' && operator !== '-') break;
+      index++;
+      const right = parseTerm();
+      if (right === null) return null;
+      value = operator === '+' ? value + right : value - right;
+    }
+
+    return value;
+  };
+
+  const parseTerm = (): number | null => {
+    let value = parseFactor();
+    if (value === null) return null;
+
+    while (true) {
+      skipSpaces();
+      const operator = expression[index];
+      if (operator !== '*' && operator !== '/') break;
+      index++;
+      const right = parseFactor();
+      if (right === null) return null;
+      value = operator === '*' ? value * right : value / right;
+    }
+
+    return value;
+  };
+
+  const parseFactor = (): number | null => {
+    skipSpaces();
+    const char = expression[index];
+
+    if (char === '+') {
+      index++;
+      return parseFactor();
+    }
+
+    if (char === '-') {
+      index++;
+      const value = parseFactor();
+      return value === null ? null : -value;
+    }
+
+    if (char === '(') {
+      index++;
+      const value = parseExpression();
+      skipSpaces();
+      if (expression[index] !== ')') return null;
+      index++;
+      return value;
+    }
+
+    if (expression.slice(index, index + 4) === 'null') {
+      index += 4;
+      return 0;
+    }
+
+    const match = /(?:\d+\.?\d*|\.\d+)/.exec(expression.slice(index));
+    if (!match || match.index !== 0) return null;
+    index += match[0].length;
+    return Number(match[0]);
+  };
+
+  if (expression.trim() === 'null') return null;
+
+  const value = parseExpression();
+  skipSpaces();
+  return index === expression.length ? value : null;
+}
+
 /**
  * Evaluates a simple formula for a record
  * Currently supports basic arithmetic operations
@@ -158,9 +241,7 @@ export function evaluateFormula(
       return '';
     }
 
-    // Evaluate the expression
-    // eslint-disable-next-line no-eval
-    const result = eval(expression);
+    const result = evaluateArithmeticExpression(expression);
 
     if (result === null || result === undefined || isNaN(result) || !isFinite(result)) {
       return '';

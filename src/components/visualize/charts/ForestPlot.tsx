@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { Dataset, CaseRecord } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
@@ -165,7 +165,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   }, [dataMode, caseDefinitionColumns, dataset.records, outcomeVar]);
 
   // Get unique values for a specific exposure variable
-  const getExposureValues = (expVar: string): string[] => {
+  const getExposureValues = useCallback((expVar: string): string[] => {
     const values = new Set<string>();
     dataset.records.forEach(r => {
       const v = r[expVar];
@@ -174,24 +174,24 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       }
     });
     return Array.from(values).sort();
-  };
+  }, [dataset.records]);
 
   // Auto-detect "Yes" as exposed value
-  const detectExposedValue = (expVar: string): string => {
+  const detectExposedValue = useCallback((expVar: string): string => {
     const values = getExposureValues(expVar);
     const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
     const found = values.find(v =>
       positiveKeywords.some(kw => v.toLowerCase() === kw)
     );
     return found || values[0] || '';
-  };
+  }, [getExposureValues]);
 
   // Check if a record is a case
-  const isCase = (record: CaseRecord): boolean => {
+  const isCase = useCallback((record: CaseRecord): boolean => {
     if (!outcomeVar || caseValues.size === 0) return false;
     const value = String(record[outcomeVar] ?? '');
     return caseValues.has(value);
-  };
+  }, [caseValues, outcomeVar]);
 
   // Sync effectMeasure when measureType changes
   useEffect(() => {
@@ -264,7 +264,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     }
 
     return rows;
-  }, [dataMode, dataset, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, customLabels, measureType]);
+  }, [dataMode, dataset, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, customLabels, measureType, detectExposedValue, isCase]);
 
   // --- Manual mode: process data from columns ---
   const manualForestData = useMemo((): ForestRow[] => {

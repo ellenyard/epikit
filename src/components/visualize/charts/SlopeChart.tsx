@@ -75,7 +75,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       const g2Records = dataset.records.filter(r => String(r[groupCol]) === g2);
 
       // Build maps for each group
-      const buildMap = (recs: typeof dataset.records) => {
+      const buildMap = (recs: Dataset['records']) => {
         const map = new Map<string, { sum: number; count: number }>();
         for (const rec of recs) {
           const cat = rec[categoryCol];

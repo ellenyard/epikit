@@ -119,6 +119,7 @@ export function AnalysisWorkflow({ dataset, onCreateVariable, onUpdateRecords }:
     if (prevDatasetIdRef.current !== dataset.id) {
       prevDatasetIdRef.current = dataset.id;
       const saved = loadWorkflowState(dataset.id);
+      /* eslint-disable react-hooks/set-state-in-effect -- Dataset changes intentionally replace the lifted state for the new dataset. */
       if (saved) {
         setActiveSubTab(saved.activeSubTab);
         setExplorerSelectedVar(saved.explorerSelectedVar);
@@ -131,6 +132,7 @@ export function AnalysisWorkflow({ dataset, onCreateVariable, onUpdateRecords }:
         setTableBuilderRowVars([]);
         setTableBuilderColVar('');
       }
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [dataset.id]);
 

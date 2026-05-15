@@ -100,14 +100,17 @@ export function Review({
   // Get current dataset and its edit log
   const currentEditLog = activeDatasetId ? getEditLogForDataset(activeDatasetId) : [];
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
+  const activeDatasetIdForQuality = activeDataset?.id;
 
   // Clear issues when dataset changes
   useEffect(() => {
-    if (activeDataset) {
+    if (activeDatasetIdForQuality) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Data-quality findings are scoped to the active dataset. */
       setDataQualityIssues([]);
       setSelectedIssue(null);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [activeDataset?.id]);
+  }, [activeDatasetIdForQuality]);
 
   // Get highlighted record IDs from active issues
   const highlightedRecordIds = useMemo(() => {

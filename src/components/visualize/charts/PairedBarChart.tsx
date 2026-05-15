@@ -230,7 +230,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [pairedRows, inputMode, leftValueCol, rightValueCol, groupValues, colorScheme, showLabels, title, subtitle, source, dataset.columns]);
+  }, [pairedRows, inputMode, categoryCol, leftValueCol, rightValueCol, groupValues, colorScheme, showLabels, title, subtitle, source, dataset.columns]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
