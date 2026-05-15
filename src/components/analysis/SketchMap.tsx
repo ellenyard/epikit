@@ -7,7 +7,7 @@ type SketchTool = 'select' | 'pen' | 'line' | 'curve' | 'wavy' | 'area' | 'irreg
 type SketchBackground = 'grid' | 'dots' | 'blank';
 type FillPattern = 'solid' | 'hatch' | 'crosshatch' | 'dots' | 'waves' | 'grid';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
-type LegendPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'below' | 'custom';
+type LegendPosition = 'side' | 'below';
 type MarkerShape =
   | 'circle'
   | 'house'
@@ -71,13 +71,6 @@ interface LegendItem {
   key: string;
   label: string;
   element: SketchElement;
-}
-
-interface LegendBox {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
 }
 
 interface ElementRenderOptions {
@@ -473,29 +466,21 @@ export function SketchMap() {
   const [title, setTitle] = useState('Sketch map');
   const [subtitle, setSubtitle] = useState('Not to scale; adapted for teaching.');
   const [showLegend, setShowLegend] = useState(true);
-  const [legendPosition, setLegendPosition] = useState<LegendPosition>('bottom-right');
+  const [legendPosition, setLegendPosition] = useState<LegendPosition>('side');
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ id: string; lastPoint: Point } | null>(null);
-  const [legendPoint, setLegendPoint] = useState<Point>({ x: canvasWidth - 382, y: canvasHeight - 250 });
-  const [legendDragState, setLegendDragState] = useState<{ lastPoint: Point } | null>(null);
   const [exportStatus, setExportStatus] = useState('');
 
   const selectedElement = selectedId ? elements.find(element => element.id === selectedId) ?? null : null;
 
   const legendItems = useMemo(() => buildLegendItems(elements), [elements]);
-  const legendBox = showLegend && legendItems.length > 0
-    ? getLegendBox(legendItems, legendPosition, legendPoint)
-    : null;
-  const exportHeight = legendBox && legendPosition === 'below'
-    ? canvasHeight + legendBox.height + 44
-    : canvasHeight;
 
   const getPointFromRect = (rect: DOMRect | undefined, clientX: number, clientY: number): Point => {
     if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
     return {
       x: ((clientX - rect.left) / rect.width) * canvasWidth,
-      y: ((clientY - rect.top) / rect.height) * exportHeight,
+      y: ((clientY - rect.top) / rect.height) * canvasHeight,
     };
   };
 
@@ -545,9 +530,7 @@ export function SketchMap() {
   };
 
   const startDrawing = (event: PointerEvent<SVGSVGElement>) => {
-    const rawPoint = getPoint(event);
-    if (rawPoint.y > canvasHeight) return;
-    const point = clampToCanvas(rawPoint);
+    const point = clampToCanvas(getPoint(event));
 
     if (tool === 'select') {
       setSelectedId(null);
@@ -587,17 +570,6 @@ export function SketchMap() {
   const continueDrawing = (event: PointerEvent<SVGSVGElement>) => {
     const point = clampToCanvas(getPoint(event));
 
-    if (legendDragState && legendBox) {
-      const dx = point.x - legendDragState.lastPoint.x;
-      const dy = point.y - legendDragState.lastPoint.y;
-      setLegendPoint(previous => clampLegendPoint(
-        { x: previous.x + dx, y: previous.y + dy },
-        legendBox,
-      ));
-      setLegendDragState({ lastPoint: point });
-      return;
-    }
-
     if (dragState) {
       const dx = point.x - dragState.lastPoint.x;
       const dy = point.y - dragState.lastPoint.y;
@@ -620,11 +592,6 @@ export function SketchMap() {
   };
 
   const finishDrawing = (event?: PointerEvent<SVGSVGElement>) => {
-    if (legendDragState) {
-      setLegendDragState(null);
-      return;
-    }
-
     if (dragState) {
       setDragState(null);
       return;
@@ -652,15 +619,6 @@ export function SketchMap() {
     const point = getElementPoint(event);
     setSelectedId(id);
     setDragState({ id, lastPoint: point });
-  };
-
-  const handleLegendPointerDown = (event: PointerEvent<SVGGElement>) => {
-    if (!legendBox || legendPosition === 'below') return;
-    event.stopPropagation();
-    const point = clampToCanvas(getElementPoint(event));
-    setLegendPoint({ x: legendBox.x, y: legendBox.y });
-    setLegendPosition('custom');
-    setLegendDragState({ lastPoint: point });
   };
 
   const undo = () => {
@@ -764,13 +722,21 @@ export function SketchMap() {
       return;
     }
 
-    if (templateId === 'village') {
-      const template = makeVillageSketchTemplate();
+    const templateFn = templateId === 'village'
+      ? makeVillageSketchTemplate
+      : templateId === 'school'
+        ? makeBoardingSchoolTemplate
+        : templateId === 'hospital'
+          ? makeHospitalTemplate
+          : null;
+
+    if (templateFn) {
+      const template = templateFn();
       setTitle(template.title);
       setSubtitle(template.subtitle);
       setShowTitle(true);
       setShowLegend(true);
-      setLegendPosition('below');
+      setLegendPosition('side');
       setBackground('grid');
       setElements(template.elements);
       setSelectedId(null);
@@ -830,46 +796,48 @@ export function SketchMap() {
               </div>
             </div>
 
-            <div className={`grid gap-3 ${tool === 'marker' || tool === 'label' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-              {(tool === 'marker' || tool === 'label') && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">New item size ({size})</label>
-                  <input
-                    type="range"
-                    min="20"
-                    max="90"
-                    value={size}
-                    onChange={(event) => setSize(Number(event.target.value))}
-                    className="w-full"
-                  />
-                </div>
-              )}
+            {tool === 'label' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Line style</label>
-                <select
-                  value={lineStyle}
-                  onChange={(event) => setLineStyle(event.target.value as LineStyle)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                >
-                  {lineStyleOptions.map(option => (
-                    <option key={option.id} value={option.id}>{option.label}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New item size ({size})</label>
+                <input
+                  type="range"
+                  min="20"
+                  max="90"
+                  value={size}
+                  onChange={(event) => setSize(Number(event.target.value))}
+                  className="w-full"
+                />
               </div>
-            </div>
+            )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Pattern</label>
-              <select
-                value={fillPattern}
-                onChange={(event) => setFillPattern(event.target.value as FillPattern)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-              >
-                {patternOptions.map(option => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-            </div>
+            {tool !== 'marker' && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Line style</label>
+                  <select
+                    value={lineStyle}
+                    onChange={(event) => setLineStyle(event.target.value as LineStyle)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                  >
+                    {lineStyleOptions.map(option => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Pattern</label>
+                  <select
+                    value={fillPattern}
+                    onChange={(event) => setFillPattern(event.target.value as FillPattern)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                  >
+                    {patternOptions.map(option => (
+                      <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </section>
 
           {tool === 'marker' && (
@@ -989,12 +957,8 @@ export function SketchMap() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
                   disabled={!showLegend}
                 >
+                  <option value="side">Side panel</option>
                   <option value="below">Below sketch</option>
-                  <option value="bottom-right">Bottom right</option>
-                  <option value="bottom-left">Bottom left</option>
-                  <option value="top-right">Top right</option>
-                  <option value="top-left">Top left</option>
-                  <option value="custom">Custom</option>
                 </select>
               </div>
             </div>
@@ -1012,7 +976,11 @@ export function SketchMap() {
             <section className="space-y-3 border-t border-gray-200 pt-4">
               <div className="flex items-center justify-between gap-3">
                 <h4 className="text-sm font-semibold text-gray-900">Selected object</h4>
-                <span className="text-xs text-gray-500">{selectedElement.type}</span>
+                <span className="text-xs text-gray-500">
+                  {selectedElement.type === 'marker' && selectedElement.markerId
+                    ? markerById.get(selectedElement.markerId)?.label ?? 'Marker'
+                    : selectedElement.type === 'irregularArea' ? 'Free area' : selectedElement.type}
+                </span>
               </div>
 
               {(selectedElement.type === 'label' || selectedElement.type === 'marker') && (
@@ -1051,16 +1019,17 @@ export function SketchMap() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
-                  <input
-                    type="color"
-                    value={selectedElement.color}
-                    onChange={(event) => updateSelected({ color: event.target.value, fillColor: event.target.value })}
-                    className="w-full h-10 p-1 border border-gray-300 rounded-md bg-white"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                <input
+                  type="color"
+                  value={selectedElement.color}
+                  onChange={(event) => updateSelected({ color: event.target.value, fillColor: event.target.value })}
+                  className="w-full h-10 p-1 border border-gray-300 rounded-md bg-white"
+                />
+              </div>
+
+              {selectedElement.type !== 'marker' && selectedElement.type !== 'label' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Pattern</label>
                   <select
@@ -1073,7 +1042,7 @@ export function SketchMap() {
                     ))}
                   </select>
                 </div>
-              </div>
+              )}
 
               {selectedElement.type === 'marker' && (
                 <div className="grid grid-cols-2 gap-3">
@@ -1150,6 +1119,8 @@ export function SketchMap() {
                 <option value="" disabled>Choose a template</option>
                 <option value="blank">Blank teaching map frame</option>
                 <option value="village">Simple village sketch</option>
+                <option value="school">Boarding school outbreak</option>
+                <option value="hospital">Hospital ward sketch</option>
               </select>
             </div>
 
@@ -1197,28 +1168,37 @@ export function SketchMap() {
       </div>
 
       <div className="flex-1 bg-gray-100 p-4 overflow-auto">
-        <div ref={exportRef} className="mx-auto bg-white shadow-sm" style={{ maxWidth: 1200 }}>
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${canvasWidth} ${exportHeight}`}
-            className="w-full touch-none select-none"
-            style={{ aspectRatio: `${canvasWidth} / ${exportHeight}` }}
-            onPointerDown={startDrawing}
-            onPointerMove={continueDrawing}
-            onPointerUp={finishDrawing}
-            onPointerLeave={finishDrawing}
-          >
-            <SketchDefs />
-            <rect width={canvasWidth} height={exportHeight} fill="#FFFFFF" />
-            <rect width={canvasWidth} height={canvasHeight} fill={getBackgroundFill(background)} />
-            {showTitle && renderTitle(title, subtitle)}
-            {[...elements, ...(draft ? [draft] : [])].map(element => renderElement(element, {
-              selectedId,
-              selectionEnabled: tool === 'select',
-              onSelect: handleElementPointerDown,
-            }))}
-            {legendBox && renderLegend(legendItems, legendBox, legendPosition !== 'below', handleLegendPointerDown)}
-          </svg>
+        <div className="flex flex-col xl:flex-row gap-4 mx-auto" style={{ maxWidth: legendPosition === 'side' && showLegend && legendItems.length > 0 ? 1560 : 1200 }}>
+          <div ref={exportRef} className="flex-1 bg-white shadow-sm min-w-0">
+            <svg
+              ref={svgRef}
+              viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+              className="w-full touch-none select-none"
+              style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
+              onPointerDown={startDrawing}
+              onPointerMove={continueDrawing}
+              onPointerUp={finishDrawing}
+              onPointerLeave={finishDrawing}
+            >
+              <SketchDefs />
+              <rect width={canvasWidth} height={canvasHeight} fill="#FFFFFF" />
+              <rect width={canvasWidth} height={canvasHeight} fill={getBackgroundFill(background)} />
+              {showTitle && renderTitle(title, subtitle)}
+              {[...elements, ...(draft ? [draft] : [])].map(element => renderElement(element, {
+                selectedId,
+                selectionEnabled: tool === 'select',
+                onSelect: handleElementPointerDown,
+              }))}
+            </svg>
+            {legendPosition === 'below' && showLegend && legendItems.length > 0 && (
+              <HtmlLegend items={legendItems} />
+            )}
+          </div>
+          {legendPosition === 'side' && showLegend && legendItems.length > 0 && (
+            <div className="xl:w-80 flex-shrink-0">
+              <HtmlLegend items={legendItems} />
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1233,6 +1213,25 @@ function LayerButton({ label, onClick }: { label: string; onClick: () => void })
     >
       {label}
     </button>
+  );
+}
+
+function HtmlLegend({ items }: { items: LegendItem[] }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-md p-4">
+      <h4 className="text-sm font-bold text-gray-900 mb-3">Legend</h4>
+      <div className="space-y-2">
+        {items.map(item => (
+          <div key={item.key} className="flex items-center gap-3">
+            <svg width="28" height="24" viewBox="0 0 28 24" className="flex-shrink-0">
+              <SketchDefs />
+              {renderLegendSymbol(item.element, 14, 12)}
+            </svg>
+            <span className="text-sm text-gray-800">{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1657,91 +1656,20 @@ function renderSelectionBox(element: SketchElement) {
   );
 }
 
-function getLegendSize(items: LegendItem[]): Pick<LegendBox, 'width' | 'height'> {
-  const itemHeight = 31;
-  return {
-    width: 420,
-    height: 42 + items.length * itemHeight,
-  };
-}
-
-function clampLegendPoint(point: Point, box: Pick<LegendBox, 'width' | 'height'>): Point {
-  const margin = 22;
-  return {
-    x: clamp(point.x, margin, canvasWidth - box.width - margin),
-    y: clamp(point.y, margin, canvasHeight - box.height - margin),
-  };
-}
-
-function getLegendBox(items: LegendItem[], position: LegendPosition, customPoint: Point): LegendBox {
-  const size = getLegendSize(items);
-  const margin = 22;
-
-  if (position === 'below') {
-    return {
-      x: (canvasWidth - size.width) / 2,
-      y: canvasHeight + margin,
-      ...size,
-    };
-  }
-
-  if (position === 'custom') {
-    return {
-      ...clampLegendPoint(customPoint, size),
-      ...size,
-    };
-  }
-
-  const x = position.endsWith('right') ? canvasWidth - size.width - margin : margin;
-  const preferredY = position.startsWith('bottom') ? canvasHeight - size.height - margin : 88;
-  const y = clamp(preferredY, margin, canvasHeight - size.height - margin);
-
-  return { x, y, ...size };
-}
-
-function renderLegend(
-  items: LegendItem[],
-  box: LegendBox,
-  draggable: boolean,
-  onPointerDown: (event: PointerEvent<SVGGElement>) => void,
-) {
-  const itemHeight = 31;
-
-  return (
-    <g
-      pointerEvents={draggable ? 'all' : 'none'}
-      transform={`translate(${box.x} ${box.y})`}
-      onPointerDown={draggable ? onPointerDown : undefined}
-      style={{ cursor: draggable ? 'move' : 'default' }}
-    >
-      <rect width={box.width} height={box.height} fill="#FFFFFF" stroke="#111827" strokeWidth="2" opacity="0.96" />
-      <text x="16" y="25" fill="#111827" fontSize="17" fontWeight="700">Legend</text>
-      {items.map((item, index) => (
-        <g key={item.key} transform={`translate(16 ${44 + index * itemHeight})`}>
-          {renderLegendSymbol(item.element)}
-          <text x="38" y="6" fill="#111827" fontSize="14" dominantBaseline="middle">
-            {item.label}
-          </text>
-        </g>
-      ))}
-    </g>
-  );
-}
-
-function renderLegendSymbol(element: SketchElement) {
+function renderLegendSymbol(element: SketchElement, cx: number, cy: number) {
   if (element.type === 'marker') {
-    return renderMarkerIcon({ ...element, size: 22, strokeWidth: 2, opacity: 1 }, 11, 0, 22);
+    return renderMarkerIcon({ ...element, size: 22, strokeWidth: 2, opacity: 1 }, cx, cy, 22);
   }
 
   if (element.type === 'wavy') {
-    return <path d={makeWavyPath({ x: 0, y: 0 }, { x: 24, y: 0 }, 3)} fill="none" stroke={element.color} strokeWidth="3" strokeLinecap="round" />;
+    return <path d={makeWavyPath({ x: cx - 12, y: cy }, { x: cx + 12, y: cy }, 3)} fill="none" stroke={element.color} strokeWidth="3" strokeLinecap="round" />;
   }
 
   if (element.type === 'line' || element.type === 'curve') {
-    return <line x1="0" y1="0" x2="24" y2="0" stroke={element.color} strokeWidth="3" strokeDasharray={getDashArray(element.lineStyle, 3)} strokeLinecap="round" />;
+    return <line x1={cx - 12} y1={cy} x2={cx + 12} y2={cy} stroke={element.color} strokeWidth="3" strokeDasharray={getDashArray(element.lineStyle, 3)} strokeLinecap="round" />;
   }
 
-  return <rect x="0" y="-10" width="24" height="18" fill={getElementFill(element)} stroke={element.color} strokeWidth="2" />;
+  return <rect x={cx - 12} y={cy - 9} width="24" height="18" fill={getElementFill(element)} stroke={element.color} strokeWidth="2" />;
 }
 
 function buildLegendItems(elements: SketchElement[]): LegendItem[] {
@@ -2011,6 +1939,177 @@ function makeVillageSketchTemplate() {
   return {
     title: 'Simple village sketch',
     subtitle: 'Case and non-case residences with selected environmental features. Not to scale.',
+    elements,
+  };
+}
+
+function makeBoardingSchoolTemplate() {
+  const elements: SketchElement[] = [
+    // Ward A — left dormitory
+    makeAreaElement('area', toCanvasPoint(5, 20), toCanvasPoint(42, 55), {
+      color: '#4B5563',
+      fillColor: '#4B5563',
+      fillPattern: 'dots',
+      legendLabel: 'Ward / dormitory',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(15, 24), text: 'Ward A', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Ward B — right dormitory
+    makeAreaElement('area', toCanvasPoint(58, 20), toCanvasPoint(95, 55), {
+      color: '#4B5563',
+      fillColor: '#4B5563',
+      fillPattern: 'dots',
+      legendLabel: 'Ward / dormitory',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(69, 24), text: 'Ward B', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Dining hall
+    makeAreaElement('area', toCanvasPoint(28, 68), toCanvasPoint(72, 88), {
+      color: '#92400E',
+      fillColor: '#92400E',
+      fillPattern: 'grid',
+      legendLabel: 'Dining hall / eating area',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(38, 77), text: 'Dining hall', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Latrine block
+    makeAreaElement('area', toCanvasPoint(80, 68), toCanvasPoint(95, 82), {
+      color: '#6B7280',
+      fillColor: '#6B7280',
+      fillPattern: 'crosshatch',
+      legendLabel: 'Latrine block',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(82, 75), text: 'Latrines', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Paths between buildings
+    makeLineElement('line', toCanvasPoint(42, 38), toCanvasPoint(58, 38), {
+      color: '#6B7280',
+      strokeWidth: 4,
+      lineStyle: 'dashed',
+      legendLabel: 'Walkway',
+    }),
+    makeLineElement('line', toCanvasPoint(24, 55), toCanvasPoint(40, 68), {
+      color: '#6B7280',
+      strokeWidth: 4,
+      lineStyle: 'dashed',
+    }),
+    makeLineElement('line', toCanvasPoint(76, 55), toCanvasPoint(60, 68), {
+      color: '#6B7280',
+      strokeWidth: 4,
+      lineStyle: 'dashed',
+    }),
+
+    // Water source
+    makeMarkerElement('water-source', toCanvasPoint(5, 75), { size: 34, strokeWidth: 3 }),
+  ];
+
+  // Beds in Ward A — two rows of 5
+  const bedMarker: Partial<SketchElement> = { size: 24, strokeWidth: 2 };
+  for (let index = 0; index < 5; index += 1) {
+    const x = 10 + index * 7;
+    elements.push(makeMarkerElement('case-person', toCanvasPoint(x, 35), bedMarker));
+    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(x, 46), bedMarker));
+  }
+
+  // Beds in Ward B — two rows of 5
+  for (let index = 0; index < 5; index += 1) {
+    const x = 63 + index * 7;
+    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(x, 35), bedMarker));
+    elements.push(makeMarkerElement('case-person', toCanvasPoint(x, 46), bedMarker));
+  }
+
+  return {
+    title: 'Boarding school outbreak sketch',
+    subtitle: 'Case and non-case beds by ward, shared dining hall, and sanitation facilities. Not to scale.',
+    elements,
+  };
+}
+
+function makeHospitalTemplate() {
+  const elements: SketchElement[] = [
+    // Reception / triage
+    makeAreaElement('area', toCanvasPoint(35, 8), toCanvasPoint(65, 25), {
+      color: '#1F2937',
+      fillColor: '#1F2937',
+      fillPattern: 'solid',
+      legendLabel: 'Reception / triage',
+      opacity: 0.15,
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(38, 17), text: 'Reception / Triage', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Pediatric ward — left
+    makeAreaElement('area', toCanvasPoint(3, 38), toCanvasPoint(32, 72), {
+      color: '#2563EB',
+      fillColor: '#2563EB',
+      fillPattern: 'dots',
+      legendLabel: 'Pediatric ward',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(6, 44), text: 'Pediatric ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Medical ward — center
+    makeAreaElement('area', toCanvasPoint(36, 38), toCanvasPoint(64, 72), {
+      color: '#166534',
+      fillColor: '#166534',
+      fillPattern: 'hatch',
+      legendLabel: 'Medical ward',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(39, 44), text: 'Medical ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Maternity ward — right
+    makeAreaElement('area', toCanvasPoint(68, 38), toCanvasPoint(97, 72), {
+      color: '#92400E',
+      fillColor: '#92400E',
+      fillPattern: 'grid',
+      legendLabel: 'Maternity ward',
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(71, 44), text: 'Maternity ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Corridors connecting wards to reception
+    makeLineElement('line', toCanvasPoint(50, 25), toCanvasPoint(18, 38), {
+      color: '#6B7280',
+      strokeWidth: 5,
+      lineStyle: 'dashed',
+      legendLabel: 'Corridor',
+    }),
+    makeLineElement('line', toCanvasPoint(50, 25), toCanvasPoint(50, 38), {
+      color: '#6B7280',
+      strokeWidth: 5,
+      lineStyle: 'dashed',
+    }),
+    makeLineElement('line', toCanvasPoint(50, 25), toCanvasPoint(82, 38), {
+      color: '#6B7280',
+      strokeWidth: 5,
+      lineStyle: 'dashed',
+    }),
+
+    // Water and sanitation
+    makeMarkerElement('water-source', toCanvasPoint(15, 82), { size: 34, strokeWidth: 3 }),
+    makeMarkerElement('latrine', toCanvasPoint(85, 82), { size: 34, strokeWidth: 3 }),
+    makeMarkerElement('waste', toCanvasPoint(50, 85), { size: 34, strokeWidth: 3 }),
+  ];
+
+  // Cases and non-cases in pediatric ward
+  const bedMarker: Partial<SketchElement> = { size: 22, strokeWidth: 2 };
+  for (let index = 0; index < 4; index += 1) {
+    elements.push(makeMarkerElement('case-person', toCanvasPoint(8 + index * 7, 55), bedMarker));
+    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(8 + index * 7, 65), bedMarker));
+  }
+
+  // Cases and non-cases in medical ward
+  for (let index = 0; index < 3; index += 1) {
+    elements.push(makeMarkerElement('case-person', toCanvasPoint(41 + index * 8, 55), bedMarker));
+    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(41 + index * 8, 65), bedMarker));
+  }
+
+  // Cases in maternity ward
+  for (let index = 0; index < 4; index += 1) {
+    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(73 + index * 7, 55), bedMarker));
+    elements.push(makeMarkerElement(index < 2 ? 'case-person' : 'noncase-person', toCanvasPoint(73 + index * 7, 65), bedMarker));
+  }
+
+  return {
+    title: 'Hospital ward sketch',
+    subtitle: 'Case and non-case locations across hospital wards with shared facilities. Not to scale.',
     elements,
   };
 }
