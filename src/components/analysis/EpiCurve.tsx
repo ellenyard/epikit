@@ -190,6 +190,8 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   // Check if using sub-daily bin size
   const isSubDailyBin = binSize === 'hourly' || binSize === '6hour' || binSize === '12hour';
 
+  /* eslint-disable react-hooks/set-state-in-effect -- These effects keep persisted controls aligned with the active dataset and its detected columns. */
+
   // Auto-select first date column
   useEffect(() => {
     if (!dateColumn && dateColumns.length > 0) {
@@ -275,6 +277,8 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
       }
     }
   }, [dateColumn, dataset.columns]);
+
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Apply filter to records
   const filteredRecords = useMemo(() => {
@@ -759,16 +763,10 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   }, [displayData.bins, barWidth]);
 
   // Determine which x-axis labels should be shown (skip labels when too many bins)
-  const shouldShowLabel = useMemo(() => {
-    if (displayData.bins.length <= 50) {
-      // Show all labels if 50 or fewer bins
-      return (_index: number) => true;
-    }
-
-    // For more than 50 bins, skip labels to show ~30 labels at most
-    const skipInterval = Math.ceil(displayData.bins.length / 30);
-    return (index: number) => index % skipInterval === 0;
-  }, [displayData.bins.length]);
+  const labelSkipInterval = displayData.bins.length > 50
+    ? Math.ceil(displayData.bins.length / 30)
+    : 1;
+  const shouldShowLabel = (index: number) => index % labelSkipInterval === 0;
 
   return (
     <div ref={containerRef} className={`h-full flex flex-col lg:flex-row ${isResizing ? 'select-none' : ''}`}>
@@ -1375,7 +1373,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                       <div
                         className="w-4 h-4 rounded"
                         style={{
-                          backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, displayData.strataKeys),
+                          backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme),
                         }}
                       />
                       <span className="text-sm text-gray-700 font-medium">{strataKey}</span>
@@ -1463,7 +1461,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                                     className="mx-0.5 hover:opacity-80 transition-opacity"
                                     style={{
                                       height,
-                                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme, displayData.strataKeys),
+                                      backgroundColor: getColorForStrata(strataKey, strataIndex, colorScheme),
                                     }}
                                     title={`${bin.label}: ${strataKey} (${count})`}
                                   />
@@ -1988,7 +1986,7 @@ function generateSVG(
 
     data.strataKeys.forEach((key, index) => {
       const x = legendStartX + (index * legendItemWidth);
-      const color = getColorForStrata(key, index, colorScheme, data.strataKeys);
+      const color = getColorForStrata(key, index, colorScheme);
       // Legend color box
       svg += `<rect x="${x}" y="${legendY}" width="12" height="12" fill="${color}"/>`;
       // Legend text
@@ -2028,7 +2026,7 @@ function generateSVG(
         if (count > 0) {
           const barHeight = (count / data.maxCount) * chartHeight;
           const y = margin.top + chartHeight - cumHeight - barHeight;
-          const color = getColorForStrata(key, keyIndex, colorScheme, data.strataKeys);
+          const color = getColorForStrata(key, keyIndex, colorScheme);
           svg += `<rect x="${x + 2}" y="${y}" width="${barWidth - 4}" height="${barHeight}" fill="${color}"/>`;
           cumHeight += barHeight;
         }

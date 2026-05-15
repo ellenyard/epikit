@@ -1,33 +1,15 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { ResultsActions, ExportIcons } from '../../shared/ResultsActions';
+import { useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { ResultsActions, ExportIcons } from '../../shared';
 import { exportPNG, copyChartToClipboard, exportExcel } from '../../../utils/chartExport';
 import type { ExcelExportData } from '../../../utils/chartExport';
-
-/** Hook that tracks the width of a container element */
-export function useContainerWidth(ref: React.RefObject<HTMLElement | null>): number {
-  const [width, setWidth] = useState(0);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    const measure = () => setWidth(el.clientWidth);
-    measure();
-
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-
-  return width;
-}
 
 interface ChartContainerProps {
   title: string;
   subtitle?: string;
   source?: string;
   svgContent?: string;  // SVG string used for PNG export and clipboard
-  children: React.ReactNode;
+  children: ReactNode;
   filename?: string;
   excelData?: ExcelExportData;  // Structured data for Excel export
 }

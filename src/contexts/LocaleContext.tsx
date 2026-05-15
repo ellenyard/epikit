@@ -183,6 +183,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- The provider and hook are intentionally colocated for this small context.
 export function useLocale() {
   const context = useContext(LocaleContext);
   if (!context) {

@@ -245,7 +245,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     }
 
     return svgWrapper(width, adjustedHeight, svg);
-  }, [heatmapData, colorScheme, showCellLabels, title, subtitle, source]);
+  }, [heatmapData, valueMode, colorScheme, showCellLabels, title, subtitle, source]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {

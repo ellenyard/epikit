@@ -354,18 +354,20 @@ function getBinStart(date: Date, binSize: BinSize): Date {
     case 'daily':
       d.setHours(0, 0, 0, 0);
       break;
-    case 'weekly-cdc':
+    case 'weekly-cdc': {
       // CDC weeks start on Sunday
       const cdcDay = d.getDay();
       d.setDate(d.getDate() - cdcDay);
       d.setHours(0, 0, 0, 0);
       break;
-    case 'weekly-iso':
+    }
+    case 'weekly-iso': {
       // ISO weeks start on Monday
       const isoDay = d.getDay() || 7;
       d.setDate(d.getDate() - (isoDay - 1));
       d.setHours(0, 0, 0, 0);
       break;
+    }
   }
 
   return d;
@@ -446,8 +448,7 @@ function formatBinLabel(date: Date, binSize: BinSize): string {
 export function getColorForStrata(
   strataKey: string,
   index: number,
-  scheme: ColorScheme,
-  _allKeys: string[]
+  scheme: ColorScheme
 ): string {
   const defaultColors = [
     '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
@@ -515,4 +516,3 @@ export function calculateExposureWindow(
 
   return { start, end };
 }
-

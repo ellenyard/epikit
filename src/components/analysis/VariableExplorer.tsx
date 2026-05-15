@@ -183,7 +183,7 @@ export function VariableExplorer({
     }
 
     return freq;
-  }, [values, selectedVar, selectedColumn?.type, selectedColumn?.valueOrder]);
+  }, [values, selectedVar, selectedColumn]);
 
   // Initialize value mappings when opening Fix Values modal
   const handleOpenFixValues = () => {

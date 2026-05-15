@@ -550,7 +550,7 @@ export function BarChart({ dataset }: BarChartProps) {
                 }
 
                 // Sort facet data
-                let sortedFacetData = [...facetBarData];
+                const sortedFacetData = [...facetBarData];
                 if (sortMode === 'value') {
                   sortedFacetData.sort((a, b) => b.value - a.value);
                 } else if (sortMode === 'alpha') {

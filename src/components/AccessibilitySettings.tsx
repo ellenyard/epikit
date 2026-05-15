@@ -5,73 +5,61 @@ interface AccessibilitySettingsProps {
   onClose: () => void;
 }
 
+function applySettings(
+  contrast: boolean,
+  colorblind: boolean,
+  motion: boolean,
+  size: string
+) {
+  const root = document.documentElement;
+
+  // High contrast
+  if (contrast) {
+    root.classList.add('theme-high-contrast');
+  } else {
+    root.classList.remove('theme-high-contrast');
+  }
+
+  // Colorblind friendly
+  if (colorblind) {
+    root.classList.add('theme-colorblind-friendly');
+  } else {
+    root.classList.remove('theme-colorblind-friendly');
+  }
+
+  // Reduced motion
+  if (motion) {
+    root.style.setProperty('--animation-speed', '0.01ms');
+  } else {
+    root.style.removeProperty('--animation-speed');
+  }
+
+  // Font size
+  root.setAttribute('data-font-size', size);
+  switch (size) {
+    case 'small':
+      root.style.fontSize = '14px';
+      break;
+    case 'large':
+      root.style.fontSize = '18px';
+      break;
+    case 'extra-large':
+      root.style.fontSize = '20px';
+      break;
+    default:
+      root.style.fontSize = '16px';
+  }
+}
+
 export function AccessibilitySettings({ isOpen, onClose }: AccessibilitySettingsProps) {
-  const [highContrast, setHighContrast] = useState(false);
-  const [colorblindFriendly, setColorblindFriendly] = useState(false);
-  const [reducedMotion, setReducedMotion] = useState(false);
-  const [fontSize, setFontSize] = useState('normal');
+  const [highContrast, setHighContrast] = useState(() => localStorage.getItem('a11y-high-contrast') === 'true');
+  const [colorblindFriendly, setColorblindFriendly] = useState(() => localStorage.getItem('a11y-colorblind-friendly') === 'true');
+  const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem('a11y-reduced-motion') === 'true');
+  const [fontSize, setFontSize] = useState(() => localStorage.getItem('a11y-font-size') || 'normal');
 
-  // Load settings from localStorage on mount
   useEffect(() => {
-    const savedHighContrast = localStorage.getItem('a11y-high-contrast') === 'true';
-    const savedColorblind = localStorage.getItem('a11y-colorblind-friendly') === 'true';
-    const savedReducedMotion = localStorage.getItem('a11y-reduced-motion') === 'true';
-    const savedFontSize = localStorage.getItem('a11y-font-size') || 'normal';
-
-    setHighContrast(savedHighContrast);
-    setColorblindFriendly(savedColorblind);
-    setReducedMotion(savedReducedMotion);
-    setFontSize(savedFontSize);
-
-    // Apply settings to document
-    applySettings(savedHighContrast, savedColorblind, savedReducedMotion, savedFontSize);
-  }, []);
-
-  const applySettings = (
-    contrast: boolean,
-    colorblind: boolean,
-    motion: boolean,
-    size: string
-  ) => {
-    const root = document.documentElement;
-
-    // High contrast
-    if (contrast) {
-      root.classList.add('theme-high-contrast');
-    } else {
-      root.classList.remove('theme-high-contrast');
-    }
-
-    // Colorblind friendly
-    if (colorblind) {
-      root.classList.add('theme-colorblind-friendly');
-    } else {
-      root.classList.remove('theme-colorblind-friendly');
-    }
-
-    // Reduced motion
-    if (motion) {
-      root.style.setProperty('--animation-speed', '0.01ms');
-    } else {
-      root.style.removeProperty('--animation-speed');
-    }
-
-    // Font size
-    root.setAttribute('data-font-size', size);
-    switch (size) {
-      case 'small':
-        root.style.fontSize = '14px';
-        break;
-      case 'large':
-        root.style.fontSize = '18px';
-        break;
-      case 'extra-large':
-        root.style.fontSize = '20px';
-        break;
-      default:
-        root.style.fontSize = '16px';
-    }
-  };
+    applySettings(highContrast, colorblindFriendly, reducedMotion, fontSize);
+  }, [highContrast, colorblindFriendly, reducedMotion, fontSize]);
 
   const handleToggleHighContrast = () => {
     const newValue = !highContrast;

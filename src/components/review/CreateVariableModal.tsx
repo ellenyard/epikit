@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { DataColumn, VariableConfig, CategoryRule, CaseRecord } from '../../types/analysis';
 import { toVariableName, validateVariableConfig, generateVariableValues } from '../../utils/variableCreation';
 import { useLocale } from '../../contexts/LocaleContext';
@@ -30,37 +30,27 @@ export function CreateVariableModal({
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [showTemplates, setShowTemplates] = useState(true);
 
-  // Auto-generate variable name from label
-  useEffect(() => {
-    if (!nameManuallyEdited && label) {
-      setName(toVariableName(label));
-    }
-  }, [label, nameManuallyEdited]);
+  const getDefaultSourceColumn = useCallback((nextMethod: VariableConfig['method']) => {
+    if (nextMethod !== 'categorize') return '';
+    return existingColumns.find(col => col.type === 'number')?.key || '';
+  }, [existingColumns]);
 
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
+      /* eslint-disable react-hooks/set-state-in-effect -- Opening the modal resets the transient form state. */
       setLabel('');
       setName('');
       setType('categorical');
       setMethod('categorize');
-      setSourceColumn('');
+      setSourceColumn(getDefaultSourceColumn('categorize'));
       setCategories([]);
       setFormula('');
       setError(null);
       setNameManuallyEdited(false);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
-  }, [isOpen]);
-
-  // Auto-select first numeric column when method is categorize
-  useEffect(() => {
-    if (method === 'categorize' && !sourceColumn) {
-      const numericCol = existingColumns.find(col => col.type === 'number');
-      if (numericCol) {
-        setSourceColumn(numericCol.key);
-      }
-    }
-  }, [method, sourceColumn, existingColumns]);
+  }, [isOpen, getDefaultSourceColumn]);
 
   // Get source column type
   const sourceColumnType = useMemo(() => {
@@ -325,7 +315,13 @@ export function CreateVariableModal({
                 id="label"
                 type="text"
                 value={label}
-                onChange={(e) => setLabel(e.target.value)}
+                onChange={(e) => {
+                  const nextLabel = e.target.value;
+                  setLabel(nextLabel);
+                  if (!nameManuallyEdited) {
+                    setName(toVariableName(nextLabel));
+                  }
+                }}
                 placeholder="e.g., Age Group"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
               />
@@ -382,7 +378,13 @@ export function CreateVariableModal({
             <select
               id="method"
               value={method}
-              onChange={(e) => setMethod(e.target.value as VariableConfig['method'])}
+              onChange={(e) => {
+                const nextMethod = e.target.value as VariableConfig['method'];
+                setMethod(nextMethod);
+                if (!sourceColumn || nextMethod === 'blank') {
+                  setSourceColumn(getDefaultSourceColumn(nextMethod));
+                }
+              }}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="categorize">Categorize (create groups/ranges)</option>
