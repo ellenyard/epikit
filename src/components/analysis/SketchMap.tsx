@@ -1576,69 +1576,104 @@ function makeIrregularBandPoints(start: Point, end: Point): Point[] {
 }
 
 function makeVillageSketchTemplate() {
+  const label = (x: number, y: number, text: string, size = 16): SketchElement =>
+    createElement({ type: 'label', start: toCanvasPoint(x, y), text, color: '#111827', size, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false });
+
   const elements: SketchElement[] = [
-    // Livestock pen — top left
-    makeAreaElement('area', toCanvasPoint(5, 8), toCanvasPoint(28, 30), {
+    // === Roads ===
+    // Main road — runs left to right across upper-middle
+    makeLineElement('curve', toCanvasPoint(3, 38), toCanvasPoint(97, 35), {
+      color: '#9CA3AF',
+      strokeWidth: 7,
+      legendLabel: 'Road',
+    }),
+    // Secondary road — branches south from main road
+    makeLineElement('curve', toCanvasPoint(50, 36), toCanvasPoint(55, 92), {
+      color: '#9CA3AF',
+      strokeWidth: 5,
+    }),
+    // Small lane — branches east off secondary road
+    makeLineElement('curve', toCanvasPoint(53, 65), toCanvasPoint(90, 68), {
+      color: '#9CA3AF',
+      strokeWidth: 4,
+    }),
+
+    // === Livestock pen — upper left, below subtitle ===
+    makeAreaElement('area', toCanvasPoint(3, 14), toCanvasPoint(22, 32), {
       color: '#374151',
       fillColor: '#374151',
       fillPattern: 'hatch',
       legendLabel: 'Livestock pen',
     }),
-    createElement({ type: 'label', start: toCanvasPoint(7, 14), text: 'Livestock pen', color: '#111827', size: 18, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
-    makeMarkerElement('animal-pen', toCanvasPoint(10, 22), { size: 28, strokeWidth: 2 }),
-    makeMarkerElement('animal-pen', toCanvasPoint(20, 22), { size: 28, strokeWidth: 2 }),
+    label(5, 17, 'Livestock pen'),
+    // Animals inside pen — no legend label (pen area covers it)
+    makeMarkerElement('animal-pen', toCanvasPoint(8, 25), { size: 26, strokeWidth: 2, legendLabel: '' }),
+    makeMarkerElement('animal-pen', toCanvasPoint(17, 25), { size: 26, strokeWidth: 2, legendLabel: '' }),
 
-    // Stream — runs from near livestock area diagonally down to lower right
-    makeLineElement('wavy', toCanvasPoint(30, 18), toCanvasPoint(50, 40), {
+    // === Stream — flows from near livestock diagonally to lower right ===
+    makeLineElement('wavy', toCanvasPoint(24, 20), toCanvasPoint(42, 42), {
       color: '#2563EB',
       strokeWidth: 5,
       legendLabel: 'Stream',
     }),
-    makeLineElement('wavy', toCanvasPoint(50, 40), toCanvasPoint(75, 65), {
+    makeLineElement('wavy', toCanvasPoint(42, 42), toCanvasPoint(65, 62), {
       color: '#2563EB',
       strokeWidth: 5,
     }),
-    makeLineElement('wavy', toCanvasPoint(75, 65), toCanvasPoint(92, 85), {
+    makeLineElement('wavy', toCanvasPoint(65, 62), toCanvasPoint(85, 90), {
       color: '#2563EB',
       strokeWidth: 5,
     }),
 
-    // Water collection point along stream
-    makeMarkerElement('water-source', toCanvasPoint(56, 45), { size: 34, strokeWidth: 3 }),
-    createElement({ type: 'label', start: toCanvasPoint(60, 44), text: 'Water collection\npoint', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    // === Water collection point ===
+    makeMarkerElement('water-source', toCanvasPoint(48, 48), { size: 32, strokeWidth: 3, legendLabel: 'Water collection point' }),
+    label(51, 47, 'Water collection\npoint'),
 
-    // Road
-    makeLineElement('curve', toCanvasPoint(5, 55), toCanvasPoint(95, 52), {
-      color: '#6B7280',
-      strokeWidth: 5,
-      lineStyle: 'dashed',
-      legendLabel: 'Road',
-    }),
+    // === Landmarks along main road — no legend entries, just map labels ===
+    // School — upstream end
+    makeMarkerElement('school', toCanvasPoint(15, 42), { size: 36, strokeWidth: 3, legendLabel: '' }),
+    label(10, 47, 'School'),
 
-    // Trees along stream
-    makeMarkerElement('tree', toCanvasPoint(38, 28), { size: 32 }),
-    makeMarkerElement('tree', toCanvasPoint(62, 52), { size: 32 }),
-    makeMarkerElement('tree', toCanvasPoint(82, 72), { size: 32 }),
+    // Clinic — on main road
+    makeMarkerElement('clinic', toCanvasPoint(75, 30), { size: 36, strokeWidth: 3, legendLabel: '' }),
+    label(70, 26, 'Clinic'),
+
+    // Market — on main road near center
+    makeMarkerElement('market', toCanvasPoint(60, 32), { size: 34, strokeWidth: 3, legendLabel: '' }),
+    label(56, 28, 'Market'),
+
+    // Gathering place — near junction
+    makeMarkerElement('gathering', toCanvasPoint(44, 42), { size: 34, strokeWidth: 3, legendLabel: '' }),
+    label(38, 46, 'Mosque'),
+
+    // === Trees — visual context, no legend ===
+    makeMarkerElement('tree', toCanvasPoint(32, 30), { size: 30, legendLabel: '' }),
+    makeMarkerElement('tree', toCanvasPoint(56, 55), { size: 30, legendLabel: '' }),
+    makeMarkerElement('tree', toCanvasPoint(78, 78), { size: 30, legendLabel: '' }),
+    makeMarkerElement('tree', toCanvasPoint(88, 40), { size: 28, legendLabel: '' }),
+    makeMarkerElement('tree', toCanvasPoint(6, 50), { size: 28, legendLabel: '' }),
   ];
 
-  // Upstream houses — near livestock, not along stream, mostly non-cases
+  // === Upstream houses — along main road, mostly non-cases ===
   const upstreamHouses = [
-    [15, 42, 'noncase'], [25, 38, 'noncase'], [36, 44, 'noncase'],
+    [20, 33, 'noncase'], [28, 44, 'noncase'], [35, 35, 'noncase'],
+    [30, 50, 'noncase'],
   ] as const;
 
   for (const [x, y, id] of upstreamHouses) {
-    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 34, strokeWidth: 3 }));
+    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 32, strokeWidth: 3 }));
   }
 
-  // Downstream houses — along/below stream after water collection point, cases cluster here
+  // === Downstream houses — along secondary road and lane, cases cluster ===
   const downstreamHouses = [
-    [58, 58, 'case'], [66, 62, 'case'], [74, 56, 'case'],
-    [80, 62, 'case'], [52, 66, 'noncase'], [88, 58, 'noncase'],
-    [68, 72, 'noncase'],
+    [48, 56, 'case'], [52, 72, 'case'], [58, 62, 'case'],
+    [64, 72, 'case'], [70, 64, 'case'],
+    [46, 64, 'noncase'], [56, 80, 'noncase'], [76, 72, 'noncase'],
+    [82, 64, 'noncase'],
   ] as const;
 
   for (const [x, y, id] of downstreamHouses) {
-    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 34, strokeWidth: 3 }));
+    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 32, strokeWidth: 3 }));
   }
 
   return {
