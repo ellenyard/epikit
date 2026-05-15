@@ -106,6 +106,8 @@ const markerLibrary: MarkerDefinition[] = [
   { id: 'case', label: 'Case', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: true, legendLabel: 'Case' },
   { id: 'noncase', label: 'Non-case / control', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: false, legendLabel: 'Non-case' },
   { id: 'household', label: 'House', shape: 'house', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'House' },
+  { id: 'case-household', label: 'Case household', shape: 'house', defaultColor: '#111827', defaultFillPattern: 'solid', filled: true, legendLabel: 'Case household' },
+  { id: 'noncase-household', label: 'Non-case household', shape: 'house', defaultColor: '#111827', defaultFillPattern: 'solid', filled: false, legendLabel: 'Non-case household' },
   { id: 'school', label: 'School', shape: 'school', defaultColor: '#1F2937', defaultFillPattern: 'dots', filled: false, legendLabel: 'School' },
   { id: 'clinic', label: 'Clinic', shape: 'clinic', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Clinic / health facility' },
   { id: 'market', label: 'Market', shape: 'market', defaultColor: '#1F2937', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Market / shop' },
@@ -1579,21 +1581,24 @@ function makeVillageSketchTemplate() {
   const label = (x: number, y: number, text: string, size = 16): SketchElement =>
     createElement({ type: 'label', start: toCanvasPoint(x, y), text, color: '#111827', size, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false });
 
+  const tree = (x: number, y: number, size = 28): SketchElement =>
+    makeMarkerElement('tree', toCanvasPoint(x, y), { size, legendLabel: '' });
+
   const elements: SketchElement[] = [
-    // === Roads ===
-    // Main road — runs left to right across upper-middle
-    makeLineElement('curve', toCanvasPoint(3, 38), toCanvasPoint(97, 35), {
+    // === Roads — connected network ===
+    // Main road — straight horizontal across upper third
+    makeLineElement('line', toCanvasPoint(3, 36), toCanvasPoint(97, 36), {
       color: '#9CA3AF',
       strokeWidth: 7,
       legendLabel: 'Road',
     }),
-    // Secondary road — branches south from main road
-    makeLineElement('curve', toCanvasPoint(50, 36), toCanvasPoint(55, 92), {
+    // Secondary road — straight south from main road at x=50
+    makeLineElement('line', toCanvasPoint(50, 36), toCanvasPoint(50, 92), {
       color: '#9CA3AF',
       strokeWidth: 5,
     }),
-    // Small lane — branches east off secondary road
-    makeLineElement('curve', toCanvasPoint(53, 65), toCanvasPoint(90, 68), {
+    // Lane — curves east from secondary road
+    makeLineElement('curve', toCanvasPoint(50, 66), toCanvasPoint(92, 62), {
       color: '#9CA3AF',
       strokeWidth: 4,
     }),
@@ -1606,70 +1611,66 @@ function makeVillageSketchTemplate() {
       legendLabel: 'Livestock pen',
     }),
     label(5, 17, 'Livestock pen'),
-    // Animals inside pen — no legend label (pen area covers it)
     makeMarkerElement('animal-pen', toCanvasPoint(8, 25), { size: 26, strokeWidth: 2, legendLabel: '' }),
     makeMarkerElement('animal-pen', toCanvasPoint(17, 25), { size: 26, strokeWidth: 2, legendLabel: '' }),
 
     // === Stream — flows from near livestock diagonally to lower right ===
-    makeLineElement('wavy', toCanvasPoint(24, 20), toCanvasPoint(42, 42), {
+    makeLineElement('wavy', toCanvasPoint(24, 20), toCanvasPoint(40, 40), {
       color: '#2563EB',
       strokeWidth: 5,
       legendLabel: 'Stream',
     }),
-    makeLineElement('wavy', toCanvasPoint(42, 42), toCanvasPoint(65, 62), {
+    makeLineElement('wavy', toCanvasPoint(40, 40), toCanvasPoint(60, 60), {
       color: '#2563EB',
       strokeWidth: 5,
     }),
-    makeLineElement('wavy', toCanvasPoint(65, 62), toCanvasPoint(85, 90), {
+    makeLineElement('wavy', toCanvasPoint(60, 60), toCanvasPoint(82, 88), {
       color: '#2563EB',
       strokeWidth: 5,
     }),
 
     // === Water collection point ===
-    makeMarkerElement('water-source', toCanvasPoint(48, 48), { size: 32, strokeWidth: 3, legendLabel: 'Water collection point' }),
-    label(51, 47, 'Water collection\npoint'),
+    makeMarkerElement('water-source', toCanvasPoint(45, 44), { size: 32, strokeWidth: 3, legendLabel: 'Water collection point' }),
+    label(48, 43, 'Water collection\npoint'),
 
-    // === Landmarks along main road — no legend entries, just map labels ===
-    // School — upstream end
+    // === Landmarks — labeled on map, no legend entries ===
     makeMarkerElement('school', toCanvasPoint(15, 42), { size: 36, strokeWidth: 3, legendLabel: '' }),
     label(10, 47, 'School'),
 
-    // Clinic — on main road
-    makeMarkerElement('clinic', toCanvasPoint(75, 30), { size: 36, strokeWidth: 3, legendLabel: '' }),
-    label(70, 26, 'Clinic'),
+    makeMarkerElement('clinic', toCanvasPoint(82, 32), { size: 36, strokeWidth: 3, legendLabel: '' }),
+    label(77, 28, 'Clinic'),
 
-    // Market — on main road near center
-    makeMarkerElement('market', toCanvasPoint(60, 32), { size: 34, strokeWidth: 3, legendLabel: '' }),
-    label(56, 28, 'Market'),
+    makeMarkerElement('market', toCanvasPoint(62, 32), { size: 34, strokeWidth: 3, legendLabel: '' }),
+    label(58, 28, 'Market'),
 
-    // Gathering place — near junction
-    makeMarkerElement('gathering', toCanvasPoint(44, 42), { size: 34, strokeWidth: 3, legendLabel: '' }),
-    label(38, 46, 'Mosque'),
+    makeMarkerElement('gathering', toCanvasPoint(42, 32), { size: 34, strokeWidth: 3, legendLabel: '' }),
+    label(37, 28, 'Mosque'),
 
-    // === Trees — visual context, no legend ===
-    makeMarkerElement('tree', toCanvasPoint(32, 30), { size: 30, legendLabel: '' }),
-    makeMarkerElement('tree', toCanvasPoint(56, 55), { size: 30, legendLabel: '' }),
-    makeMarkerElement('tree', toCanvasPoint(78, 78), { size: 30, legendLabel: '' }),
-    makeMarkerElement('tree', toCanvasPoint(88, 40), { size: 28, legendLabel: '' }),
-    makeMarkerElement('tree', toCanvasPoint(6, 50), { size: 28, legendLabel: '' }),
+    // === Tree clusters — visual context, no legend ===
+    tree(30, 26), tree(33, 30), tree(35, 24),
+    tree(55, 52), tree(58, 56),
+    tree(74, 74), tree(77, 78), tree(80, 73),
+    tree(90, 38), tree(93, 42),
+    tree(5, 52), tree(8, 56),
   ];
 
-  // === Upstream houses — along main road, mostly non-cases ===
+  // === Upstream households — along main road, non-cases ===
   const upstreamHouses = [
-    [20, 33, 'noncase'], [28, 44, 'noncase'], [35, 35, 'noncase'],
-    [30, 50, 'noncase'],
+    [20, 32, 'noncase-household'], [28, 42, 'noncase-household'],
+    [35, 42, 'noncase-household'], [26, 50, 'noncase-household'],
   ] as const;
 
   for (const [x, y, id] of upstreamHouses) {
     elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 32, strokeWidth: 3 }));
   }
 
-  // === Downstream houses — along secondary road and lane, cases cluster ===
+  // === Downstream households — along secondary road and lane, cases cluster ===
   const downstreamHouses = [
-    [48, 56, 'case'], [52, 72, 'case'], [58, 62, 'case'],
-    [64, 72, 'case'], [70, 64, 'case'],
-    [46, 64, 'noncase'], [56, 80, 'noncase'], [76, 72, 'noncase'],
-    [82, 64, 'noncase'],
+    [46, 54, 'case-household'], [54, 56, 'case-household'],
+    [47, 72, 'case-household'], [54, 70, 'case-household'],
+    [62, 58, 'case-household'],
+    [44, 62, 'noncase-household'], [54, 82, 'noncase-household'],
+    [66, 66, 'noncase-household'], [78, 58, 'noncase-household'],
   ] as const;
 
   for (const [x, y, id] of downstreamHouses) {
@@ -1678,7 +1679,7 @@ function makeVillageSketchTemplate() {
 
   return {
     title: 'Sketch of outbreak village',
-    subtitle: 'Cases cluster downstream of livestock pen and water collection point. Not to scale.',
+    subtitle: 'Case households cluster downstream of livestock pen and water collection point. Not to scale.',
     elements,
   };
 }
