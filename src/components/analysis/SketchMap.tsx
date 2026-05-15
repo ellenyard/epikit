@@ -223,6 +223,7 @@ const makeAreaElement = (
 export function SketchMap() {
   const svgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+  const clipboardRef = useRef<SketchElement | null>(null);
   const [elements, setElements] = useState<SketchElement[]>([]);
   const [draft, setDraft] = useState<SketchElement | null>(null);
   const [tool, setTool] = useState<SketchTool>('marker');
@@ -396,9 +397,27 @@ export function SketchMap() {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isTextEntryTarget(event.target)) return;
 
-      if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+      const mod = event.metaKey || event.ctrlKey;
+
+      if (mod && event.key === 'z') {
         event.preventDefault();
         undo();
+        return;
+      }
+
+      if (mod && event.key === 'c' && selectedId) {
+        event.preventDefault();
+        const element = elements.find(el => el.id === selectedId);
+        if (element) clipboardRef.current = element;
+        return;
+      }
+
+      if (mod && event.key === 'v' && clipboardRef.current) {
+        event.preventDefault();
+        const duplicate = moveElement({ ...clipboardRef.current, id: createId() }, 26, 26);
+        setElements(previous => [...previous, duplicate]);
+        setSelectedId(duplicate.id);
+        clipboardRef.current = duplicate;
         return;
       }
 
@@ -411,7 +430,7 @@ export function SketchMap() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId]);
+  }, [selectedId, elements]);
 
   const duplicateSelected = () => {
     if (!selectedElement) return;
