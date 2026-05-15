@@ -20,7 +20,6 @@ type MarkerShape =
   | 'square'
   | 'diamond'
   | 'cross'
-  | 'sprayer'
   | 'animal'
   | 'school'
   | 'clinic'
@@ -28,7 +27,8 @@ type MarkerShape =
   | 'latrine'
   | 'waste'
   | 'market'
-  | 'bridge';
+  | 'food'
+  | 'gathering';
 
 interface Point {
   x: number;
@@ -117,8 +117,8 @@ const markerLibrary: MarkerDefinition[] = [
   { id: 'tree', label: 'Tree', shape: 'tree', defaultColor: '#166534', defaultFillPattern: 'dots', filled: false, legendLabel: 'Tree' },
   { id: 'animal-pen', label: 'Animal pen', shape: 'animal', defaultColor: '#374151', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Animal pen / pasture' },
   { id: 'animal-illness', label: 'Animal illness', shape: 'paw', defaultColor: '#7C2D12', defaultFillPattern: 'dots', filled: false, legendLabel: 'Reported animal illness' },
-  { id: 'pesticide-use', label: 'Pesticide use', shape: 'sprayer', defaultColor: '#92400E', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Pesticide use' },
-  { id: 'bridge', label: 'Bridge / crossing', shape: 'bridge', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'Bridge / crossing' },
+  { id: 'food-source', label: 'Food source / kitchen', shape: 'food', defaultColor: '#92400E', defaultFillPattern: 'solid', filled: false, legendLabel: 'Food source / kitchen' },
+  { id: 'gathering', label: 'Gathering place', shape: 'gathering', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Gathering place' },
 ];
 
 const patternOptions: Array<{ id: FillPattern; label: string }> = [
@@ -237,6 +237,7 @@ export function SketchMap() {
   const [subtitle, setSubtitle] = useState('Not to scale; adapted for teaching.');
   const [showLegend, setShowLegend] = useState(true);
   const [legendPosition, setLegendPosition] = useState<LegendPosition>('side');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ id: string; lastPoint: Point } | null>(null);
@@ -390,15 +391,20 @@ export function SketchMap() {
   };
 
   useEffect(() => {
-    if (!selectedId) return;
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
       if (isTextEntryTarget(event.target)) return;
 
-      event.preventDefault();
-      setElements(previous => previous.filter(element => element.id !== selectedId));
-      setSelectedId(null);
+      if ((event.metaKey || event.ctrlKey) && event.key === 'z') {
+        event.preventDefault();
+        undo();
+        return;
+      }
+
+      if (selectedId && (event.key === 'Delete' || event.key === 'Backspace')) {
+        event.preventDefault();
+        setElements(previous => previous.filter(element => element.id !== selectedId));
+        setSelectedId(null);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -483,7 +489,11 @@ export function SketchMap() {
 
   return (
     <div className="h-full flex flex-col lg:flex-row bg-white">
-      <div className="w-full lg:w-96 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 p-4 overflow-y-auto max-h-[52vh] lg:max-h-none">
+      <div className={`flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 overflow-y-auto transition-all ${
+        sidebarOpen ? 'w-full lg:w-80 p-4 max-h-[52vh] lg:max-h-none' : 'w-full lg:w-10 p-0 max-h-0 lg:max-h-none'
+      }`}>
+        {sidebarOpen && (
+        <>
         <TabHeader
           title="Sketch Map"
           description="Build schematic field maps with symbols, labels, legends, and report-ready exports."
@@ -872,11 +882,19 @@ export function SketchMap() {
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
 
-      <div className="flex-1 bg-gray-100 p-4 overflow-auto">
-        <div className="flex flex-col xl:flex-row gap-4 mx-auto" style={{ maxWidth: legendPosition === 'side' && showLegend && legendItems.length > 0 ? 1560 : 1200 }}>
-          <div ref={exportRef} className="flex-1 bg-white shadow-sm min-w-0">
+      <div className="flex-1 bg-gray-100 p-4 overflow-auto relative">
+        <button
+          onClick={() => setSidebarOpen(previous => !previous)}
+          className="absolute top-2 left-2 z-10 px-2 py-1 text-xs font-medium text-gray-600 bg-white border border-gray-300 rounded-md hover:bg-gray-50 shadow-sm"
+        >
+          {sidebarOpen ? 'Hide panel' : 'Show panel'}
+        </button>
+        <div ref={exportRef} className="flex flex-col xl:flex-row gap-4 mx-auto" style={{ maxWidth: legendPosition === 'side' && showLegend && legendItems.length > 0 ? 1560 : 1200 }}>
+          <div className="flex-1 bg-white shadow-sm min-w-0">
             <svg
               ref={svgRef}
               viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
@@ -1218,15 +1236,16 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
     );
   }
 
-  if (shape === 'sprayer') {
+  if (shape === 'food') {
+    // Cooking pot with steam
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" strokeLinejoin="round" opacity={element.opacity}>
-        <rect x={x - q * 1.25} y={y - q} width={q * 1.5} height={q * 1.8} />
-        <line x1={x + q * 0.25} y1={y - q * 0.2} x2={x + half} y2={y - half} />
-        <line x1={x + half} y1={y - half} x2={x + half * 1.25} y2={y - half} />
-        <circle cx={x + half * 1.4} cy={y - half * 0.9} r="1.5" fill={color} />
-        <circle cx={x + half * 1.25} cy={y - half * 0.55} r="1.5" fill={color} />
-        <circle cx={x + half * 1.55} cy={y - half * 0.55} r="1.5" fill={color} />
+        <path d={`M ${x - q} ${y - eighth} Q ${x - q} ${y + half} ${x} ${y + half} Q ${x + q} ${y + half} ${x + q} ${y - eighth}`} />
+        <line x1={x - q * 1.1} y1={y - eighth} x2={x + q * 1.1} y2={y - eighth} />
+        <path d={`M ${x - eighth} ${y - eighth} L ${x - eighth} ${y - q}`} fill="none" />
+        <path d={`M ${x + eighth} ${y - eighth} L ${x + eighth} ${y - q}`} fill="none" />
+        <path d={`M ${x - q * 0.5} ${y - q * 1.2} Q ${x - q * 0.35} ${y - half * 1.1} ${x - q * 0.5} ${y - half * 1.2}`} fill="none" />
+        <path d={`M ${x + q * 0.5} ${y - q * 1.2} Q ${x + q * 0.35} ${y - half * 1.1} ${x + q * 0.5} ${y - half * 1.2}`} fill="none" />
       </g>
     );
   }
@@ -1312,14 +1331,13 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
     );
   }
 
-  if (shape === 'bridge') {
+  if (shape === 'gathering') {
+    // Building with arched doorway (mosque/church/hall)
     return (
-      <g stroke={color} strokeWidth={strokeWidth} fill="none" strokeLinecap="round" opacity={element.opacity}>
-        <path d={`M ${x - half} ${y + q} Q ${x} ${y - half} ${x + half} ${y + q}`} />
-        <line x1={x - half} y1={y + q} x2={x + half} y2={y + q} />
-        <line x1={x - q} y1={y} x2={x - q} y2={y + q} />
-        <line x1={x} y1={y - q * 0.25} x2={x} y2={y + q} />
-        <line x1={x + q} y1={y} x2={x + q} y2={y + q} />
+      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" strokeLinecap="round" opacity={element.opacity}>
+        <rect x={x - half} y={y - q * 0.4} width={size} height={half * 1.1} />
+        <path d={`M ${x - half * 1.05} ${y - q * 0.4} L ${x} ${y - half} L ${x + half * 1.05} ${y - q * 0.4}`} />
+        <path d={`M ${x - eighth} ${y + half * 0.65} Q ${x} ${y - eighth} ${x + eighth} ${y + half * 0.65}`} fill="#FFFFFF" />
       </g>
     );
   }
@@ -1614,86 +1632,112 @@ function makeVillageSketchTemplate() {
 
 function makeBoardingSchoolTemplate() {
   const elements: SketchElement[] = [
-    // Ward A — left dormitory
-    makeAreaElement('area', toCanvasPoint(5, 20), toCanvasPoint(42, 55), {
+    // Ward A — top left
+    makeAreaElement('area', toCanvasPoint(3, 10), toCanvasPoint(35, 40), {
       color: '#4B5563',
       fillColor: '#4B5563',
       fillPattern: 'solid',
       legendLabel: 'Ward / dormitory',
       opacity: 0.12,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(15, 24), text: 'Ward A', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(11, 14), text: 'Ward A', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
-    // Ward B — right dormitory
-    makeAreaElement('area', toCanvasPoint(58, 20), toCanvasPoint(95, 55), {
+    // Ward B — top right
+    makeAreaElement('area', toCanvasPoint(40, 10), toCanvasPoint(72, 40), {
       color: '#4B5563',
       fillColor: '#4B5563',
       fillPattern: 'solid',
-      legendLabel: 'Ward / dormitory',
       opacity: 0.12,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(69, 24), text: 'Ward B', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(48, 14), text: 'Ward B', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
-    // Dining hall
-    makeAreaElement('area', toCanvasPoint(28, 68), toCanvasPoint(72, 88), {
+    // Main dining hall — shared by A and B
+    makeAreaElement('area', toCanvasPoint(20, 46), toCanvasPoint(55, 62), {
       color: '#92400E',
       fillColor: '#92400E',
       fillPattern: 'solid',
-      legendLabel: 'Dining hall / eating area',
+      legendLabel: 'Main dining hall',
       opacity: 0.12,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(38, 77), text: 'Dining hall', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(24, 54), text: 'Main dining hall', color: '#111827', size: 18, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Ward C — bottom, separate
+    makeAreaElement('area', toCanvasPoint(3, 70), toCanvasPoint(35, 95), {
+      color: '#2563EB',
+      fillColor: '#2563EB',
+      fillPattern: 'solid',
+      legendLabel: 'Ward C (no cases)',
+      opacity: 0.1,
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(8, 74), text: 'Ward C', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Ward C dining hall — separate
+    makeAreaElement('area', toCanvasPoint(40, 75), toCanvasPoint(62, 90), {
+      color: '#166534',
+      fillColor: '#166534',
+      fillPattern: 'solid',
+      legendLabel: 'Ward C dining hall',
+      opacity: 0.1,
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(42, 82), text: 'Ward C dining', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
     // Latrine block
-    makeAreaElement('area', toCanvasPoint(80, 68), toCanvasPoint(95, 82), {
+    makeAreaElement('area', toCanvasPoint(78, 10), toCanvasPoint(97, 25), {
       color: '#6B7280',
       fillColor: '#6B7280',
       fillPattern: 'solid',
       legendLabel: 'Latrine block',
       opacity: 0.12,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(82, 75), text: 'Latrines', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(80, 18), text: 'Latrines', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
-    // Paths between buildings
-    makeLineElement('line', toCanvasPoint(42, 38), toCanvasPoint(58, 38), {
+    // Walkways
+    makeLineElement('line', toCanvasPoint(35, 25), toCanvasPoint(40, 25), {
       color: '#6B7280',
       strokeWidth: 4,
       lineStyle: 'dashed',
       legendLabel: 'Walkway',
     }),
-    makeLineElement('line', toCanvasPoint(24, 55), toCanvasPoint(40, 68), {
+    makeLineElement('line', toCanvasPoint(18, 40), toCanvasPoint(30, 46), {
       color: '#6B7280',
       strokeWidth: 4,
       lineStyle: 'dashed',
     }),
-    makeLineElement('line', toCanvasPoint(76, 55), toCanvasPoint(60, 68), {
+    makeLineElement('line', toCanvasPoint(56, 40), toCanvasPoint(44, 46), {
       color: '#6B7280',
       strokeWidth: 4,
       lineStyle: 'dashed',
     }),
 
     // Water source
-    makeMarkerElement('water-source', toCanvasPoint(5, 75), { size: 34, strokeWidth: 3 }),
+    makeMarkerElement('water-source', toCanvasPoint(78, 35), { size: 34, strokeWidth: 3 }),
   ];
 
-  // Beds in Ward A — two rows of 5
-  const bedMarker: Partial<SketchElement> = { size: 24, strokeWidth: 2 };
-  for (let index = 0; index < 5; index += 1) {
-    const x = 10 + index * 7;
-    elements.push(makeMarkerElement('case', toCanvasPoint(x, 35), bedMarker));
-    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 46), bedMarker));
+  // Beds in Ward A — cases and non-cases
+  const bedMarker: Partial<SketchElement> = { size: 22, strokeWidth: 2 };
+  for (let index = 0; index < 4; index += 1) {
+    const x = 7 + index * 7;
+    elements.push(makeMarkerElement('case', toCanvasPoint(x, 24), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 33), bedMarker));
   }
 
-  // Beds in Ward B — two rows of 5
-  for (let index = 0; index < 5; index += 1) {
-    const x = 63 + index * 7;
-    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 35), bedMarker));
-    elements.push(makeMarkerElement('case', toCanvasPoint(x, 46), bedMarker));
+  // Beds in Ward B — cases and non-cases
+  for (let index = 0; index < 4; index += 1) {
+    const x = 44 + index * 7;
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 24), bedMarker));
+    elements.push(makeMarkerElement('case', toCanvasPoint(x, 33), bedMarker));
+  }
+
+  // Beds in Ward C — all non-cases (no outbreak here)
+  for (let index = 0; index < 4; index += 1) {
+    const x = 7 + index * 7;
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 80), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 89), bedMarker));
   }
 
   return {
     title: 'Boarding school outbreak sketch',
-    subtitle: 'Case and non-case beds by ward, shared dining hall, and sanitation facilities. Not to scale.',
+    subtitle: 'Wards A and B share a main dining hall (cases present). Ward C has a separate dining hall (no cases). Not to scale.',
     elements,
   };
 }
