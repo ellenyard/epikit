@@ -223,7 +223,7 @@ export function getStorageUsage(): { used: number; available: number; percentage
       available: maxSize - totalSize,
       percentage: (totalSize / maxSize) * 100,
     };
-  } catch (e) {
+  } catch {
     return { used: 0, available: 0, percentage: 0 };
   }
 }

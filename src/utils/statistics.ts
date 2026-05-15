@@ -294,7 +294,7 @@ function gammaContinuedFraction(x: number, a: number): number {
 function logGamma(x: number): number {
   const coefficients = [
     76.18009172947146,
-    -86.50532032941677,
+    -86.5053203294168,
     24.01409824083091,
     -1.231739572450155,
     0.1208650973866179e-2,
@@ -310,7 +310,7 @@ function logGamma(x: number): number {
     sum += coefficients[j] / ++y;
   }
 
-  return -tmp + Math.log(2.5066282746310005 * sum / x);
+  return -tmp + Math.log(2.506628274631 * sum / x);
 }
 
 // =============================================================================

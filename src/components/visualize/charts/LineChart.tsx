@@ -248,8 +248,6 @@ export function LineChart({ dataset }: LineChartProps) {
   const seriesData: Series[] = useMemo(() => {
     if (!xVar || xValues.length === 0) return [];
 
-    const xIndexMap = new Map(xValues.map((v, i) => [v, i]));
-
     if (!strataVar) {
       // Single series
       const points = buildSeriesPoints(
@@ -257,8 +255,7 @@ export function LineChart({ dataset }: LineChartProps) {
         xVar,
         valueMode,
         yVar,
-        xValues,
-        xIndexMap
+        xValues
       );
       return [{
         name: 'All',
@@ -288,8 +285,7 @@ export function LineChart({ dataset }: LineChartProps) {
         xVar,
         valueMode,
         yVar,
-        xValues,
-        xIndexMap
+        xValues
       );
       return {
         name: strataValue,
@@ -533,7 +529,6 @@ export function LineChart({ dataset }: LineChartProps) {
                 }
 
                 // Build series for facet
-                const xIndexMap = new Map(facetXValues.map((v, i) => [v, i]));
                 let facetSeries: Series[] = [];
 
                 if (!strataVar) {
@@ -542,8 +537,7 @@ export function LineChart({ dataset }: LineChartProps) {
                     xVar,
                     valueMode,
                     yVar,
-                    facetXValues,
-                    xIndexMap
+                    facetXValues
                   );
                   facetSeries = [{
                     name: 'All',
@@ -571,8 +565,7 @@ export function LineChart({ dataset }: LineChartProps) {
                       xVar,
                       valueMode,
                       yVar,
-                      facetXValues,
-                      xIndexMap
+                      facetXValues
                     );
                     return {
                       name: strataValue,
@@ -624,8 +617,7 @@ function buildSeriesPoints(
   xVar: string,
   valueMode: ValueMode,
   yVar: string,
-  xValues: string[],
-  _xIndexMap: Map<string, number>
+  xValues: string[]
 ): SeriesPoint[] {
   if (valueMode === 'count') {
     // Count occurrences per x-value

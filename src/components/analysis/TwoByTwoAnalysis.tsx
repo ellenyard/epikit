@@ -172,41 +172,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     }
   }, [caseDefinitionColumns, dataset.records, outcomeVar]);
 
-  // Auto-select initial exposure when provided from parent (e.g., from Variable Explorer)
-  useEffect(() => {
-    if (initialExposure && exposureColumns.some(col => col.key === initialExposure)) {
-      if (!selectedExposures.includes(initialExposure)) {
-        setSelectedExposures(prev => [...prev, initialExposure]);
-        // Set default exposed value
-        if (!exposurePositiveValues[initialExposure]) {
-          const values = new Set<string>();
-          dataset.records.forEach(r => {
-            const v = r[initialExposure];
-            if (v !== null && v !== undefined && v !== '') {
-              values.add(String(v));
-            }
-          });
-          const valuesArray = Array.from(values).sort();
-          const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
-          const found = valuesArray.find(v =>
-            positiveKeywords.some(kw => v.toLowerCase() === kw)
-          );
-          const defaultValue = found || valuesArray[0] || '';
-          if (defaultValue) {
-            setExposurePositiveValues(prev => ({ ...prev, [initialExposure]: defaultValue }));
-            // Set default reference value for multi-level variables
-            if (valuesArray.length > 2) {
-              const refValue = detectReferenceValue(initialExposure, defaultValue);
-              setExposureReferenceValues(prev => ({ ...prev, [initialExposure]: refValue }));
-            }
-          }
-        }
-      }
-    }
-  }, [initialExposure, exposureColumns, selectedExposures, exposurePositiveValues, dataset.records]);
-
   // Get unique values for a specific exposure variable
-  const getExposureValues = (expVar: string): string[] => {
+  const getExposureValues = useCallback((expVar: string): string[] => {
     const values = new Set<string>();
     dataset.records.forEach(r => {
       const v = r[expVar];
@@ -215,10 +182,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       }
     });
     return Array.from(values).sort();
-  };
+  }, [dataset.records]);
 
   // Auto-detect "Yes" as exposed value for an exposure
-  const detectExposedValue = (expVar: string): string => {
+  const detectExposedValue = useCallback((expVar: string): string => {
     const values = getExposureValues(expVar);
     // Try common positive indicators
     const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
@@ -226,10 +193,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       positiveKeywords.some(kw => v.toLowerCase() === kw)
     );
     return found || values[0] || '';
-  };
+  }, [getExposureValues]);
 
   // Auto-detect reference value for a multi-level exposure (e.g., "No", "None", or most common value)
-  const detectReferenceValue = (expVar: string, excludeValue?: string): string => {
+  const detectReferenceValue = useCallback((expVar: string, excludeValue?: string): string => {
     const values = getExposureValues(expVar);
     const candidates = excludeValue ? values.filter(v => v !== excludeValue) : values;
     // Try common reference/unexposed indicators
@@ -258,14 +225,40 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       }
     }
     return mostCommon;
-  };
+  }, [dataset.records, getExposureValues]);
 
   // Check if a record is a case
-  const isCase = (record: CaseRecord): boolean => {
+  const isCase = useCallback((record: CaseRecord): boolean => {
     if (!outcomeVar || caseValues.size === 0) return false;
     const value = String(record[outcomeVar] ?? '');
     return caseValues.has(value);
-  };
+  }, [caseValues, outcomeVar]);
+
+  // Auto-select initial exposure when provided from parent (e.g., from Variable Explorer)
+  useEffect(() => {
+    if (initialExposure && exposureColumns.some(col => col.key === initialExposure)) {
+      if (!selectedExposures.includes(initialExposure)) {
+        setSelectedExposures(prev => [...prev, initialExposure]);
+        // Set default exposed value
+        if (!exposurePositiveValues[initialExposure]) {
+          const values = getExposureValues(initialExposure);
+          const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
+          const found = values.find(v =>
+            positiveKeywords.some(kw => v.toLowerCase() === kw)
+          );
+          const defaultValue = found || values[0] || '';
+          if (defaultValue) {
+            setExposurePositiveValues(prev => ({ ...prev, [initialExposure]: defaultValue }));
+            // Set default reference value for multi-level variables
+            if (values.length > 2) {
+              const refValue = detectReferenceValue(initialExposure, defaultValue);
+              setExposureReferenceValues(prev => ({ ...prev, [initialExposure]: refValue }));
+            }
+          }
+        }
+      }
+    }
+  }, [initialExposure, exposureColumns, selectedExposures, exposurePositiveValues, getExposureValues, detectReferenceValue]);
 
   // Export dataset with only the records used in the current analysis
   const exportDatasetCSV = useCallback(() => {
@@ -383,12 +376,12 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         return propB - propA;
       }
     });
-  }, [filteredRecords, dataset.columns, dataset.records, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, exposureReferenceValues, studyDesign]);
+  }, [filteredRecords, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, exposureReferenceValues, studyDesign, detectExposedValue, detectReferenceValue, getExposureValues, isCase]);
 
   // Count total cases
   const totalCases = useMemo(() => {
     return filteredRecords.filter(isCase).length;
-  }, [filteredRecords, outcomeVar, caseValues]);
+  }, [filteredRecords, isCase]);
 
   const formatMeasure = (n: number): string => {
     if (!isFinite(n)) return 'Undefined';
