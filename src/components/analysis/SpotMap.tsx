@@ -18,9 +18,7 @@ interface SpotMapProps {
 
 type ColorScheme = 'default' | 'classification' | 'colorblind' | 'sequential';
 type CoordinateAxis = 'lat' | 'lng';
-type ExportPreset = 'powerpoint' | 'report' | 'manuscript' | 'square' | 'highres';
 type MapStyle = 'street' | 'quiet' | 'satellite' | 'topo' | 'none';
-type ExportBaseMap = 'current' | 'quiet' | 'none';
 
 interface MapCase {
   record: CaseRecord;
@@ -60,13 +58,7 @@ const sequentialColors = [
   '#fcbba1', '#fee0d2', '#fee5d9',
 ];
 
-const exportPresets: Record<ExportPreset, { label: string; scale: number }> = {
-  powerpoint: { label: 'PowerPoint 16:9', scale: 2 },
-  report: { label: 'Report', scale: 2 },
-  manuscript: { label: 'Manuscript', scale: 3 },
-  square: { label: 'Square', scale: 2 },
-  highres: { label: 'High-resolution PNG', scale: 3 },
-};
+const spotMapExportScale = 2;
 
 // Known case status colors used when values match epidemiological terminology
 const caseStatusColors: Record<string, string> = {
@@ -226,6 +218,153 @@ function waitForNextPaint(): Promise<void> {
   return new Promise(resolve => {
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
   });
+}
+
+async function waitForMapImages(element: HTMLElement): Promise<void> {
+  const images = Array.from(element.querySelectorAll('img'));
+  const pendingImages = images.filter(image => !image.complete);
+
+  if (pendingImages.length > 0) {
+    await Promise.race<void>([
+      Promise.all(pendingImages.map(image => new Promise<void>(resolve => {
+        image.addEventListener('load', () => resolve(), { once: true });
+        image.addEventListener('error', () => resolve(), { once: true });
+      }))).then(() => undefined),
+      new Promise(resolve => window.setTimeout(resolve, 2500)),
+    ]);
+  }
+
+  await waitForNextPaint();
+}
+
+function addSpotMapExportStyles(clonedDocument: Document) {
+  const style = clonedDocument.createElement('style');
+  style.textContent = `
+    [data-spot-map-export="true"] *,
+    [data-spot-map-export="true"] *::before,
+    [data-spot-map-export="true"] *::after {
+      background-color: transparent !important;
+      border-color: #d1d5db !important;
+      box-shadow: none !important;
+      color: #111827 !important;
+      outline-color: #2563eb !important;
+      text-decoration-color: #111827 !important;
+      text-shadow: none !important;
+    }
+
+    [data-spot-map-export="true"],
+    [data-spot-map-export="true"] .leaflet-container {
+      background: #f3f4f6 !important;
+    }
+
+    [data-spot-map-export="true"] .leaflet-control,
+    [data-spot-map-export="true"] .leaflet-control a,
+    [data-spot-map-export="true"] .leaflet-control span {
+      background-color: #ffffff !important;
+      color: #111827 !important;
+    }
+
+    [data-spot-map-export="true"] .bg-white,
+    [data-spot-map-export="true"] .bg-white\\/90,
+    [data-spot-map-export="true"] .bg-white\\/95 {
+      background-color: rgba(255, 255, 255, 0.95) !important;
+    }
+
+    [data-spot-map-export="true"] .bg-amber-50 {
+      background-color: #fffbeb !important;
+      border-color: #fde68a !important;
+    }
+
+    [data-spot-map-export="true"] .bg-red-50 {
+      background-color: #fef2f2 !important;
+      border-color: #fca5a5 !important;
+    }
+
+    [data-spot-map-export="true"] .bg-blue-50 {
+      background-color: #eff6ff !important;
+      border-color: #bfdbfe !important;
+    }
+  `;
+  clonedDocument.head.appendChild(style);
+
+  const root = clonedDocument.querySelector('[data-spot-map-export="true"]');
+  if (!root) return;
+
+  const elements = [root, ...Array.from(root.querySelectorAll('*'))];
+  for (const element of elements) {
+    const inlineStyle = (element as HTMLElement | SVGElement).style;
+    if (!inlineStyle) continue;
+
+    inlineStyle.setProperty('background', 'transparent', 'important');
+    inlineStyle.setProperty('background-color', 'transparent', 'important');
+    inlineStyle.setProperty('background-image', 'none', 'important');
+    inlineStyle.setProperty('border-color', '#d1d5db', 'important');
+    inlineStyle.setProperty('box-shadow', 'none', 'important');
+    inlineStyle.setProperty('caret-color', '#111827', 'important');
+    inlineStyle.setProperty('color', '#111827', 'important');
+    inlineStyle.setProperty('outline-color', '#2563eb', 'important');
+    inlineStyle.setProperty('text-decoration-color', '#111827', 'important');
+    inlineStyle.setProperty('text-shadow', 'none', 'important');
+    inlineStyle.setProperty('--tw-ring-color', 'rgb(37 99 235)', 'important');
+    inlineStyle.setProperty('--tw-shadow-color', 'rgb(0 0 0 / 0.12)', 'important');
+
+    const className = element.getAttribute('class') ?? '';
+    if (
+      element === root
+      || className.includes('leaflet-container')
+    ) {
+      inlineStyle.setProperty('background', '#f3f4f6', 'important');
+      inlineStyle.setProperty('background-color', '#f3f4f6', 'important');
+    }
+
+    if (
+      className.includes('leaflet-control')
+      || className.includes('bg-white')
+    ) {
+      inlineStyle.setProperty('background', 'rgba(255, 255, 255, 0.95)', 'important');
+      inlineStyle.setProperty('background-color', 'rgba(255, 255, 255, 0.95)', 'important');
+    }
+
+    if (className.includes('bg-amber-50')) {
+      inlineStyle.setProperty('background', '#fffbeb', 'important');
+      inlineStyle.setProperty('background-color', '#fffbeb', 'important');
+      inlineStyle.setProperty('border-color', '#fde68a', 'important');
+    }
+
+    if (className.includes('bg-red-50')) {
+      inlineStyle.setProperty('background', '#fef2f2', 'important');
+      inlineStyle.setProperty('background-color', '#fef2f2', 'important');
+      inlineStyle.setProperty('border-color', '#fca5a5', 'important');
+    }
+
+    if (className.includes('bg-blue-50')) {
+      inlineStyle.setProperty('background', '#eff6ff', 'important');
+      inlineStyle.setProperty('background-color', '#eff6ff', 'important');
+      inlineStyle.setProperty('border-color', '#bfdbfe', 'important');
+    }
+  }
+}
+
+function triggerDownload(url: string, filename: string) {
+  const link = document.createElement('a');
+  link.download = filename;
+  link.href = url;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+async function downloadCanvasAsPng(canvas: HTMLCanvasElement, filename: string): Promise<void> {
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+
+  if (blob) {
+    const url = URL.createObjectURL(blob);
+    triggerDownload(url, filename);
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    return;
+  }
+
+  triggerDownload(canvas.toDataURL('image/png'), filename);
 }
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
@@ -401,8 +540,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string>('');
   const [exportError, setExportError] = useState<string>('');
-  const [exportPreset, setExportPreset] = useState<ExportPreset>(() => (saved.exportPreset as ExportPreset) || 'powerpoint');
-  const [exportBaseMap, setExportBaseMap] = useState<ExportBaseMap>(() => (saved.exportBaseMap as ExportBaseMap) || 'quiet');
   const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>(() => {
     return isObjectRecord(saved.customCategoryColors) ? saved.customCategoryColors as Record<string, string> : {};
   });
@@ -418,7 +555,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // Privacy safeguards
   const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(() => saved.obfuscateLocations !== undefined ? saved.obfuscateLocations as boolean : true);
   const [jitterDistance, setJitterDistance] = useState<number>(() => (saved.jitterDistance as number) ?? 500);
-  const [jitterIdColumn, setJitterIdColumn] = useState<string>(() => (saved.jitterIdColumn as string) || '');
 
   // Map title and caption
   const [mapTitle, setMapTitle] = useState<string>(() => (saved.mapTitle as string) ?? '');
@@ -452,12 +588,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
         enableClustering,
         filterBy,
         selectedFilterValues: Array.from(selectedFilterValues),
-        exportPreset,
-        exportBaseMap,
         customCategoryColors,
         categoryOrder,
         popupColumns,
-        jitterIdColumn,
       };
       localStorage.setItem(persistenceKey, JSON.stringify(toSave));
     } catch (e) {
@@ -465,8 +598,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
     }
   }, [persistenceKey, latColumn, lngColumn, classificationColumn, colorScheme, markerSize,
     mapStyle, obfuscateLocations, jitterDistance, mapTitle, mapCaption, showNorthArrow,
-    enableClustering, filterBy, selectedFilterValues, exportPreset, exportBaseMap, customCategoryColors,
-    categoryOrder, popupColumns, jitterIdColumn]);
+    enableClustering, filterBy, selectedFilterValues, customCategoryColors,
+    categoryOrder, popupColumns]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -514,35 +647,39 @@ export function SpotMap({ dataset }: SpotMapProps) {
 
   // Export map as PNG
   const exportMap = async () => {
-    if (!mapContainerRef.current) return;
+    const exportElement = mapContainerRef.current;
+    if (!exportElement) return;
 
     setIsExporting(true);
     setExportError('');
-    setExportStatus('Preparing a clean map export...');
+    setExportStatus('');
     try {
+      const bounds = exportElement.getBoundingClientRect();
+      if (bounds.width === 0 || bounds.height === 0) {
+        throw new Error('Map has no visible size.');
+      }
+
       await waitForNextPaint();
-      const canvas = await html2canvas(mapContainerRef.current, {
+      await waitForMapImages(exportElement);
+
+      const canvas = await html2canvas(exportElement, {
         useCORS: true,
         allowTaint: false,
         backgroundColor: '#ffffff',
-        scale: exportPresets[exportPreset].scale,
+        scale: spotMapExportScale,
         imageTimeout: 15000,
         logging: false,
         ignoreElements: element => element.classList.contains('map-export-exclude'),
+        onclone: addSpotMapExportStyles,
       });
 
-      const link = document.createElement('a');
-      link.download = `spot-map-${new Date().toISOString().split('T')[0]}.png`;
-      link.href = canvas.toDataURL('image/png');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      await downloadCanvasAsPng(canvas, `spot-map-${new Date().toISOString().split('T')[0]}.png`);
       setExportStatus('PNG downloaded.');
       window.setTimeout(() => setExportStatus(''), 4000);
     } catch (error) {
       console.error('Failed to export map:', error);
       setExportError(
-        'PNG export did not finish. Try the Street base map, then export again. If it still fails, use GeoJSON/CSV export or a browser screenshot as a fallback.'
+        'PNG export did not finish. Try another map style, then export again. If it still fails, use GeoJSON/CSV export or a browser screenshot as a fallback.'
       );
       setExportStatus('');
     } finally {
@@ -637,14 +774,11 @@ export function SpotMap({ dataset }: SpotMapProps) {
       mapStyle,
       obfuscateLocations,
       jitterDistance,
-      jitterIdColumn,
       mapTitle,
       mapCaption,
       showNorthArrow,
       enableClustering,
       popupColumns,
-      exportPreset,
-      exportBaseMap,
     };
 
     const blob = new Blob([JSON.stringify(recipe, null, 2)], { type: 'application/json' });
@@ -686,19 +820,14 @@ export function SpotMap({ dataset }: SpotMapProps) {
       if (Array.isArray(recipe.categoryOrder)) setCategoryOrder(recipe.categoryOrder.filter(value => typeof value === 'string'));
       if (typeof recipe.markerSize === 'number') setMarkerSize(recipe.markerSize);
       if (recipe.mapStyle === 'street' || recipe.mapStyle === 'quiet' || recipe.mapStyle === 'satellite' || recipe.mapStyle === 'topo' || recipe.mapStyle === 'none') setMapStyle(recipe.mapStyle);
-      if (recipe.exportBaseMap === 'current' || recipe.exportBaseMap === 'quiet' || recipe.exportBaseMap === 'none') setExportBaseMap(recipe.exportBaseMap);
       if (typeof recipe.obfuscateLocations === 'boolean') setObfuscateLocations(recipe.obfuscateLocations);
       if (typeof recipe.jitterDistance === 'number') setJitterDistance(recipe.jitterDistance);
-      setColumnIfValid(recipe.jitterIdColumn, setJitterIdColumn);
       if (typeof recipe.mapTitle === 'string') setMapTitle(recipe.mapTitle);
       if (typeof recipe.mapCaption === 'string') setMapCaption(recipe.mapCaption);
       if (typeof recipe.showNorthArrow === 'boolean') setShowNorthArrow(recipe.showNorthArrow);
       if (typeof recipe.enableClustering === 'boolean') setEnableClustering(recipe.enableClustering);
       if (Array.isArray(recipe.popupColumns)) {
         setPopupColumns(recipe.popupColumns.filter(value => typeof value === 'string' && validKeys.has(value)));
-      }
-      if (typeof recipe.exportPreset === 'string' && recipe.exportPreset in exportPresets) {
-        setExportPreset(recipe.exportPreset as ExportPreset);
       }
       setExportStatus('Map recipe loaded.');
       setExportError('');
@@ -727,15 +856,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
       c.key.toLowerCase() === 'status' ||
       c.key.toLowerCase().includes('severity')
     );
-    const stableIdCol = dataset.columns.find(c => {
-      const name = `${c.key} ${c.label}`.toLowerCase();
-      return name.includes('participant') || name.includes('case_id') || name === 'id id' || /(^|_)id($|_)/.test(c.key);
-    });
 
     if (latCol && !latColumn) setLatColumn(latCol.key);
     if (lngCol && !lngColumn) setLngColumn(lngCol.key);
     if (classCol && !classificationColumn) setClassificationColumn(classCol.key);
-    if (stableIdCol && !jitterIdColumn) setJitterIdColumn(stableIdCol.key);
   }, [
     dataset.columns,
     latitudeOptions,
@@ -743,7 +867,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
     latColumn,
     lngColumn,
     classificationColumn,
-    jitterIdColumn,
   ]);
 
   // Process cases with coordinates
@@ -765,8 +888,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
           : 'Unknown';
 
         // Apply jitter if obfuscation is enabled
-        const stableId = jitterIdColumn ? record[jitterIdColumn] : record.id;
-        const seed = `${String(stableId ?? record.id)}|${lat}|${lng}|${jitterDistance}`;
+        const seed = `${String(record.id ?? `${lat},${lng}`)}|${lat}|${lng}|${jitterDistance}`;
         const jittered = obfuscateLocations
           ? jitterCoordinates(lat, lng, jitterDistance, seed)
           : { lat, lng };
@@ -781,7 +903,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
         };
       })
       .filter((c): c is MapCase => c !== null);
-  }, [dataset.records, latColumn, lngColumn, classificationColumn, obfuscateLocations, jitterDistance, jitterIdColumn]);
+  }, [dataset.records, latColumn, lngColumn, classificationColumn, obfuscateLocations, jitterDistance]);
 
   // Apply filters if selected
   const filteredCases = useMemo(() => {
@@ -882,7 +1004,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // Default center (US)
   const defaultCenter: [number, number] = [39.8283, -98.5795];
   const defaultZoom = 4;
-  const activeMapStyle: MapStyle = isExporting && exportBaseMap !== 'current' ? exportBaseMap : mapStyle;
+  const activeMapStyle: MapStyle = mapStyle;
 
   // Info icon component with tooltip (appears below to avoid cutoff)
   const InfoTooltip = ({ text, link }: { text: string; link?: string }) => (
@@ -1155,27 +1277,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 </div>
               )}
 
-              {obfuscateLocations && (
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">
-                    Stable ID for repeatable jitter
-                  </label>
-                  <select
-                    value={jitterIdColumn}
-                    onChange={(e) => setJitterIdColumn(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-                  >
-                    <option value="">Use imported row ID</option>
-                    {dataset.columns.map(col => (
-                      <option key={col.key} value={col.key}>{col.label}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Use a stable case or participant ID so re-imported data jitter the same way.
-                  </p>
-                </div>
-              )}
-
               <p className="text-xs text-gray-500">
                 Jittered maps should not be used for exact household, road-segment, or small-neighborhood interpretation.
               </p>
@@ -1339,34 +1440,6 @@ export function SpotMap({ dataset }: SpotMapProps) {
               </p>
             </div>
 
-            {/* Export Preset */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Export Preset</label>
-              <select
-                value={exportPreset}
-                onChange={(e) => setExportPreset(e.target.value as ExportPreset)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-              >
-                {Object.entries(exportPresets).map(([value, preset]) => (
-                  <option key={value} value={value}>{preset.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Export Base Map */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Export Base Map</label>
-              <select
-                value={exportBaseMap}
-                onChange={(e) => setExportBaseMap(e.target.value as ExportBaseMap)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
-              >
-                <option value="quiet">Quiet publication map</option>
-                <option value="none">No base map</option>
-                <option value="current">Same as current view</option>
-              </select>
-            </div>
-
             {/* Marker Size */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1427,7 +1500,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
       {/* Right Panel - Map */}
       <div className="flex-1 relative min-h-[400px] lg:min-h-0">
         {latColumn && lngColumn ? (
-          <div ref={mapContainerRef} className="h-full w-full relative">
+          <div ref={mapContainerRef} className="h-full w-full relative" data-spot-map-export="true">
             {/* Map Title Overlay */}
             {mapTitle && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] max-w-lg pointer-events-none">
