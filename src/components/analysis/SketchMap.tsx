@@ -3,7 +3,7 @@ import type { PointerEvent, ReactNode } from 'react';
 import html2canvas from 'html2canvas';
 import { ExportIcons, ResultsActions, TabHeader } from '../shared';
 
-type SketchTool = 'select' | 'pen' | 'line' | 'curve' | 'wavy' | 'area' | 'irregularArea' | 'marker' | 'label';
+type SketchTool = 'pen' | 'line' | 'curve' | 'wavy' | 'area' | 'irregularArea' | 'marker' | 'label';
 type SketchBackground = 'grid' | 'dots' | 'blank';
 type FillPattern = 'solid' | 'hatch' | 'crosshatch' | 'dots' | 'waves' | 'grid';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
@@ -73,7 +73,6 @@ interface LegendItem {
 
 interface ElementRenderOptions {
   selectedId: string | null;
-  selectionEnabled: boolean;
   onSelect: (event: PointerEvent<SVGGElement>, id: string) => void;
 }
 
@@ -85,7 +84,6 @@ interface ToolGroup { group: string; items: ToolItem[] }
 type ToolEntry = ToolItem | ToolGroup;
 
 const toolEntries: ToolEntry[] = [
-  { id: 'select', label: 'Select', hint: 'Move and edit objects' },
   { id: 'marker', label: 'Marker', hint: 'Place a map symbol' },
   { id: 'label', label: 'Label', hint: 'Add text' },
   { group: 'Lines', items: [
@@ -121,7 +119,6 @@ const markerLibrary: MarkerDefinition[] = [
   { id: 'animal-illness', label: 'Animal illness', shape: 'paw', defaultColor: '#7C2D12', defaultFillPattern: 'dots', filled: false, legendLabel: 'Reported animal illness' },
   { id: 'pesticide-use', label: 'Pesticide use', shape: 'sprayer', defaultColor: '#92400E', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Pesticide use' },
   { id: 'bridge', label: 'Bridge / crossing', shape: 'bridge', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'Bridge / crossing' },
-  { id: 'custom', label: 'Custom', shape: 'star', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Custom marker' },
 ];
 
 const patternOptions: Array<{ id: FillPattern; label: string }> = [
@@ -177,7 +174,7 @@ const makeMarkerElement = (
   point: Point,
   overrides: Partial<SketchElement> = {},
 ): SketchElement => {
-  const marker = markerById.get(markerId) ?? markerById.get('custom')!;
+  const marker = markerById.get(markerId) ?? markerLibrary[0];
   return createElement({
     type: 'marker',
     start: point,
@@ -188,7 +185,6 @@ const makeMarkerElement = (
     fillPattern: marker.defaultFillPattern,
     filled: marker.filled,
     legendLabel: marker.legendLabel,
-    text: markerId === 'custom' ? 'Custom marker' : undefined,
     ...overrides,
   });
 };
@@ -227,7 +223,7 @@ export function SketchMap() {
   const exportRef = useRef<HTMLDivElement>(null);
   const [elements, setElements] = useState<SketchElement[]>([]);
   const [draft, setDraft] = useState<SketchElement | null>(null);
-  const [tool, setTool] = useState<SketchTool>('select');
+  const [tool, setTool] = useState<SketchTool>('marker');
   const [color, setColor] = useState('#1F2937');
   const [strokeWidth, setStrokeWidth] = useState(4);
   const [size, setSize] = useState(40);
@@ -236,7 +232,6 @@ export function SketchMap() {
   const [background, setBackground] = useState<SketchBackground>('grid');
   const [labelText, setLabelText] = useState('Label');
   const [markerId, setMarkerId] = useState('case');
-  const [customMarkerLabel, setCustomMarkerLabel] = useState('Custom marker');
   const [showTitle, setShowTitle] = useState(true);
   const [title, setTitle] = useState('Sketch map');
   const [subtitle, setSubtitle] = useState('Not to scale; adapted for teaching.');
@@ -272,8 +267,6 @@ export function SketchMap() {
     getPointFromRect(event.currentTarget.ownerSVGElement?.getBoundingClientRect(), event.clientX, event.clientY)
   );
 
-  const currentMarkerDefinition = markerById.get(markerId) ?? markerById.get('custom')!;
-
   const buildInstantElement = (point: Point): SketchElement => {
     if (tool === 'label') {
       return createElement({
@@ -289,22 +282,12 @@ export function SketchMap() {
       });
     }
 
-    const isCustom = markerId === 'custom';
-    return makeMarkerElement(markerId, point, {
-      color: isCustom ? color : currentMarkerDefinition.defaultColor,
-      fillColor: isCustom ? color : currentMarkerDefinition.defaultColor,
-      size,
-      legendLabel: isCustom ? customMarkerLabel : currentMarkerDefinition.legendLabel,
-    });
+    return makeMarkerElement(markerId, point, { size });
   };
 
   const startDrawing = (event: PointerEvent<SVGSVGElement>) => {
     const point = clampToCanvas(getPoint(event));
-
-    if (tool === 'select') {
-      setSelectedId(null);
-      return;
-    }
+    setSelectedId(null);
 
     const base = {
       id: createId(),
@@ -383,7 +366,6 @@ export function SketchMap() {
   };
 
   const handleElementPointerDown = (event: PointerEvent<SVGGElement>, id: string) => {
-    if (tool !== 'select') return;
     event.stopPropagation();
     const point = getElementPoint(event);
     setSelectedId(id);
@@ -593,28 +575,6 @@ export function SketchMap() {
                 </select>
               </div>
 
-              {markerId === 'custom' && (
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Legend label</label>
-                    <input
-                      type="text"
-                      value={customMarkerLabel}
-                      onChange={(event) => setCustomMarkerLabel(event.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
-                    <input
-                      type="color"
-                      value={color}
-                      onChange={(event) => setColor(event.target.value)}
-                      className="w-full h-10 p-1 border border-gray-300 rounded-md bg-white"
-                    />
-                  </div>
-                </div>
-              )}
             </section>
           )}
 
@@ -877,11 +837,9 @@ export function SketchMap() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-4 gap-2">
-                <LayerButton label="Back" onClick={() => reorderSelected('back')} />
-                <LayerButton label="Down" onClick={() => reorderSelected('backward')} />
-                <LayerButton label="Up" onClick={() => reorderSelected('forward')} />
-                <LayerButton label="Front" onClick={() => reorderSelected('front')} />
+              <div className="grid grid-cols-2 gap-2">
+                <LayerButton label="Send to back" onClick={() => reorderSelected('back')} />
+                <LayerButton label="Bring to front" onClick={() => reorderSelected('front')} />
               </div>
             </section>
           )}
@@ -967,7 +925,6 @@ export function SketchMap() {
               {showTitle && renderTitle(title, subtitle)}
               {[...elements, ...(draft ? [draft] : [])].map(element => renderElement(element, {
                 selectedId,
-                selectionEnabled: tool === 'select',
                 onSelect: handleElementPointerDown,
               }))}
             </svg>
@@ -1078,8 +1035,8 @@ function renderElement(element: SketchElement, options: ElementRenderOptions) {
   const dashArray = getDashArray(element.lineStyle, element.strokeWidth);
   const commonProps = {
     onPointerDown: (event: PointerEvent<SVGGElement>) => options.onSelect(event, element.id),
-    pointerEvents: options.selectionEnabled ? 'visiblePainted' : 'none',
-    style: { cursor: options.selectionEnabled ? 'move' : 'default' },
+    pointerEvents: 'visiblePainted' as const,
+    style: { cursor: 'move' },
   } as const;
 
   let content: ReactNode;
