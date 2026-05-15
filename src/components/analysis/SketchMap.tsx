@@ -4,7 +4,7 @@ import html2canvas from 'html2canvas';
 import { ExportIcons, ResultsActions, TabHeader } from '../shared';
 
 type SketchTool = 'pen' | 'line' | 'curve' | 'wavy' | 'area' | 'irregularArea' | 'marker' | 'label';
-type SketchBackground = 'grid' | 'dots' | 'blank';
+type SketchBackground = 'grid' | 'blank';
 type FillPattern = 'solid' | 'hatch' | 'crosshatch' | 'dots' | 'waves' | 'grid';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
 type LegendPosition = 'side' | 'below';
@@ -93,8 +93,8 @@ const toolEntries: ToolEntry[] = [
     { id: 'pen', label: 'Pen', hint: 'Freehand sketching' },
   ]},
   { group: 'Areas', items: [
-    { id: 'area', label: 'Area', hint: 'Rectangular fields and zones' },
-    { id: 'irregularArea', label: 'Free area', hint: 'Mud, ditches, play areas' },
+    { id: 'area', label: 'Area', hint: 'Draw a rectangular zone' },
+    { id: 'irregularArea', label: 'Free area', hint: 'Draw an irregular shape' },
   ]},
 ];
 
@@ -104,8 +104,8 @@ const areaTools = new Set<SketchTool>(['area', 'irregularArea']);
 
 const markerLibrary: MarkerDefinition[] = [
   { id: 'case', label: 'Case', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: true, legendLabel: 'Case' },
-  { id: 'noncase', label: 'Non-case / control', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: false, legendLabel: 'Non-case / control / well person' },
-  { id: 'household', label: 'Household', shape: 'house', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'Household' },
+  { id: 'noncase', label: 'Non-case / control', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: false, legendLabel: 'Non-case' },
+  { id: 'household', label: 'House', shape: 'house', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'House' },
   { id: 'school', label: 'School', shape: 'school', defaultColor: '#1F2937', defaultFillPattern: 'dots', filled: false, legendLabel: 'School' },
   { id: 'clinic', label: 'Clinic', shape: 'clinic', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Clinic / health facility' },
   { id: 'market', label: 'Market', shape: 'market', defaultColor: '#1F2937', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Market / shop' },
@@ -389,12 +389,6 @@ export function SketchMap() {
     )));
   };
 
-  const deleteSelected = () => {
-    if (!selectedId) return;
-    setElements(previous => previous.filter(element => element.id !== selectedId));
-    setSelectedId(null);
-  };
-
   useEffect(() => {
     if (!selectedId) return;
 
@@ -416,13 +410,6 @@ export function SketchMap() {
     const duplicate = moveElement({ ...selectedElement, id: createId() }, 26, 26);
     setElements(previous => [...previous, duplicate]);
     setSelectedId(duplicate.id);
-  };
-
-  const scaleSelected = (factor: number) => {
-    if (!selectedId) return;
-    setElements(previous => previous.map(element => (
-      element.id === selectedId ? scaleElement(element, factor) : element
-    )));
   };
 
   const reorderSelected = (mode: 'forward' | 'backward' | 'front' | 'back') => {
@@ -699,9 +686,8 @@ export function SketchMap() {
                   onChange={(event) => setBackground(event.target.value as SketchBackground)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
                 >
-                  <option value="grid">Light grid</option>
-                  <option value="dots">Dot grid</option>
-                  <option value="blank">Blank</option>
+                  <option value="grid">Grid</option>
+                  <option value="blank">None</option>
                 </select>
               </div>
               <div>
@@ -812,28 +798,10 @@ export function SketchMap() {
 
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => scaleSelected(0.9)}
-                  className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                  Shrink
-                </button>
-                <button
-                  onClick={() => scaleSelected(1.1)}
-                  className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                  Grow
-                </button>
-                <button
                   onClick={duplicateSelected}
                   className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
                 >
                   Duplicate
-                </button>
-                <button
-                  onClick={deleteSelected}
-                  className="px-3 py-2 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-md hover:bg-red-50"
-                >
-                  Delete
                 </button>
               </div>
 
@@ -979,9 +947,6 @@ function SketchDefs() {
       <pattern id="sketch-grid" width="40" height="40" patternUnits="userSpaceOnUse">
         <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#E5E7EB" strokeWidth="1" />
       </pattern>
-      <pattern id="sketch-dots-bg" width="28" height="28" patternUnits="userSpaceOnUse">
-        <circle cx="2" cy="2" r="1.3" fill="#D1D5DB" />
-      </pattern>
       <pattern id="sketch-hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
         <rect width="8" height="8" fill="#FFFFFF" />
         <line x1="0" y1="0" x2="0" y2="8" stroke="#6B7280" strokeWidth="2" />
@@ -1009,7 +974,6 @@ function SketchDefs() {
 
 function getBackgroundFill(background: SketchBackground) {
   if (background === 'grid') return 'url(#sketch-grid)';
-  if (background === 'dots') return 'url(#sketch-dots-bg)';
   return '#FFFFFF';
 }
 
@@ -1282,10 +1246,11 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
   if (shape === 'school') {
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" opacity={element.opacity}>
-        <rect x={x - half} y={y - q} width={size} height={half} />
-        <path d={`M ${x - half} ${y - q} L ${x} ${y - half} L ${x + half} ${y - q}`} />
-        <line x1={x} y1={y - half} x2={x} y2={y - half * 1.35} />
-        <path d={`M ${x} ${y - half * 1.35} L ${x + q} ${y - half * 1.18} L ${x} ${y - half}`} />
+        <rect x={x - half} y={y - q * 0.6} width={size} height={half * 1.1} />
+        <path d={`M ${x - half} ${y - q * 0.6} L ${x} ${y - half} L ${x + half} ${y - q * 0.6}`} />
+        <rect x={x - eighth} y={y + eighth * 0.5} width={q} height={q * 0.9} fill="#FFFFFF" />
+        <line x1={x - q * 0.6} y1={y - q * 0.1} x2={x - q * 0.6} y2={y + eighth * 0.5} />
+        <line x1={x + q * 0.6} y1={y - q * 0.1} x2={x + q * 0.6} y2={y + eighth * 0.5} />
       </g>
     );
   }
@@ -1302,21 +1267,23 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
 
   if (shape === 'well') {
     return (
-      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" opacity={element.opacity}>
-        <ellipse cx={x} cy={y} rx={half} ry={q} />
-        <path d={`M ${x - half} ${y} L ${x - q} ${y + half} L ${x + q} ${y + half} L ${x + half} ${y} Z`} />
-        <line x1={x - q} y1={y - half} x2={x - q} y2={y - q} />
-        <line x1={x + q} y1={y - half} x2={x + q} y2={y - q} />
+      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" strokeLinejoin="round" opacity={element.opacity}>
+        <circle cx={x} cy={y + eighth} r={half * 0.7} />
+        <line x1={x - q} y1={y - half * 0.5} x2={x - q} y2={y - half} />
+        <line x1={x + q} y1={y - half * 0.5} x2={x + q} y2={y - half} />
         <line x1={x - q} y1={y - half} x2={x + q} y2={y - half} />
+        <path d={`M ${x} ${y - half} L ${x} ${y - half * 1.3}`} />
+        <path d={`M ${x - eighth} ${y - half * 1.3} L ${x + eighth} ${y - half * 1.3}`} />
       </g>
     );
   }
 
   if (shape === 'latrine') {
     return (
-      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" opacity={element.opacity}>
-        <path d={`M ${x - q} ${y + half} L ${x - q} ${y - q} L ${x} ${y - half} L ${x + q} ${y - q} L ${x + q} ${y + half} Z`} />
-        <circle cx={x + eighth} cy={y + q * 0.35} r="1.8" fill={color} />
+      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" strokeLinecap="round" opacity={element.opacity}>
+        <ellipse cx={x} cy={y + eighth} rx={half * 0.75} ry={q * 0.7} />
+        <path d={`M ${x - half * 0.75} ${y + eighth} L ${x - half * 0.75} ${y - q * 0.3} Q ${x - half * 0.75} ${y - half} ${x} ${y - half} Q ${x + half * 0.75} ${y - half} ${x + half * 0.75} ${y - q * 0.3} L ${x + half * 0.75} ${y + eighth}`} fill="none" />
+        <ellipse cx={x} cy={y + eighth} rx={half * 0.35} ry={q * 0.3} fill="none" />
       </g>
     );
   }
@@ -1324,10 +1291,9 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
   if (shape === 'waste') {
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" strokeLinejoin="round" opacity={element.opacity}>
-        <path d={`M ${x - q} ${y - q} L ${x + q} ${y - q} L ${x + q * 0.75} ${y + half} L ${x - q * 0.75} ${y + half} Z`} />
-        <line x1={x - q * 1.2} y1={y - q} x2={x + q * 1.2} y2={y - q} />
-        <line x1={x - eighth} y1={y - q * 0.5} x2={x - eighth} y2={y + q} />
-        <line x1={x + eighth} y1={y - q * 0.5} x2={x + eighth} y2={y + q} />
+        <path d={`M ${x - half} ${y + half} Q ${x - q} ${y - eighth} ${x - eighth} ${y - q * 0.4} Q ${x} ${y - half} ${x + eighth} ${y - q * 0.6} Q ${x + q * 0.8} ${y - half * 0.9} ${x + q} ${y - q * 0.2} Q ${x + half} ${y + eighth} ${x + half} ${y + half} Z`} />
+        <line x1={x - q * 0.3} y1={y + eighth} x2={x - q * 0.5} y2={y - eighth} />
+        <line x1={x + q * 0.3} y1={y + eighth} x2={x + q * 0.1} y2={y - q * 0.2} />
       </g>
     );
   }
@@ -1335,10 +1301,10 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
   if (shape === 'market') {
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" strokeLinejoin="round" opacity={element.opacity}>
-        <rect x={x - half} y={y - q * 0.2} width={size} height={q * 1.6} />
-        <path d={`M ${x - half} ${y - q * 0.2} L ${x - q} ${y - half} L ${x + q} ${y - half} L ${x + half} ${y - q * 0.2}`} />
-        <line x1={x - q} y1={y - q * 0.2} x2={x - q} y2={y + q * 1.4} />
-        <line x1={x + q} y1={y - q * 0.2} x2={x + q} y2={y + q * 1.4} />
+        <rect x={x - half} y={y - eighth} width={size} height={half * 0.7} />
+        <line x1={x - half} y1={y + half * 0.3} x2={x - half} y2={y + half} />
+        <line x1={x + half} y1={y + half * 0.3} x2={x + half} y2={y + half} />
+        <path d={`M ${x - half * 1.1} ${y - eighth} Q ${x - half * 0.55} ${y - half} ${x} ${y - eighth} Q ${x + half * 0.55} ${y - half} ${x + half * 1.1} ${y - eighth}`} fill="none" />
       </g>
     );
   }
@@ -1535,29 +1501,6 @@ function moveElement(element: SketchElement, dx: number, dy: number): SketchElem
   };
 }
 
-function scaleElement(element: SketchElement, factor: number): SketchElement {
-  if (element.type === 'marker' || element.type === 'label') {
-    return { ...element, size: clamp(element.size * factor, 12, 180) };
-  }
-
-  const bounds = getElementBounds(element);
-  const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-  const scalePoint = (point: Point | undefined): Point | undefined => {
-    if (!point) return undefined;
-    return {
-      x: center.x + (point.x - center.x) * factor,
-      y: center.y + (point.y - center.y) * factor,
-    };
-  };
-
-  return {
-    ...element,
-    start: scalePoint(element.start),
-    end: scalePoint(element.end),
-    points: element.points?.map(point => scalePoint(point)!),
-  };
-}
-
 function reorderElement(elements: SketchElement[], id: string, mode: 'forward' | 'backward' | 'front' | 'back') {
   const index = elements.findIndex(element => element.id === id);
   if (index < 0) return elements;
@@ -1673,8 +1616,9 @@ function makeBoardingSchoolTemplate() {
     makeAreaElement('area', toCanvasPoint(5, 20), toCanvasPoint(42, 55), {
       color: '#4B5563',
       fillColor: '#4B5563',
-      fillPattern: 'dots',
+      fillPattern: 'solid',
       legendLabel: 'Ward / dormitory',
+      opacity: 0.12,
     }),
     createElement({ type: 'label', start: toCanvasPoint(15, 24), text: 'Ward A', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1682,8 +1626,9 @@ function makeBoardingSchoolTemplate() {
     makeAreaElement('area', toCanvasPoint(58, 20), toCanvasPoint(95, 55), {
       color: '#4B5563',
       fillColor: '#4B5563',
-      fillPattern: 'dots',
+      fillPattern: 'solid',
       legendLabel: 'Ward / dormitory',
+      opacity: 0.12,
     }),
     createElement({ type: 'label', start: toCanvasPoint(69, 24), text: 'Ward B', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1691,8 +1636,9 @@ function makeBoardingSchoolTemplate() {
     makeAreaElement('area', toCanvasPoint(28, 68), toCanvasPoint(72, 88), {
       color: '#92400E',
       fillColor: '#92400E',
-      fillPattern: 'grid',
+      fillPattern: 'solid',
       legendLabel: 'Dining hall / eating area',
+      opacity: 0.12,
     }),
     createElement({ type: 'label', start: toCanvasPoint(38, 77), text: 'Dining hall', color: '#111827', size: 22, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1700,8 +1646,9 @@ function makeBoardingSchoolTemplate() {
     makeAreaElement('area', toCanvasPoint(80, 68), toCanvasPoint(95, 82), {
       color: '#6B7280',
       fillColor: '#6B7280',
-      fillPattern: 'crosshatch',
+      fillPattern: 'solid',
       legendLabel: 'Latrine block',
+      opacity: 0.12,
     }),
     createElement({ type: 'label', start: toCanvasPoint(82, 75), text: 'Latrines', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1751,84 +1698,86 @@ function makeBoardingSchoolTemplate() {
 
 function makeHospitalTemplate() {
   const elements: SketchElement[] = [
-    // Reception / triage
-    makeAreaElement('area', toCanvasPoint(35, 8), toCanvasPoint(65, 25), {
+    // Reception / triage — top left
+    makeAreaElement('area', toCanvasPoint(5, 8), toCanvasPoint(40, 28), {
       color: '#1F2937',
       fillColor: '#1F2937',
       fillPattern: 'solid',
       legendLabel: 'Reception / triage',
+      opacity: 0.1,
+    }),
+    createElement({ type: 'label', start: toCanvasPoint(8, 18), text: 'Reception / Triage', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+
+    // Main corridor — horizontal
+    makeAreaElement('area', toCanvasPoint(5, 30), toCanvasPoint(95, 38), {
+      color: '#9CA3AF',
+      fillColor: '#9CA3AF',
+      fillPattern: 'solid',
+      legendLabel: 'Corridor',
       opacity: 0.15,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(38, 17), text: 'Reception / Triage', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
-    // Pediatric ward — left
-    makeAreaElement('area', toCanvasPoint(3, 38), toCanvasPoint(32, 72), {
+    // Corridor — vertical (L-shape turn)
+    makeAreaElement('area', toCanvasPoint(55, 38), toCanvasPoint(63, 90), {
+      color: '#9CA3AF',
+      fillColor: '#9CA3AF',
+      fillPattern: 'solid',
+      opacity: 0.15,
+    }),
+
+    // Pediatric ward — upper left
+    makeAreaElement('area', toCanvasPoint(5, 40), toCanvasPoint(53, 70), {
       color: '#2563EB',
       fillColor: '#2563EB',
-      fillPattern: 'dots',
+      fillPattern: 'solid',
       legendLabel: 'Pediatric ward',
+      opacity: 0.1,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(6, 44), text: 'Pediatric ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(8, 46), text: 'Pediatric ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
-    // Medical ward — center
-    makeAreaElement('area', toCanvasPoint(36, 38), toCanvasPoint(64, 72), {
+    // Medical ward — upper right
+    makeAreaElement('area', toCanvasPoint(65, 40), toCanvasPoint(95, 70), {
       color: '#166534',
       fillColor: '#166534',
-      fillPattern: 'hatch',
+      fillPattern: 'solid',
       legendLabel: 'Medical ward',
+      opacity: 0.1,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(39, 44), text: 'Medical ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(68, 46), text: 'Medical ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
-    // Maternity ward — right
-    makeAreaElement('area', toCanvasPoint(68, 38), toCanvasPoint(97, 72), {
+    // Maternity ward — bottom right (L-shape)
+    makeAreaElement('area', toCanvasPoint(65, 72), toCanvasPoint(95, 95), {
       color: '#92400E',
       fillColor: '#92400E',
-      fillPattern: 'grid',
+      fillPattern: 'solid',
       legendLabel: 'Maternity ward',
+      opacity: 0.1,
     }),
-    createElement({ type: 'label', start: toCanvasPoint(71, 44), text: 'Maternity ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
-
-    // Corridors connecting wards to reception
-    makeLineElement('line', toCanvasPoint(50, 25), toCanvasPoint(18, 38), {
-      color: '#6B7280',
-      strokeWidth: 5,
-      lineStyle: 'dashed',
-      legendLabel: 'Corridor',
-    }),
-    makeLineElement('line', toCanvasPoint(50, 25), toCanvasPoint(50, 38), {
-      color: '#6B7280',
-      strokeWidth: 5,
-      lineStyle: 'dashed',
-    }),
-    makeLineElement('line', toCanvasPoint(50, 25), toCanvasPoint(82, 38), {
-      color: '#6B7280',
-      strokeWidth: 5,
-      lineStyle: 'dashed',
-    }),
+    createElement({ type: 'label', start: toCanvasPoint(68, 78), text: 'Maternity ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
     // Water and sanitation
-    makeMarkerElement('water-source', toCanvasPoint(15, 82), { size: 34, strokeWidth: 3 }),
-    makeMarkerElement('latrine', toCanvasPoint(85, 82), { size: 34, strokeWidth: 3 }),
-    makeMarkerElement('waste', toCanvasPoint(50, 85), { size: 34, strokeWidth: 3 }),
+    makeMarkerElement('water-source', toCanvasPoint(50, 14), { size: 34, strokeWidth: 3 }),
+    makeMarkerElement('latrine', toCanvasPoint(10, 82), { size: 34, strokeWidth: 3 }),
+    makeMarkerElement('waste', toCanvasPoint(10, 92), { size: 34, strokeWidth: 3 }),
   ];
 
   // Cases and non-cases in pediatric ward
   const bedMarker: Partial<SketchElement> = { size: 22, strokeWidth: 2 };
-  for (let index = 0; index < 4; index += 1) {
-    elements.push(makeMarkerElement('case', toCanvasPoint(8 + index * 7, 55), bedMarker));
-    elements.push(makeMarkerElement('noncase', toCanvasPoint(8 + index * 7, 65), bedMarker));
+  for (let index = 0; index < 5; index += 1) {
+    elements.push(makeMarkerElement('case', toCanvasPoint(10 + index * 8, 55), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(10 + index * 8, 63), bedMarker));
   }
 
   // Cases and non-cases in medical ward
   for (let index = 0; index < 3; index += 1) {
-    elements.push(makeMarkerElement('case', toCanvasPoint(41 + index * 8, 55), bedMarker));
-    elements.push(makeMarkerElement('noncase', toCanvasPoint(41 + index * 8, 65), bedMarker));
+    elements.push(makeMarkerElement('case', toCanvasPoint(70 + index * 8, 55), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(70 + index * 8, 63), bedMarker));
   }
 
   // Cases in maternity ward
-  for (let index = 0; index < 4; index += 1) {
-    elements.push(makeMarkerElement('noncase', toCanvasPoint(73 + index * 7, 55), bedMarker));
-    elements.push(makeMarkerElement(index < 2 ? 'case' : 'noncase', toCanvasPoint(73 + index * 7, 65), bedMarker));
+  for (let index = 0; index < 3; index += 1) {
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(70 + index * 8, 85), bedMarker));
+    elements.push(makeMarkerElement(index < 1 ? 'case' : 'noncase', toCanvasPoint(70 + index * 8, 92), bedMarker));
   }
 
   return {
