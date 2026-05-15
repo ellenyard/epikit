@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
 import html2canvas from 'html2canvas';
 import { ExportIcons, ResultsActions, TabHeader } from '../shared';
@@ -7,7 +7,7 @@ type SketchTool = 'select' | 'pen' | 'line' | 'curve' | 'wavy' | 'area' | 'irreg
 type SketchBackground = 'grid' | 'dots' | 'blank';
 type FillPattern = 'solid' | 'hatch' | 'crosshatch' | 'dots' | 'waves' | 'grid';
 type LineStyle = 'solid' | 'dashed' | 'dotted';
-type LegendPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+type LegendPosition = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'below' | 'custom';
 type MarkerShape =
   | 'circle'
   | 'house'
@@ -71,6 +71,13 @@ interface LegendItem {
   key: string;
   label: string;
   element: SketchElement;
+}
+
+interface LegendBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 interface ElementRenderOptions {
@@ -373,10 +380,14 @@ const createId = () => {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 const toCanvasPoint = (x: number, y: number): Point => ({ x: (x / 100) * canvasWidth, y: (y / 100) * canvasHeight });
-const toPercentPoint = (point: Point): Point => ({
-  x: Number(((point.x / canvasWidth) * 100).toFixed(2)),
-  y: Number(((point.y / canvasHeight) * 100).toFixed(2)),
-});
+
+function isTextEntryTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  return target.tagName === 'INPUT'
+    || target.tagName === 'TEXTAREA'
+    || target.tagName === 'SELECT'
+    || target.isContentEditable;
+}
 
 const createElement = (partial: Partial<SketchElement>): SketchElement => ({
   id: createId(),
@@ -466,29 +477,36 @@ export function SketchMap() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ id: string; lastPoint: Point } | null>(null);
+  const [legendPoint, setLegendPoint] = useState<Point>({ x: canvasWidth - 382, y: canvasHeight - 250 });
+  const [legendDragState, setLegendDragState] = useState<{ lastPoint: Point } | null>(null);
   const [exportStatus, setExportStatus] = useState('');
-  const [sceneStatus, setSceneStatus] = useState('');
-  const [sceneJson, setSceneJson] = useState('');
-  const [coordX, setCoordX] = useState(50);
-  const [coordY, setCoordY] = useState(50);
-  const [coordW, setCoordW] = useState(18);
-  const [coordH, setCoordH] = useState(10);
 
   const selectedElement = selectedId ? elements.find(element => element.id === selectedId) ?? null : null;
 
   const legendItems = useMemo(() => buildLegendItems(elements), [elements]);
+  const legendBox = showLegend && legendItems.length > 0
+    ? getLegendBox(legendItems, legendPosition, legendPoint)
+    : null;
+  const exportHeight = legendBox && legendPosition === 'below'
+    ? canvasHeight + legendBox.height + 44
+    : canvasHeight;
 
   const getPointFromRect = (rect: DOMRect | undefined, clientX: number, clientY: number): Point => {
     if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
     return {
       x: ((clientX - rect.left) / rect.width) * canvasWidth,
-      y: ((clientY - rect.top) / rect.height) * canvasHeight,
+      y: ((clientY - rect.top) / rect.height) * exportHeight,
     };
   };
 
   const getPoint = (event: PointerEvent<SVGSVGElement>): Point => (
     getPointFromRect(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY)
   );
+
+  const clampToCanvas = (point: Point): Point => ({
+    x: clamp(point.x, 0, canvasWidth),
+    y: clamp(point.y, 0, canvasHeight),
+  });
 
   const getElementPoint = (event: PointerEvent<SVGGElement>): Point => (
     getPointFromRect(event.currentTarget.ownerSVGElement?.getBoundingClientRect(), event.clientX, event.clientY)
@@ -527,7 +545,9 @@ export function SketchMap() {
   };
 
   const startDrawing = (event: PointerEvent<SVGSVGElement>) => {
-    const point = getPoint(event);
+    const rawPoint = getPoint(event);
+    if (rawPoint.y > canvasHeight) return;
+    const point = clampToCanvas(rawPoint);
 
     if (tool === 'select') {
       setSelectedId(null);
@@ -565,7 +585,18 @@ export function SketchMap() {
   };
 
   const continueDrawing = (event: PointerEvent<SVGSVGElement>) => {
-    const point = getPoint(event);
+    const point = clampToCanvas(getPoint(event));
+
+    if (legendDragState && legendBox) {
+      const dx = point.x - legendDragState.lastPoint.x;
+      const dy = point.y - legendDragState.lastPoint.y;
+      setLegendPoint(previous => clampLegendPoint(
+        { x: previous.x + dx, y: previous.y + dy },
+        legendBox,
+      ));
+      setLegendDragState({ lastPoint: point });
+      return;
+    }
 
     if (dragState) {
       const dx = point.x - dragState.lastPoint.x;
@@ -589,6 +620,11 @@ export function SketchMap() {
   };
 
   const finishDrawing = (event?: PointerEvent<SVGSVGElement>) => {
+    if (legendDragState) {
+      setLegendDragState(null);
+      return;
+    }
+
     if (dragState) {
       setDragState(null);
       return;
@@ -618,6 +654,15 @@ export function SketchMap() {
     setDragState({ id, lastPoint: point });
   };
 
+  const handleLegendPointerDown = (event: PointerEvent<SVGGElement>) => {
+    if (!legendBox || legendPosition === 'below') return;
+    event.stopPropagation();
+    const point = clampToCanvas(getElementPoint(event));
+    setLegendPoint({ x: legendBox.x, y: legendBox.y });
+    setLegendPosition('custom');
+    setLegendDragState({ lastPoint: point });
+  };
+
   const undo = () => {
     setElements(previous => previous.slice(0, -1));
     setSelectedId(null);
@@ -641,6 +686,22 @@ export function SketchMap() {
     setSelectedId(null);
   };
 
+  useEffect(() => {
+    if (!selectedId) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+      if (isTextEntryTarget(event.target)) return;
+
+      event.preventDefault();
+      setElements(previous => previous.filter(element => element.id !== selectedId));
+      setSelectedId(null);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId]);
+
   const duplicateSelected = () => {
     if (!selectedElement) return;
     const duplicate = moveElement({ ...selectedElement, id: createId() }, 26, 26);
@@ -658,50 +719,6 @@ export function SketchMap() {
   const reorderSelected = (mode: 'forward' | 'backward' | 'front' | 'back') => {
     if (!selectedId) return;
     setElements(previous => reorderElement(previous, selectedId, mode));
-  };
-
-  const placeAtCoordinates = () => {
-    const start = toCanvasPoint(clamp(coordX, 0, 100), clamp(coordY, 0, 100));
-    const end = toCanvasPoint(clamp(coordX + coordW, 0, 100), clamp(coordY + coordH, 0, 100));
-    let element: SketchElement;
-
-    if (tool === 'label') {
-      element = createElement({
-        type: 'label',
-        start,
-        text: labelText || 'Label',
-        color,
-        strokeWidth,
-        size,
-        fillPattern,
-        lineStyle,
-        filled: false,
-      });
-    } else if (tool === 'area' || tool === 'irregularArea') {
-      element = makeAreaElement(tool, start, end, {
-        color,
-        fillColor: color,
-        strokeWidth,
-        fillPattern,
-        lineStyle,
-        legendLabel: labelText || undefined,
-      });
-      if (tool === 'irregularArea') {
-        element.points = makeIrregularBandPoints(start, end);
-      }
-    } else if (tool === 'line' || tool === 'curve' || tool === 'wavy') {
-      element = makeLineElement(tool, start, end, {
-        color,
-        strokeWidth,
-        lineStyle,
-        legendLabel: labelText || undefined,
-      });
-    } else {
-      element = buildInstantElement(start);
-    }
-
-    setElements(previous => [...previous, element]);
-    setSelectedId(element.id);
   };
 
   const exportPNG = async () => {
@@ -739,45 +756,6 @@ export function SketchMap() {
     window.setTimeout(() => setExportStatus(''), 3000);
   };
 
-  const exportScene = () => {
-    setSceneJson(JSON.stringify({
-      schema: 'epikit.sketch.v1',
-      coordinateSystem: 'percent',
-      title,
-      subtitle,
-      showTitle,
-      showLegend,
-      legendPosition,
-      background,
-      elements: elements.map(elementToSceneElement),
-    }, null, 2));
-    setSceneStatus('Scene JSON prepared.');
-    window.setTimeout(() => setSceneStatus(''), 3000);
-  };
-
-  const importScene = () => {
-    try {
-      const parsed = JSON.parse(sceneJson) as unknown;
-      const scene = normalizeScene(parsed);
-      if (!scene.elements.length) {
-        setSceneStatus('No elements found in scene JSON.');
-        return;
-      }
-      setTitle(scene.title ?? title);
-      setSubtitle(scene.subtitle ?? subtitle);
-      setShowTitle(scene.showTitle ?? showTitle);
-      setShowLegend(scene.showLegend ?? showLegend);
-      setLegendPosition(scene.legendPosition ?? legendPosition);
-      setBackground(scene.background ?? background);
-      setElements(scene.elements);
-      setSelectedId(null);
-      setSceneStatus(`Loaded ${scene.elements.length} sketch objects.`);
-      window.setTimeout(() => setSceneStatus(''), 3000);
-    } catch (error) {
-      setSceneStatus(error instanceof Error ? error.message : 'Could not read scene JSON.');
-    }
-  };
-
   const loadTemplate = (templateId: string) => {
     if (templateId === 'blank') {
       clearSketch();
@@ -786,13 +764,13 @@ export function SketchMap() {
       return;
     }
 
-    if (templateId === 'field') {
-      const template = makeFieldInvestigationTemplate();
+    if (templateId === 'village') {
+      const template = makeVillageSketchTemplate();
       setTitle(template.title);
       setSubtitle(template.subtitle);
       setShowTitle(true);
       setShowLegend(true);
-      setLegendPosition('bottom-right');
+      setLegendPosition('below');
       setBackground('grid');
       setElements(template.elements);
       setSelectedId(null);
@@ -852,18 +830,20 @@ export function SketchMap() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Size ({size})</label>
-                <input
-                  type="range"
-                  min="20"
-                  max="90"
-                  value={size}
-                  onChange={(event) => setSize(Number(event.target.value))}
-                  className="w-full"
-                />
-              </div>
+            <div className={`grid gap-3 ${tool === 'marker' || tool === 'label' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {(tool === 'marker' || tool === 'label') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">New item size ({size})</label>
+                  <input
+                    type="range"
+                    min="20"
+                    max="90"
+                    value={size}
+                    onChange={(event) => setSize(Number(event.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Line style</label>
                 <select
@@ -1002,17 +982,19 @@ export function SketchMap() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Legend</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Legend location</label>
                 <select
                   value={legendPosition}
                   onChange={(event) => setLegendPosition(event.target.value as LegendPosition)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
                   disabled={!showLegend}
                 >
+                  <option value="below">Below sketch</option>
                   <option value="bottom-right">Bottom right</option>
                   <option value="bottom-left">Bottom left</option>
                   <option value="top-right">Top right</option>
                   <option value="top-left">Top left</option>
+                  <option value="custom">Custom</option>
                 </select>
               </div>
             </div>
@@ -1024,22 +1006,6 @@ export function SketchMap() {
               />
               Auto-build legend from placed symbols
             </label>
-          </section>
-
-          <section className="space-y-3 border-t border-gray-200 pt-4">
-            <label className="block text-sm font-medium text-gray-700">Place by 0-100 grid</label>
-            <div className="grid grid-cols-4 gap-2">
-              <NumberField label="X" value={coordX} onChange={setCoordX} />
-              <NumberField label="Y" value={coordY} onChange={setCoordY} />
-              <NumberField label="W" value={coordW} onChange={setCoordW} />
-              <NumberField label="H" value={coordH} onChange={setCoordH} />
-            </div>
-            <button
-              onClick={placeAtCoordinates}
-              className="w-full px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-            >
-              Place current tool
-            </button>
           </section>
 
           {selectedElement && (
@@ -1057,6 +1023,20 @@ export function SketchMap() {
                     value={selectedElement.text ?? ''}
                     onChange={(event) => updateSelected({ text: event.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                  />
+                </div>
+              )}
+
+              {(selectedElement.type === 'label' || selectedElement.type === 'marker') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Size ({selectedElement.size})</label>
+                  <input
+                    type="range"
+                    min="20"
+                    max="120"
+                    value={selectedElement.size}
+                    onChange={(event) => updateSelected({ size: Number(event.target.value) })}
+                    className="w-full"
                   />
                 </div>
               )}
@@ -1169,7 +1149,7 @@ export function SketchMap() {
               >
                 <option value="" disabled>Choose a template</option>
                 <option value="blank">Blank teaching map frame</option>
-                <option value="field">Two-village field investigation</option>
+                <option value="village">Simple village sketch</option>
               </select>
             </div>
 
@@ -1189,36 +1169,6 @@ export function SketchMap() {
                 Clear
               </button>
             </div>
-          </section>
-
-          <section className="space-y-3 border-t border-gray-200 pt-4">
-            <label className="block text-sm font-medium text-gray-700">Scene JSON</label>
-            <textarea
-              value={sceneJson}
-              onChange={(event) => setSceneJson(event.target.value)}
-              rows={5}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md text-xs font-mono bg-white"
-              placeholder="Export a scene here, or paste scene JSON to import."
-            />
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={exportScene}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Export scene
-              </button>
-              <button
-                onClick={importScene}
-                className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                Import scene
-              </button>
-            </div>
-            {sceneStatus && (
-              <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded-md px-3 py-2 text-xs">
-                {sceneStatus}
-              </div>
-            )}
           </section>
 
           <ResultsActions
@@ -1250,15 +1200,16 @@ export function SketchMap() {
         <div ref={exportRef} className="mx-auto bg-white shadow-sm" style={{ maxWidth: 1200 }}>
           <svg
             ref={svgRef}
-            viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}
+            viewBox={`0 0 ${canvasWidth} ${exportHeight}`}
             className="w-full touch-none select-none"
-            style={{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }}
+            style={{ aspectRatio: `${canvasWidth} / ${exportHeight}` }}
             onPointerDown={startDrawing}
             onPointerMove={continueDrawing}
             onPointerUp={finishDrawing}
             onPointerLeave={finishDrawing}
           >
             <SketchDefs />
+            <rect width={canvasWidth} height={exportHeight} fill="#FFFFFF" />
             <rect width={canvasWidth} height={canvasHeight} fill={getBackgroundFill(background)} />
             {showTitle && renderTitle(title, subtitle)}
             {[...elements, ...(draft ? [draft] : [])].map(element => renderElement(element, {
@@ -1266,27 +1217,11 @@ export function SketchMap() {
               selectionEnabled: tool === 'select',
               onSelect: handleElementPointerDown,
             }))}
-            {showLegend && legendItems.length > 0 && renderLegend(legendItems, legendPosition)}
+            {legendBox && renderLegend(legendItems, legendBox, legendPosition !== 'below', handleLegendPointerDown)}
           </svg>
         </div>
       </div>
     </div>
-  );
-}
-
-function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
-  return (
-    <label className="block">
-      <span className="block text-xs font-medium text-gray-600 mb-1">{label}</span>
-      <input
-        type="number"
-        min="0"
-        max="100"
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        className="w-full px-2 py-2 border border-gray-300 rounded-md text-sm bg-white"
-      />
-    </label>
   );
 }
 
@@ -1362,7 +1297,6 @@ function renderElement(element: SketchElement, options: ElementRenderOptions) {
   const end = element.end ?? start;
   const dashArray = getDashArray(element.lineStyle, element.strokeWidth);
   const commonProps = {
-    key: element.id,
     onPointerDown: (event: PointerEvent<SVGGElement>) => options.onSelect(event, element.id),
     pointerEvents: options.selectionEnabled ? 'visiblePainted' : 'none',
     style: { cursor: options.selectionEnabled ? 'move' : 'default' },
@@ -1460,7 +1394,7 @@ function renderElement(element: SketchElement, options: ElementRenderOptions) {
   }
 
   return (
-    <g {...commonProps}>
+    <g key={element.id} {...commonProps}>
       {content}
       {selected && renderSelectionBox(element)}
     </g>
@@ -1723,17 +1657,64 @@ function renderSelectionBox(element: SketchElement) {
   );
 }
 
-function renderLegend(items: LegendItem[], position: LegendPosition) {
+function getLegendSize(items: LegendItem[]): Pick<LegendBox, 'width' | 'height'> {
   const itemHeight = 31;
-  const width = 360;
-  const height = 42 + items.length * itemHeight;
+  return {
+    width: 420,
+    height: 42 + items.length * itemHeight,
+  };
+}
+
+function clampLegendPoint(point: Point, box: Pick<LegendBox, 'width' | 'height'>): Point {
   const margin = 22;
-  const x = position.endsWith('right') ? canvasWidth - width - margin : margin;
-  const y = position.startsWith('bottom') ? canvasHeight - height - margin : 88;
+  return {
+    x: clamp(point.x, margin, canvasWidth - box.width - margin),
+    y: clamp(point.y, margin, canvasHeight - box.height - margin),
+  };
+}
+
+function getLegendBox(items: LegendItem[], position: LegendPosition, customPoint: Point): LegendBox {
+  const size = getLegendSize(items);
+  const margin = 22;
+
+  if (position === 'below') {
+    return {
+      x: (canvasWidth - size.width) / 2,
+      y: canvasHeight + margin,
+      ...size,
+    };
+  }
+
+  if (position === 'custom') {
+    return {
+      ...clampLegendPoint(customPoint, size),
+      ...size,
+    };
+  }
+
+  const x = position.endsWith('right') ? canvasWidth - size.width - margin : margin;
+  const preferredY = position.startsWith('bottom') ? canvasHeight - size.height - margin : 88;
+  const y = clamp(preferredY, margin, canvasHeight - size.height - margin);
+
+  return { x, y, ...size };
+}
+
+function renderLegend(
+  items: LegendItem[],
+  box: LegendBox,
+  draggable: boolean,
+  onPointerDown: (event: PointerEvent<SVGGElement>) => void,
+) {
+  const itemHeight = 31;
 
   return (
-    <g pointerEvents="none" transform={`translate(${x} ${y})`}>
-      <rect width={width} height={height} fill="#FFFFFF" stroke="#111827" strokeWidth="2" opacity="0.96" />
+    <g
+      pointerEvents={draggable ? 'all' : 'none'}
+      transform={`translate(${box.x} ${box.y})`}
+      onPointerDown={draggable ? onPointerDown : undefined}
+      style={{ cursor: draggable ? 'move' : 'default' }}
+    >
+      <rect width={box.width} height={box.height} fill="#FFFFFF" stroke="#111827" strokeWidth="2" opacity="0.96" />
       <text x="16" y="25" fill="#111827" fontSize="17" fontWeight="700">Legend</text>
       {items.map((item, index) => (
         <g key={item.key} transform={`translate(16 ${44 + index * itemHeight})`}>
@@ -1978,236 +1959,58 @@ function makeIrregularBandPoints(start: Point, end: Point): Point[] {
   ];
 }
 
-function elementToSceneElement(element: SketchElement) {
-  return {
-    ...element,
-    start: element.start ? toPercentPoint(element.start) : undefined,
-    end: element.end ? toPercentPoint(element.end) : undefined,
-    points: element.points?.map(toPercentPoint),
-  };
-}
-
-interface NormalizedScene {
-  title?: string;
-  subtitle?: string;
-  showTitle?: boolean;
-  showLegend?: boolean;
-  legendPosition?: LegendPosition;
-  background?: SketchBackground;
-  elements: SketchElement[];
-}
-
-function normalizeScene(value: unknown): NormalizedScene {
-  const record = asRecord(value);
-  const rawElements = Array.isArray(value)
-    ? value
-    : Array.isArray(record?.elements)
-      ? record.elements
-      : [];
-
-  const coordinateSystem = record?.coordinateSystem === 'canvas' ? 'canvas' : 'percent';
-  const elements = rawElements
-    .map(item => normalizeSceneElement(item, coordinateSystem))
-    .filter((element): element is SketchElement => element !== null);
-
-  return {
-    title: typeof record?.title === 'string' ? record.title : undefined,
-    subtitle: typeof record?.subtitle === 'string' ? record.subtitle : undefined,
-    showTitle: typeof record?.showTitle === 'boolean' ? record.showTitle : undefined,
-    showLegend: typeof record?.showLegend === 'boolean' ? record.showLegend : undefined,
-    legendPosition: isLegendPosition(record?.legendPosition) ? record.legendPosition : undefined,
-    background: isBackground(record?.background) ? record.background : undefined,
-    elements,
-  };
-}
-
-function normalizeSceneElement(value: unknown, coordinateSystem: 'percent' | 'canvas'): SketchElement | null {
-  const record = asRecord(value);
-  if (!record) return null;
-
-  const importedType = isSketchTool(record.type) ? record.type : 'marker';
-  const type = importedType === 'select' ? 'marker' : importedType;
-  const color = typeof record.color === 'string' ? record.color : '#1F2937';
-  const markerId = typeof record.markerId === 'string' ? record.markerId : 'custom';
-  const marker = markerById.get(markerId) ?? markerById.get('custom')!;
-  const defaultPattern: FillPattern = type === 'area' || type === 'irregularArea'
-    ? 'hatch'
-    : type === 'wavy'
-      ? 'waves'
-      : marker.defaultFillPattern;
-  const start = readPoint(record.start, coordinateSystem) ?? readXY(record, 'x', 'y', coordinateSystem) ?? { x: 120, y: 120 };
-  const end = readPoint(record.end, coordinateSystem)
-    ?? readXY(record, 'x2', 'y2', coordinateSystem)
-    ?? readEndFromSize(record, start, coordinateSystem);
-  const points = Array.isArray(record.points)
-    ? record.points.map(point => readPoint(point, coordinateSystem)).filter((point): point is Point => point !== null)
-    : undefined;
-
-  return createElement({
-    id: typeof record.id === 'string' ? record.id : createId(),
-    type,
-    start,
-    end,
-    points,
-    text: typeof record.text === 'string' ? record.text : undefined,
-    color,
-    fillColor: typeof record.fillColor === 'string' ? record.fillColor : color,
-    strokeWidth: typeof record.strokeWidth === 'number' ? record.strokeWidth : 4,
-    size: typeof record.size === 'number' ? record.size : 40,
-    fillPattern: isFillPattern(record.fillPattern) ? record.fillPattern : defaultPattern,
-    lineStyle: isLineStyle(record.lineStyle) ? record.lineStyle : 'solid',
-    markerId: type === 'marker' ? markerId : undefined,
-    markerShape: type === 'marker'
-      ? isMarkerShape(record.markerShape) ? record.markerShape : marker.shape
-      : undefined,
-    legendLabel: typeof record.legendLabel === 'string'
-      ? record.legendLabel
-      : type === 'marker' ? marker.legendLabel : undefined,
-    filled: typeof record.filled === 'boolean' ? record.filled : type === 'area' || type === 'irregularArea' || marker.filled,
-    opacity: typeof record.opacity === 'number' ? record.opacity : 1,
-  });
-}
-
-function readEndFromSize(record: Record<string, unknown>, start: Point, coordinateSystem: 'percent' | 'canvas'): Point | undefined {
-  if (typeof record.width !== 'number' || typeof record.height !== 'number') return undefined;
-  if (coordinateSystem === 'canvas') return { x: start.x + record.width, y: start.y + record.height };
-  return {
-    x: start.x + (record.width / 100) * canvasWidth,
-    y: start.y + (record.height / 100) * canvasHeight,
-  };
-}
-
-function readPoint(value: unknown, coordinateSystem: 'percent' | 'canvas'): Point | null {
-  const record = asRecord(value);
-  if (!record || typeof record.x !== 'number' || typeof record.y !== 'number') return null;
-  if (coordinateSystem === 'canvas') return { x: record.x, y: record.y };
-  return toCanvasPoint(record.x, record.y);
-}
-
-function readXY(record: Record<string, unknown>, xKey: string, yKey: string, coordinateSystem: 'percent' | 'canvas'): Point | null {
-  if (typeof record[xKey] !== 'number' || typeof record[yKey] !== 'number') return null;
-  if (coordinateSystem === 'canvas') return { x: record[xKey], y: record[yKey] };
-  return toCanvasPoint(record[xKey], record[yKey]);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
-
-function isSketchTool(value: unknown): value is SketchTool {
-  return value === 'select'
-    || value === 'pen'
-    || value === 'line'
-    || value === 'curve'
-    || value === 'wavy'
-    || value === 'area'
-    || value === 'irregularArea'
-    || value === 'marker'
-    || value === 'label';
-}
-
-function isBackground(value: unknown): value is SketchBackground {
-  return value === 'grid' || value === 'dots' || value === 'blank';
-}
-
-function isFillPattern(value: unknown): value is FillPattern {
-  return value === 'solid'
-    || value === 'hatch'
-    || value === 'crosshatch'
-    || value === 'dots'
-    || value === 'waves'
-    || value === 'grid';
-}
-
-function isLineStyle(value: unknown): value is LineStyle {
-  return value === 'solid' || value === 'dashed' || value === 'dotted';
-}
-
-function isLegendPosition(value: unknown): value is LegendPosition {
-  return value === 'bottom-right' || value === 'bottom-left' || value === 'top-right' || value === 'top-left';
-}
-
-function isMarkerShape(value: unknown): value is MarkerShape {
-  return markerShapeOptions.some(option => option.id === value);
-}
-
-function makeFieldInvestigationTemplate() {
+function makeVillageSketchTemplate() {
   const elements: SketchElement[] = [
-    makeAreaElement('area', toCanvasPoint(5, 78), toCanvasPoint(43, 94), {
-      color: '#166534',
-      fillColor: '#166534',
+    makeAreaElement('area', toCanvasPoint(8, 74), toCanvasPoint(38, 91), {
+      color: '#4B5563',
+      fillColor: '#4B5563',
       fillPattern: 'hatch',
-      legendLabel: 'Rice paddy',
+      legendLabel: 'Agricultural field',
     }),
-    makeAreaElement('area', toCanvasPoint(57, 78), toCanvasPoint(95, 94), {
-      color: '#166534',
-      fillColor: '#166534',
-      fillPattern: 'hatch',
-      legendLabel: 'Rice paddy',
-    }),
-    makeAreaElement('area', toCanvasPoint(25, 29), toCanvasPoint(38, 39), {
+    makeAreaElement('area', toCanvasPoint(63, 28), toCanvasPoint(79, 41), {
       color: '#166534',
       fillColor: '#166534',
       fillPattern: 'grid',
-      legendLabel: 'Home vegetable garden',
+      legendLabel: 'Home garden',
     }),
-    makeAreaElement('area', toCanvasPoint(64, 29), toCanvasPoint(77, 39), {
-      color: '#166534',
-      fillColor: '#166534',
-      fillPattern: 'grid',
-      legendLabel: 'Home vegetable garden',
-    }),
-    makeLineElement('curve', toCanvasPoint(22, 45), toCanvasPoint(78, 45), {
+    makeLineElement('curve', toCanvasPoint(18, 48), toCanvasPoint(82, 49), {
       color: '#6B7280',
       strokeWidth: 5,
       lineStyle: 'dashed',
       legendLabel: 'Road or footpath',
     }),
-    makeAreaElement('irregularArea', toCanvasPoint(22, 61), toCanvasPoint(80, 70), {
-      points: makeIrregularBandPoints(toCanvasPoint(22, 61), toCanvasPoint(80, 70)),
+    makeAreaElement('irregularArea', toCanvasPoint(36, 59), toCanvasPoint(70, 70), {
+      points: makeIrregularBandPoints(toCanvasPoint(36, 59), toCanvasPoint(70, 70)),
       color: '#4B5563',
       fillColor: '#4B5563',
       fillPattern: 'waves',
-      legendLabel: 'Ditch, mud, or child play area',
+      legendLabel: 'Ditch, mud, or play area',
     }),
-    makeLineElement('wavy', toCanvasPoint(47, 66), toCanvasPoint(57, 73), {
+    makeLineElement('wavy', toCanvasPoint(50, 67), toCanvasPoint(61, 74), {
       color: '#2563EB',
       strokeWidth: 4,
       legendLabel: 'Water source or runoff',
     }),
-    makeMarkerElement('mango-tree', toCanvasPoint(30, 55)),
-    makeMarkerElement('mango-tree', toCanvasPoint(42, 60)),
-    makeMarkerElement('mango-tree', toCanvasPoint(68, 55)),
-    makeMarkerElement('mango-tree', toCanvasPoint(78, 62)),
-    makeMarkerElement('pesticide-use', toCanvasPoint(19, 83)),
-    makeMarkerElement('pesticide-use', toCanvasPoint(70, 84)),
-    makeMarkerElement('animal-illness', toCanvasPoint(48, 67)),
-    makeMarkerElement('animal-illness', toCanvasPoint(82, 72)),
-    createElement({ type: 'label', start: toCanvasPoint(20, 16), text: 'Village A', color: '#111827', size: 30, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
-    createElement({ type: 'label', start: toCanvasPoint(71, 16), text: 'Village B', color: '#111827', size: 30, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
-    createElement({ type: 'label', start: toCanvasPoint(33, 66), text: 'Ditch / mud collection and child play area', color: '#111827', size: 19, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    makeMarkerElement('mango-tree', toCanvasPoint(41, 54), { size: 36 }),
+    makeMarkerElement('mango-tree', toCanvasPoint(61, 56), { size: 36 }),
+    makeMarkerElement('water-source', toCanvasPoint(54, 72), { size: 34, strokeWidth: 3 }),
+    createElement({ type: 'label', start: toCanvasPoint(47, 17), text: 'Village sketch', color: '#111827', size: 32, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
+    createElement({ type: 'label', start: toCanvasPoint(42, 66), text: 'Ditch / mud / play area', color: '#111827', size: 19, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
   ];
 
-  const villageA = [
-    [18, 42, 'case-residence'], [23, 47, 'case-residence'], [29, 52, 'case-residence'],
-    [35, 45, 'case-residence'], [14, 55, 'noncase-residence'], [25, 58, 'noncase-residence'],
-    [31, 36, 'noncase-residence'], [40, 52, 'noncase-residence'],
+  const households = [
+    [35, 40, 'case-residence'], [46, 46, 'case-residence'], [58, 43, 'noncase-residence'],
+    [66, 48, 'noncase-residence'], [42, 31, 'noncase-residence'], [54, 34, 'noncase-residence'],
+    [72, 57, 'noncase-residence'],
   ] as const;
 
-  const villageB = [
-    [65, 50, 'case-residence'], [71, 55, 'case-residence'], [77, 58, 'case-residence'],
-    [83, 49, 'case-residence'], [62, 39, 'noncase-residence'], [69, 43, 'noncase-residence'],
-    [80, 40, 'noncase-residence'], [86, 58, 'noncase-residence'],
-  ] as const;
-
-  for (const [x, y, id] of [...villageA, ...villageB]) {
-    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 32, strokeWidth: 3 }));
+  for (const [x, y, id] of households) {
+    elements.push(makeMarkerElement(id, toCanvasPoint(x, y), { size: 34, strokeWidth: 3 }));
   }
 
   return {
-    title: 'Schematic field sketch',
-    subtitle: 'Case and non-case residences, selected environmental features, and reported animal illness locations. Not to scale.',
+    title: 'Simple village sketch',
+    subtitle: 'Case and non-case residences with selected environmental features. Not to scale.',
     elements,
   };
 }
