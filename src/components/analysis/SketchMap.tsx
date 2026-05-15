@@ -1279,32 +1279,35 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
   }
 
   if (shape === 'latrine') {
+    // Side-view toilet: bowl + tank profile
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" strokeLinecap="round" opacity={element.opacity}>
-        <ellipse cx={x} cy={y + eighth} rx={half * 0.75} ry={q * 0.7} />
-        <path d={`M ${x - half * 0.75} ${y + eighth} L ${x - half * 0.75} ${y - q * 0.3} Q ${x - half * 0.75} ${y - half} ${x} ${y - half} Q ${x + half * 0.75} ${y - half} ${x + half * 0.75} ${y - q * 0.3} L ${x + half * 0.75} ${y + eighth}`} fill="none" />
-        <ellipse cx={x} cy={y + eighth} rx={half * 0.35} ry={q * 0.3} fill="none" />
+        <path d={`M ${x - half * 0.4} ${y - half * 0.6} L ${x - half * 0.4} ${y + q * 0.6} Q ${x - half * 0.4} ${y + half} ${x + eighth} ${y + half} Q ${x + half * 0.6} ${y + half} ${x + half * 0.6} ${y + q * 0.3} L ${x + half * 0.6} ${y - eighth} Q ${x + half * 0.6} ${y - half * 0.6} ${x - half * 0.4} ${y - half * 0.6} Z`} />
+        <rect x={x - half} y={y - half} width={half * 0.55} height={size * 0.75} rx="2" />
+        <line x1={x - half * 0.4} y1={y - eighth} x2={x + half * 0.6} y2={y - eighth} />
       </g>
     );
   }
 
   if (shape === 'waste') {
+    // Trash bin: trapezoid body, lid, handle
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" strokeLinejoin="round" opacity={element.opacity}>
-        <path d={`M ${x - half} ${y + half} Q ${x - q} ${y - eighth} ${x - eighth} ${y - q * 0.4} Q ${x} ${y - half} ${x + eighth} ${y - q * 0.6} Q ${x + q * 0.8} ${y - half * 0.9} ${x + q} ${y - q * 0.2} Q ${x + half} ${y + eighth} ${x + half} ${y + half} Z`} />
-        <line x1={x - q * 0.3} y1={y + eighth} x2={x - q * 0.5} y2={y - eighth} />
-        <line x1={x + q * 0.3} y1={y + eighth} x2={x + q * 0.1} y2={y - q * 0.2} />
+        <path d={`M ${x - q * 0.8} ${y - q * 0.5} L ${x - q} ${y + half} L ${x + q} ${y + half} L ${x + q * 0.8} ${y - q * 0.5} Z`} />
+        <line x1={x - q * 1.1} y1={y - q * 0.5} x2={x + q * 1.1} y2={y - q * 0.5} />
+        <path d={`M ${x - eighth} ${y - q * 0.5} L ${x - eighth} ${y - half} L ${x + eighth} ${y - half} L ${x + eighth} ${y - q * 0.5}`} fill="none" />
       </g>
     );
   }
 
   if (shape === 'market') {
+    // Open-air market stand: counter on legs with angled canopy
     return (
       <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" strokeLinejoin="round" opacity={element.opacity}>
-        <rect x={x - half} y={y - eighth} width={size} height={half * 0.7} />
-        <line x1={x - half} y1={y + half * 0.3} x2={x - half} y2={y + half} />
-        <line x1={x + half} y1={y + half * 0.3} x2={x + half} y2={y + half} />
-        <path d={`M ${x - half * 1.1} ${y - eighth} Q ${x - half * 0.55} ${y - half} ${x} ${y - eighth} Q ${x + half * 0.55} ${y - half} ${x + half * 1.1} ${y - eighth}`} fill="none" />
+        <rect x={x - half} y={y} width={size} height={q * 0.5} />
+        <line x1={x - q * 0.7} y1={y + q * 0.5} x2={x - q * 0.7} y2={y + half} />
+        <line x1={x + q * 0.7} y1={y + q * 0.5} x2={x + q * 0.7} y2={y + half} />
+        <path d={`M ${x - half * 1.1} ${y} L ${x - half * 0.9} ${y - half} L ${x + half * 0.9} ${y - half} L ${x + half * 1.1} ${y}`} />
       </g>
     );
   }
@@ -1589,7 +1592,6 @@ function makeVillageSketchTemplate() {
     makeMarkerElement('tree', toCanvasPoint(41, 54), { size: 36 }),
     makeMarkerElement('tree', toCanvasPoint(61, 56), { size: 36 }),
     makeMarkerElement('water-source', toCanvasPoint(54, 72), { size: 34, strokeWidth: 3 }),
-    createElement({ type: 'label', start: toCanvasPoint(47, 17), text: 'Village sketch', color: '#111827', size: 32, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
     createElement({ type: 'label', start: toCanvasPoint(42, 66), text: 'Ditch / mud / play area', color: '#111827', size: 19, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
   ];
 
