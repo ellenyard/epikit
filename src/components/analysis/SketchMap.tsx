@@ -15,8 +15,7 @@ type MarkerShape =
   | 'triangle'
   | 'paw'
   | 'water'
-  | 'field'
-  | 'garden'
+  | 'pond'
   | 'star'
   | 'square'
   | 'diamond'
@@ -29,8 +28,7 @@ type MarkerShape =
   | 'latrine'
   | 'waste'
   | 'market'
-  | 'bridge'
-  | 'note';
+  | 'bridge';
 
 interface Point {
   x: number;
@@ -82,269 +80,48 @@ interface ElementRenderOptions {
 const canvasWidth = 1200;
 const canvasHeight = 800;
 
-const tools: Array<{ id: SketchTool; label: string; hint: string }> = [
+interface ToolItem { id: SketchTool; label: string; hint: string }
+interface ToolGroup { group: string; items: ToolItem[] }
+type ToolEntry = ToolItem | ToolGroup;
+
+const toolEntries: ToolEntry[] = [
   { id: 'select', label: 'Select', hint: 'Move and edit objects' },
   { id: 'marker', label: 'Marker', hint: 'Place a map symbol' },
   { id: 'label', label: 'Label', hint: 'Add text' },
-  { id: 'line', label: 'Line', hint: 'Straight paths and boundaries' },
-  { id: 'curve', label: 'Curve', hint: 'Curved roads and footpaths' },
-  { id: 'wavy', label: 'Wavy', hint: 'Drainage and runoff lines' },
-  { id: 'area', label: 'Area', hint: 'Rectangular fields and zones' },
-  { id: 'irregularArea', label: 'Free area', hint: 'Mud, ditches, play areas' },
-  { id: 'pen', label: 'Pen', hint: 'Freehand sketching' },
+  { group: 'Lines', items: [
+    { id: 'line', label: 'Line', hint: 'Straight paths and boundaries' },
+    { id: 'curve', label: 'Curve', hint: 'Curved roads and footpaths' },
+    { id: 'wavy', label: 'Wavy', hint: 'Drainage and runoff lines' },
+    { id: 'pen', label: 'Pen', hint: 'Freehand sketching' },
+  ]},
+  { group: 'Areas', items: [
+    { id: 'area', label: 'Area', hint: 'Rectangular fields and zones' },
+    { id: 'irregularArea', label: 'Free area', hint: 'Mud, ditches, play areas' },
+  ]},
 ];
+
+const isToolGroup = (entry: ToolEntry): entry is ToolGroup => 'group' in entry;
+const lineTools = new Set<SketchTool>(['line', 'curve', 'wavy', 'pen']);
+const areaTools = new Set<SketchTool>(['area', 'irregularArea']);
 
 const markerLibrary: MarkerDefinition[] = [
-  {
-    id: 'case-residence',
-    label: 'Case residence',
-    shape: 'house',
-    defaultColor: '#111827',
-    defaultFillPattern: 'solid',
-    filled: true,
-    legendLabel: 'Case residence',
-  },
-  {
-    id: 'noncase-residence',
-    label: 'Non-case residence',
-    shape: 'house',
-    defaultColor: '#111827',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Non-case residence',
-  },
-  {
-    id: 'household',
-    label: 'Household',
-    shape: 'house',
-    defaultColor: '#374151',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Household or residence',
-  },
-  {
-    id: 'case-person',
-    label: 'Case person',
-    shape: 'circle',
-    defaultColor: '#111827',
-    defaultFillPattern: 'solid',
-    filled: true,
-    legendLabel: 'Case person',
-  },
-  {
-    id: 'noncase-person',
-    label: 'Non-case person',
-    shape: 'circle',
-    defaultColor: '#111827',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Non-case person',
-  },
-  {
-    id: 'school',
-    label: 'School or childcare',
-    shape: 'school',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'dots',
-    filled: false,
-    legendLabel: 'School or childcare',
-  },
-  {
-    id: 'clinic',
-    label: 'Clinic or health post',
-    shape: 'clinic',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Clinic or health post',
-  },
-  {
-    id: 'market',
-    label: 'Market or shop',
-    shape: 'market',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'hatch',
-    filled: false,
-    legendLabel: 'Market or shop',
-  },
-  {
-    id: 'water-source',
-    label: 'Water source',
-    shape: 'water',
-    defaultColor: '#2563EB',
-    defaultFillPattern: 'waves',
-    filled: false,
-    legendLabel: 'Water source',
-  },
-  {
-    id: 'pond',
-    label: 'Pond or standing water',
-    shape: 'water',
-    defaultColor: '#2563EB',
-    defaultFillPattern: 'waves',
-    filled: true,
-    legendLabel: 'Pond or standing water',
-  },
-  {
-    id: 'runoff',
-    label: 'Runoff or drainage',
-    shape: 'water',
-    defaultColor: '#2563EB',
-    defaultFillPattern: 'waves',
-    filled: false,
-    legendLabel: 'Runoff or drainage',
-  },
-  {
-    id: 'ditch-mud-play',
-    label: 'Ditch, mud, or play area',
-    shape: 'field',
-    defaultColor: '#6B7280',
-    defaultFillPattern: 'waves',
-    filled: true,
-    legendLabel: 'Ditch, mud, or play area',
-  },
-  {
-    id: 'latrine',
-    label: 'Latrine or sanitation',
-    shape: 'latrine',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Latrine or sanitation',
-  },
-  {
-    id: 'waste',
-    label: 'Waste or disposal site',
-    shape: 'waste',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'crosshatch',
-    filled: false,
-    legendLabel: 'Waste or disposal site',
-  },
-  {
-    id: 'animal-illness',
-    label: 'Animal illness report',
-    shape: 'paw',
-    defaultColor: '#7C2D12',
-    defaultFillPattern: 'dots',
-    filled: false,
-    legendLabel: 'Reported animal illness; relationship unknown',
-  },
-  {
-    id: 'animal-pen',
-    label: 'Animal pen or pasture',
-    shape: 'animal',
-    defaultColor: '#374151',
-    defaultFillPattern: 'hatch',
-    filled: false,
-    legendLabel: 'Animal pen or pasture',
-  },
-  {
-    id: 'dead-animal',
-    label: 'Animal death report',
-    shape: 'animal',
-    defaultColor: '#7C2D12',
-    defaultFillPattern: 'crosshatch',
-    filled: true,
-    legendLabel: 'Animal death report',
-  },
-  {
-    id: 'pesticide-use',
-    label: 'Reported pesticide use',
-    shape: 'sprayer',
-    defaultColor: '#92400E',
-    defaultFillPattern: 'hatch',
-    filled: false,
-    legendLabel: 'Reported pesticide use/application area',
-  },
-  {
-    id: 'rice-paddy',
-    label: 'Rice paddy',
-    shape: 'field',
-    defaultColor: '#166534',
-    defaultFillPattern: 'hatch',
-    filled: false,
-    legendLabel: 'Rice paddy',
-  },
-  {
-    id: 'vegetable-garden',
-    label: 'Vegetable garden',
-    shape: 'garden',
-    defaultColor: '#166534',
-    defaultFillPattern: 'grid',
-    filled: false,
-    legendLabel: 'Home vegetable garden',
-  },
-  {
-    id: 'fruit-tree',
-    label: 'Fruit tree',
-    shape: 'tree',
-    defaultColor: '#166534',
-    defaultFillPattern: 'dots',
-    filled: false,
-    legendLabel: 'Fruit tree',
-  },
-  {
-    id: 'mango-tree',
-    label: 'Mango tree',
-    shape: 'tree',
-    defaultColor: '#166534',
-    defaultFillPattern: 'dots',
-    filled: true,
-    legendLabel: 'Mango tree',
-  },
-  {
-    id: 'road-crossing',
-    label: 'Bridge or crossing',
-    shape: 'bridge',
-    defaultColor: '#374151',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Bridge or crossing',
-  },
-  {
-    id: 'note',
-    label: 'Investigation note',
-    shape: 'note',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Investigation note',
-  },
-  {
-    id: 'custom',
-    label: 'Custom marker',
-    shape: 'star',
-    defaultColor: '#1F2937',
-    defaultFillPattern: 'solid',
-    filled: false,
-    legendLabel: 'Custom marker',
-  },
-];
-
-const markerShapeOptions: Array<{ id: MarkerShape; label: string }> = [
-  { id: 'circle', label: 'Circle' },
-  { id: 'house', label: 'House' },
-  { id: 'tree', label: 'Tree' },
-  { id: 'triangle', label: 'Triangle' },
-  { id: 'paw', label: 'Paw' },
-  { id: 'water', label: 'Water' },
-  { id: 'field', label: 'Field' },
-  { id: 'garden', label: 'Garden' },
-  { id: 'star', label: 'Star' },
-  { id: 'square', label: 'Square' },
-  { id: 'diamond', label: 'Diamond' },
-  { id: 'cross', label: 'Cross' },
-  { id: 'sprayer', label: 'Sprayer' },
-  { id: 'animal', label: 'Animal' },
-  { id: 'school', label: 'School' },
-  { id: 'clinic', label: 'Clinic' },
-  { id: 'well', label: 'Well' },
-  { id: 'latrine', label: 'Latrine' },
-  { id: 'waste', label: 'Waste' },
-  { id: 'market', label: 'Market' },
-  { id: 'bridge', label: 'Bridge' },
-  { id: 'note', label: 'Note' },
+  { id: 'case', label: 'Case', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: true, legendLabel: 'Case' },
+  { id: 'noncase', label: 'Non-case / control', shape: 'circle', defaultColor: '#111827', defaultFillPattern: 'solid', filled: false, legendLabel: 'Non-case / control / well person' },
+  { id: 'household', label: 'Household', shape: 'house', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'Household' },
+  { id: 'school', label: 'School', shape: 'school', defaultColor: '#1F2937', defaultFillPattern: 'dots', filled: false, legendLabel: 'School' },
+  { id: 'clinic', label: 'Clinic', shape: 'clinic', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Clinic / health facility' },
+  { id: 'market', label: 'Market', shape: 'market', defaultColor: '#1F2937', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Market / shop' },
+  { id: 'water-source', label: 'Water source', shape: 'water', defaultColor: '#2563EB', defaultFillPattern: 'waves', filled: false, legendLabel: 'Water source' },
+  { id: 'pond', label: 'Pond / standing water', shape: 'pond', defaultColor: '#2563EB', defaultFillPattern: 'waves', filled: true, legendLabel: 'Pond / standing water' },
+  { id: 'well', label: 'Well', shape: 'well', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Well' },
+  { id: 'latrine', label: 'Latrine', shape: 'latrine', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Latrine / sanitation' },
+  { id: 'waste', label: 'Waste site', shape: 'waste', defaultColor: '#1F2937', defaultFillPattern: 'crosshatch', filled: false, legendLabel: 'Waste / disposal site' },
+  { id: 'tree', label: 'Tree', shape: 'tree', defaultColor: '#166534', defaultFillPattern: 'dots', filled: false, legendLabel: 'Tree' },
+  { id: 'animal-pen', label: 'Animal pen', shape: 'animal', defaultColor: '#374151', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Animal pen / pasture' },
+  { id: 'animal-illness', label: 'Animal illness', shape: 'paw', defaultColor: '#7C2D12', defaultFillPattern: 'dots', filled: false, legendLabel: 'Reported animal illness' },
+  { id: 'pesticide-use', label: 'Pesticide use', shape: 'sprayer', defaultColor: '#92400E', defaultFillPattern: 'hatch', filled: false, legendLabel: 'Pesticide use' },
+  { id: 'bridge', label: 'Bridge / crossing', shape: 'bridge', defaultColor: '#374151', defaultFillPattern: 'solid', filled: false, legendLabel: 'Bridge / crossing' },
+  { id: 'custom', label: 'Custom', shape: 'star', defaultColor: '#1F2937', defaultFillPattern: 'solid', filled: false, legendLabel: 'Custom marker' },
 ];
 
 const patternOptions: Array<{ id: FillPattern; label: string }> = [
@@ -458,10 +235,8 @@ export function SketchMap() {
   const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
   const [background, setBackground] = useState<SketchBackground>('grid');
   const [labelText, setLabelText] = useState('Label');
-  const [markerId, setMarkerId] = useState('case-residence');
+  const [markerId, setMarkerId] = useState('case');
   const [customMarkerLabel, setCustomMarkerLabel] = useState('Custom marker');
-  const [customMarkerShape, setCustomMarkerShape] = useState<MarkerShape>('star');
-  const [customMarkerFilled, setCustomMarkerFilled] = useState(false);
   const [showTitle, setShowTitle] = useState(true);
   const [title, setTitle] = useState('Sketch map');
   const [subtitle, setSubtitle] = useState('Not to scale; adapted for teaching.');
@@ -516,16 +291,10 @@ export function SketchMap() {
 
     const isCustom = markerId === 'custom';
     return makeMarkerElement(markerId, point, {
-      color,
-      fillColor: color,
-      strokeWidth,
+      color: isCustom ? color : currentMarkerDefinition.defaultColor,
+      fillColor: isCustom ? color : currentMarkerDefinition.defaultColor,
       size,
-      fillPattern: isCustom ? fillPattern : currentMarkerDefinition.defaultFillPattern,
-      lineStyle,
-      filled: isCustom ? customMarkerFilled : currentMarkerDefinition.filled,
-      markerShape: isCustom ? customMarkerShape : currentMarkerDefinition.shape,
       legendLabel: isCustom ? customMarkerLabel : currentMarkerDefinition.legendLabel,
-      text: isCustom ? customMarkerLabel : undefined,
     });
   };
 
@@ -754,96 +523,65 @@ export function SketchMap() {
         <div className="space-y-5">
           <section className="space-y-2">
             <label className="block text-sm font-medium text-gray-700">Tool</label>
-            <div className="grid grid-cols-3 gap-2">
-              {tools.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => setTool(item.id)}
-                  data-tooltip={item.hint}
-                  className={`px-2 py-2 text-sm font-medium rounded-md border ${
-                    tool === item.id
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+            <div className="space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                {toolEntries.map(entry => {
+                  if (isToolGroup(entry)) {
+                    const isActive = entry.items.some(item => item.id === tool);
+                    return (
+                      <div key={entry.group} className="col-span-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            onClick={() => setTool(entry.items[0].id)}
+                            className={`col-span-1 px-2 py-2 text-sm font-medium rounded-md border ${
+                              isActive
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {entry.group}
+                          </button>
+                          {isActive && entry.items.map(item => (
+                            <button
+                              key={item.id}
+                              onClick={() => setTool(item.id)}
+                              data-tooltip={item.hint}
+                              className={`px-2 py-2 text-xs font-medium rounded-md border ${
+                                tool === item.id
+                                  ? 'bg-blue-100 text-blue-800 border-blue-300'
+                                  : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                              }`}
+                            >
+                              {item.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={entry.id}
+                      onClick={() => setTool(entry.id)}
+                      data-tooltip={entry.hint}
+                      className={`px-2 py-2 text-sm font-medium rounded-md border ${
+                        tool === entry.id
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      {entry.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </section>
-
-          <section className="space-y-3 border-t border-gray-200 pt-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(event) => setColor(event.target.value)}
-                  className="w-full h-10 p-1 border border-gray-300 rounded-md bg-white"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Line ({strokeWidth})</label>
-                <input
-                  type="range"
-                  min="1"
-                  max="12"
-                  value={strokeWidth}
-                  onChange={(event) => setStrokeWidth(Number(event.target.value))}
-                  className="w-full"
-                />
-              </div>
-            </div>
-
-            {tool === 'label' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New item size ({size})</label>
-                <input
-                  type="range"
-                  min="20"
-                  max="90"
-                  value={size}
-                  onChange={(event) => setSize(Number(event.target.value))}
-                  className="w-full"
-                />
-              </div>
-            )}
-
-            {tool !== 'marker' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Line style</label>
-                  <select
-                    value={lineStyle}
-                    onChange={(event) => setLineStyle(event.target.value as LineStyle)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                  >
-                    {lineStyleOptions.map(option => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Pattern</label>
-                  <select
-                    value={fillPattern}
-                    onChange={(event) => setFillPattern(event.target.value as FillPattern)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                  >
-                    {patternOptions.map(option => (
-                      <option key={option.id} value={option.id}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
           </section>
 
           {tool === 'marker' && (
             <section className="space-y-3 border-t border-gray-200 pt-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Marker</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Symbol</label>
                 <select
                   value={markerId}
                   onChange={(event) => setMarkerId(event.target.value)}
@@ -858,7 +596,7 @@ export function SketchMap() {
               {markerId === 'custom' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Custom label</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Legend label</label>
                     <input
                       type="text"
                       value={customMarkerLabel}
@@ -866,27 +604,84 @@ export function SketchMap() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Shape</label>
-                      <select
-                        value={customMarkerShape}
-                        onChange={(event) => setCustomMarkerShape(event.target.value as MarkerShape)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                      >
-                        {markerShapeOptions.map(option => (
-                          <option key={option.id} value={option.id}>{option.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <label className="flex items-center gap-2 mt-6 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={customMarkerFilled}
-                        onChange={(event) => setCustomMarkerFilled(event.target.checked)}
-                      />
-                      Filled
-                    </label>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                    <input
+                      type="color"
+                      value={color}
+                      onChange={(event) => setColor(event.target.value)}
+                      className="w-full h-10 p-1 border border-gray-300 rounded-md bg-white"
+                    />
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {tool !== 'marker' && (
+            <section className="space-y-3 border-t border-gray-200 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Color</label>
+                  <input
+                    type="color"
+                    value={color}
+                    onChange={(event) => setColor(event.target.value)}
+                    className="w-full h-10 p-1 border border-gray-300 rounded-md bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Line ({strokeWidth})</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="12"
+                    value={strokeWidth}
+                    onChange={(event) => setStrokeWidth(Number(event.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              {tool === 'label' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Size ({size})</label>
+                  <input
+                    type="range"
+                    min="20"
+                    max="90"
+                    value={size}
+                    onChange={(event) => setSize(Number(event.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              {(lineTools.has(tool) || areaTools.has(tool)) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Line style</label>
+                    <select
+                      value={lineStyle}
+                      onChange={(event) => setLineStyle(event.target.value as LineStyle)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                    >
+                      {lineStyleOptions.map(option => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Pattern</label>
+                    <select
+                      value={fillPattern}
+                      onChange={(event) => setFillPattern(event.target.value as FillPattern)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+                    >
+                      {patternOptions.map(option => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               )}
@@ -983,9 +778,9 @@ export function SketchMap() {
                 </span>
               </div>
 
-              {(selectedElement.type === 'label' || selectedElement.type === 'marker') && (
+              {selectedElement.type === 'label' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Text or marker note</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Label text</label>
                   <input
                     type="text"
                     value={selectedElement.text ?? ''}
@@ -1045,28 +840,14 @@ export function SketchMap() {
               )}
 
               {selectedElement.type === 'marker' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Shape</label>
-                    <select
-                      value={selectedElement.markerShape ?? 'circle'}
-                      onChange={(event) => updateSelected({ markerShape: event.target.value as MarkerShape })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
-                    >
-                      {markerShapeOptions.map(option => (
-                        <option key={option.id} value={option.id}>{option.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <label className="flex items-center gap-2 mt-6 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={selectedElement.filled}
-                      onChange={(event) => updateSelected({ filled: event.target.checked })}
-                    />
-                    Filled
-                  </label>
-                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={selectedElement.filled}
+                    onChange={(event) => updateSelected({ filled: event.target.checked })}
+                  />
+                  Filled
+                </label>
               )}
 
               <div className="grid grid-cols-2 gap-2">
@@ -1507,25 +1288,11 @@ function renderMarkerIcon(element: SketchElement, x: number, y: number, size: nu
     );
   }
 
-  if (shape === 'field') {
+  if (shape === 'pond') {
     return (
-      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" opacity={element.opacity}>
-        <rect x={x - half} y={y - q} width={size} height={size / 2} />
-        <line x1={x - q} y1={y - q} x2={x - q} y2={y + q} />
-        <line x1={x} y1={y - q} x2={x} y2={y + q} />
-        <line x1={x + q} y1={y - q} x2={x + q} y2={y + q} />
-      </g>
-    );
-  }
-
-  if (shape === 'garden') {
-    return (
-      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinecap="round" opacity={element.opacity}>
-        <rect x={x - half} y={y - half * 0.7} width={size} height={size * 0.7} />
-        <line x1={x - q} y1={y - half * 0.7} x2={x - q} y2={y} />
-        <line x1={x} y1={y - half * 0.7} x2={x} y2={y} />
-        <line x1={x + q} y1={y - half * 0.7} x2={x + q} y2={y} />
-        <line x1={x - half} y1={y - q} x2={x + half} y2={y - q} />
+      <g stroke={color} strokeWidth={strokeWidth} fill={fill} strokeLinejoin="round" opacity={element.opacity}>
+        <ellipse cx={x} cy={y} rx={half} ry={q * 0.8} />
+        <path d={`M ${x - q * 0.6} ${y + q * 0.1} Q ${x} ${y - q * 0.3} ${x + q * 0.6} ${y + q * 0.1}`} fill="none" />
       </g>
     );
   }
@@ -1919,17 +1686,17 @@ function makeVillageSketchTemplate() {
       strokeWidth: 4,
       legendLabel: 'Water source or runoff',
     }),
-    makeMarkerElement('mango-tree', toCanvasPoint(41, 54), { size: 36 }),
-    makeMarkerElement('mango-tree', toCanvasPoint(61, 56), { size: 36 }),
+    makeMarkerElement('tree', toCanvasPoint(41, 54), { size: 36 }),
+    makeMarkerElement('tree', toCanvasPoint(61, 56), { size: 36 }),
     makeMarkerElement('water-source', toCanvasPoint(54, 72), { size: 34, strokeWidth: 3 }),
     createElement({ type: 'label', start: toCanvasPoint(47, 17), text: 'Village sketch', color: '#111827', size: 32, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
     createElement({ type: 'label', start: toCanvasPoint(42, 66), text: 'Ditch / mud / play area', color: '#111827', size: 19, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
   ];
 
   const households = [
-    [35, 40, 'case-residence'], [46, 46, 'case-residence'], [58, 43, 'noncase-residence'],
-    [66, 48, 'noncase-residence'], [42, 31, 'noncase-residence'], [54, 34, 'noncase-residence'],
-    [72, 57, 'noncase-residence'],
+    [35, 40, 'case'], [46, 46, 'case'], [58, 43, 'noncase'],
+    [66, 48, 'noncase'], [42, 31, 'noncase'], [54, 34, 'noncase'],
+    [72, 57, 'noncase'],
   ] as const;
 
   for (const [x, y, id] of households) {
@@ -2007,15 +1774,15 @@ function makeBoardingSchoolTemplate() {
   const bedMarker: Partial<SketchElement> = { size: 24, strokeWidth: 2 };
   for (let index = 0; index < 5; index += 1) {
     const x = 10 + index * 7;
-    elements.push(makeMarkerElement('case-person', toCanvasPoint(x, 35), bedMarker));
-    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(x, 46), bedMarker));
+    elements.push(makeMarkerElement('case', toCanvasPoint(x, 35), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 46), bedMarker));
   }
 
   // Beds in Ward B — two rows of 5
   for (let index = 0; index < 5; index += 1) {
     const x = 63 + index * 7;
-    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(x, 35), bedMarker));
-    elements.push(makeMarkerElement('case-person', toCanvasPoint(x, 46), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(x, 35), bedMarker));
+    elements.push(makeMarkerElement('case', toCanvasPoint(x, 46), bedMarker));
   }
 
   return {
@@ -2091,20 +1858,20 @@ function makeHospitalTemplate() {
   // Cases and non-cases in pediatric ward
   const bedMarker: Partial<SketchElement> = { size: 22, strokeWidth: 2 };
   for (let index = 0; index < 4; index += 1) {
-    elements.push(makeMarkerElement('case-person', toCanvasPoint(8 + index * 7, 55), bedMarker));
-    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(8 + index * 7, 65), bedMarker));
+    elements.push(makeMarkerElement('case', toCanvasPoint(8 + index * 7, 55), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(8 + index * 7, 65), bedMarker));
   }
 
   // Cases and non-cases in medical ward
   for (let index = 0; index < 3; index += 1) {
-    elements.push(makeMarkerElement('case-person', toCanvasPoint(41 + index * 8, 55), bedMarker));
-    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(41 + index * 8, 65), bedMarker));
+    elements.push(makeMarkerElement('case', toCanvasPoint(41 + index * 8, 55), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(41 + index * 8, 65), bedMarker));
   }
 
   // Cases in maternity ward
   for (let index = 0; index < 4; index += 1) {
-    elements.push(makeMarkerElement('noncase-person', toCanvasPoint(73 + index * 7, 55), bedMarker));
-    elements.push(makeMarkerElement(index < 2 ? 'case-person' : 'noncase-person', toCanvasPoint(73 + index * 7, 65), bedMarker));
+    elements.push(makeMarkerElement('noncase', toCanvasPoint(73 + index * 7, 55), bedMarker));
+    elements.push(makeMarkerElement(index < 2 ? 'case' : 'noncase', toCanvasPoint(73 + index * 7, 65), bedMarker));
   }
 
   return {
