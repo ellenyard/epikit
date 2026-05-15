@@ -1638,7 +1638,7 @@ function makeBoardingSchoolTemplate() {
       fillColor: '#4B5563',
       fillPattern: 'solid',
       legendLabel: 'Ward / dormitory',
-      opacity: 0.12,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(11, 14), text: 'Ward A', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1647,7 +1647,7 @@ function makeBoardingSchoolTemplate() {
       color: '#4B5563',
       fillColor: '#4B5563',
       fillPattern: 'solid',
-      opacity: 0.12,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(48, 14), text: 'Ward B', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1657,7 +1657,7 @@ function makeBoardingSchoolTemplate() {
       fillColor: '#92400E',
       fillPattern: 'solid',
       legendLabel: 'Main dining hall',
-      opacity: 0.12,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(24, 54), text: 'Main dining hall', color: '#111827', size: 18, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1667,7 +1667,7 @@ function makeBoardingSchoolTemplate() {
       fillColor: '#2563EB',
       fillPattern: 'solid',
       legendLabel: 'Ward C (no cases)',
-      opacity: 0.1,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(8, 74), text: 'Ward C', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1677,7 +1677,7 @@ function makeBoardingSchoolTemplate() {
       fillColor: '#166534',
       fillPattern: 'solid',
       legendLabel: 'Ward C dining hall',
-      opacity: 0.1,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(42, 82), text: 'Ward C dining', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1687,7 +1687,7 @@ function makeBoardingSchoolTemplate() {
       fillColor: '#6B7280',
       fillPattern: 'solid',
       legendLabel: 'Latrine block',
-      opacity: 0.12,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(80, 18), text: 'Latrines', color: '#111827', size: 16, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1750,7 +1750,7 @@ function makeHospitalTemplate() {
       fillColor: '#1F2937',
       fillPattern: 'solid',
       legendLabel: 'Reception / triage',
-      opacity: 0.1,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(8, 18), text: 'Reception / Triage', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1760,7 +1760,7 @@ function makeHospitalTemplate() {
       fillColor: '#9CA3AF',
       fillPattern: 'solid',
       legendLabel: 'Corridor',
-      opacity: 0.15,
+      opacity: 0.7,
     }),
 
     // Corridor — vertical (L-shape turn)
@@ -1768,7 +1768,7 @@ function makeHospitalTemplate() {
       color: '#9CA3AF',
       fillColor: '#9CA3AF',
       fillPattern: 'solid',
-      opacity: 0.15,
+      opacity: 0.7,
     }),
 
     // Pediatric ward — upper left
@@ -1777,7 +1777,7 @@ function makeHospitalTemplate() {
       fillColor: '#2563EB',
       fillPattern: 'solid',
       legendLabel: 'Pediatric ward',
-      opacity: 0.1,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(8, 46), text: 'Pediatric ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1787,7 +1787,7 @@ function makeHospitalTemplate() {
       fillColor: '#166534',
       fillPattern: 'solid',
       legendLabel: 'Medical ward',
-      opacity: 0.1,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(68, 46), text: 'Medical ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
@@ -1797,7 +1797,7 @@ function makeHospitalTemplate() {
       fillColor: '#92400E',
       fillPattern: 'solid',
       legendLabel: 'Maternity ward',
-      opacity: 0.1,
+      opacity: 0.7,
     }),
     createElement({ type: 'label', start: toCanvasPoint(68, 78), text: 'Maternity ward', color: '#111827', size: 20, strokeWidth: 4, fillPattern: 'solid', lineStyle: 'solid', filled: false }),
 
