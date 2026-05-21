@@ -31,7 +31,25 @@ interface AreaMapProps {
 type BaseMap = 'street' | 'quiet' | 'topo' | 'none';
 type ExportBaseMap = 'current' | 'quiet' | 'none';
 
+interface SampleBoundary {
+  label: string;
+  fileName: string;
+  url: string;
+  boundaryKey: string;
+  preferredAreaField: string;
+}
+
 const rateMultipliers = [1000, 10000, 100000];
+
+const sampleBoundaries: SampleBoundary[] = [
+  {
+    label: 'Toledo area neighborhoods',
+    fileName: 'toledo-area-neighborhoods.geojson',
+    url: 'sample-boundaries/toledo-area-neighborhoods.geojson',
+    boundaryKey: 'name',
+    preferredAreaField: 'neighborhood',
+  },
+];
 
 const choroplethColors = [
   '#EFF6FF',
@@ -88,6 +106,10 @@ function makeAreaProperties(area: JoinedArea, metric: AreaMetric, rateMultiplier
     epikit_rate_multiplier: metric === 'rate' ? rateMultiplier : null,
     epikit_mapped_value: area.value,
   };
+}
+
+function getPublicAssetUrl(path: string): string {
+  return `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 }
 
 export function AreaMap({ dataset, datasets }: AreaMapProps) {
@@ -276,6 +298,33 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     }
   };
 
+  const loadSampleBoundary = async (sample: SampleBoundary) => {
+    try {
+      const response = await fetch(getPublicAssetUrl(sample.url));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const parsed = await response.json() as unknown;
+      if (!isFeatureCollection(parsed)) {
+        setBoundaryError('The sample boundary file is not a GeoJSON FeatureCollection.');
+        return;
+      }
+
+      setBoundaries(parsed);
+      setBoundaryFileName(sample.fileName);
+      setBoundaryError('');
+
+      const keys = getGeoJsonPropertyKeys(parsed);
+      setBoundaryKey(keys.includes(sample.boundaryKey) ? sample.boundaryKey : suggestBoundaryKey(keys));
+
+      if (dataset.columns.some(col => col.key === sample.preferredAreaField)) {
+        setAreaField(sample.preferredAreaField);
+      }
+    } catch (error) {
+      console.error('Failed to load sample boundary:', error);
+      setBoundaryError('The sample boundary could not be loaded.');
+    }
+  };
+
   const getFillColor = (value: number | null): string => {
     const classIndex = getClassIndex(value, breaks);
     if (classIndex === null) return '#E5E7EB';
@@ -401,6 +450,17 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               className="hidden"
             />
             {boundaryError && <p className="text-xs text-red-700 mt-1">{boundaryError}</p>}
+            <div className="mt-2 space-y-2">
+              {sampleBoundaries.map(sample => (
+                <button
+                  key={sample.fileName}
+                  onClick={() => loadSampleBoundary(sample)}
+                  className="w-full px-3 py-2 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 text-left"
+                >
+                  Use sample: {sample.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {propertyKeys.length > 0 && (
