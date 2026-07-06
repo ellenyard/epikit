@@ -590,7 +590,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
             </div>
             <p className="text-xs text-gray-500 mt-2">
               {dataMode === 'calculate'
-                ? 'Select an outcome and exposures — EpiKit will calculate the measures of association and confidence intervals automatically.'
+                ? 'Select an outcome and exposures — LineList will calculate the measures of association and confidence intervals automatically.'
                 : 'Map columns that already contain effect estimates and confidence intervals.'}
             </p>
           </div>
@@ -899,7 +899,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
             <p className="text-gray-500 text-lg">Configure the forest plot</p>
             <p className="text-gray-400 text-sm mt-2">
               {dataMode === 'calculate'
-                ? 'Select an outcome variable, define cases, and choose exposures to compare. EpiKit will calculate the effect estimates and 95% confidence intervals automatically.'
+                ? 'Select an outcome variable, define cases, and choose exposures to compare. LineList will calculate the effect estimates and 95% confidence intervals automatically.'
                 : 'Select a label column, point estimate, and confidence interval columns to generate the chart.'}
             </p>
           </div>

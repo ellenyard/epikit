@@ -167,7 +167,7 @@ export function downloadProject(project: ProjectData, filename?: string): void {
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename || `epikit_project_${new Date().toISOString().split('T')[0]}.json`;
+  a.download = filename || `linelist_project_${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

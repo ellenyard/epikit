@@ -799,7 +799,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
     try {
       const recipe = JSON.parse(await recipeFile.text()) as unknown;
       if (!isObjectRecord(recipe) || recipe.module !== 'spot-map') {
-        setExportError('This file is not an EpiKit spot map recipe.');
+        setExportError('This file is not a LineList spot map recipe.');
         return;
       }
 

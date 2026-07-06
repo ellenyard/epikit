@@ -1,7 +1,7 @@
 /**
- * EpiKit Application Entry Point
+ * LineList Application Entry Point
  *
- * This is the main entry point for the EpiKit application.
+ * This is the main entry point for the LineList application.
  * It sets up React with StrictMode and wraps the app in the LocaleProvider
  * for international number format support.
  */
