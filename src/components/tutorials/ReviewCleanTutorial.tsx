@@ -212,7 +212,7 @@ export const ReviewCleanTutorial: React.FC = () => {
                 <ul className="text-sm text-gray-700 space-y-1">
                   <li>• Clean data in stages: duplicates → missing values → outliers → derived variables</li>
                   <li>• Consult with data collectors to clarify ambiguous or inconsistent entries</li>
-                  <li>• Keep your original raw data file unchanged—only edit within EpiKit</li>
+                  <li>• Keep your original raw data file unchanged—only edit within LineList</li>
                   <li>• Save the Edit Log and include key cleaning decisions in your outbreak report methods</li>
                   <li>• Re-run Data Quality checks after making corrections to ensure issues are resolved</li>
                 </ul>

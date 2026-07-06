@@ -1,7 +1,7 @@
 /**
  * Statistical Calculations for Epidemiological Analysis
  *
- * This module provides the core statistical functions used throughout EpiKit.
+ * This module provides the core statistical functions used throughout LineList.
  * All calculations follow standard epidemiological methods and formulas.
  *
  * CONTENTS:

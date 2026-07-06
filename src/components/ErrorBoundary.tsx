@@ -22,7 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`[EpiKit] Error in ${this.props.moduleName || 'component'}:`, error, errorInfo);
+    console.error(`[LineList] Error in ${this.props.moduleName || 'component'}:`, error, errorInfo);
   }
 
   handleReset = () => {

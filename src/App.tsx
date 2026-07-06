@@ -1,7 +1,7 @@
 /**
- * EpiKit - Main Application Component
+ * LineList - Main Application Component
  *
- * This is the root component of EpiKit, an epidemiology toolkit designed for
+ * This is the root component of LineList, an epidemiology toolkit designed for
  * FETP (Field Epidemiology Training Program) residents to analyze outbreak data.
  *
  * Application Structure:
@@ -448,7 +448,7 @@ function App() {
       if (project) {
         setShowProjectLoadConfirm({ project, filename: file.name });
       } else {
-        alert('Invalid project file. Please select a valid EpiKit project file.');
+        alert('Invalid project file. Please select a valid LineList project file.');
       }
     };
     reader.readAsText(file);
@@ -490,7 +490,7 @@ function App() {
               onClick={() => { setActiveModule('dashboard'); setShowMobileMenu(false); }}
               className="text-lg sm:text-xl font-bold text-blue-400 hover:text-blue-300 transition-colors"
             >
-              EpiKit
+              LineList
             </button>
             {/* Desktop nav links */}
             <div className="hidden md:flex gap-0.5">

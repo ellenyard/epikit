@@ -163,7 +163,7 @@ export const demoDatasetName = 'Foodborne Outbreak - Community Picnic';
 //
 // 300 children aged 6-59 months across 30 survey clusters, surveyed in
 // two consecutive years (2024 and 2025). No geographic coordinates —
-// designed to showcase EpiKit's visualization features: dot plots, box
+// designed to showcase LineList's visualization features: dot plots, box
 // plots, waffle charts, heatmaps, grouped/paired bars, bullet charts,
 // slope charts, and frequency distributions.
 //
