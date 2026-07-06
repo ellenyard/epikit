@@ -55,7 +55,7 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
         setFileBuffer(buffer);
 
         // Check for multiple sheets
-        const sheets = getSheetNames(buffer);
+        const sheets = await getSheetNames(buffer);
         if (sheets.length > 1) {
           setSheetNames(sheets);
           setSelectedSheet(sheets[0]);
@@ -102,7 +102,7 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
     if (type === 'csv') {
       result = parseCSV(data as string, { localeConfig });
     } else {
-      result = parseExcel(data as ArrayBuffer, { sheetName });
+      result = await parseExcel(data as ArrayBuffer, { sheetName });
     }
 
     setPreview(result);
