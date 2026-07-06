@@ -1,7 +1,6 @@
 /**
  * Excel file parsing utility using xlsx (SheetJS)
  */
-import * as XLSX from 'xlsx';
 import type { DataColumn, CaseRecord } from '../types/analysis';
 import type { ParseResult } from './csvParser';
 
@@ -13,10 +12,11 @@ export interface ExcelParseOptions {
 /**
  * Parse an Excel file (.xlsx, .xls) and return structured data
  */
-export function parseExcel(buffer: ArrayBuffer, options: ExcelParseOptions = {}): ParseResult {
+export async function parseExcel(buffer: ArrayBuffer, options: ExcelParseOptions = {}): Promise<ParseResult> {
   const errors: string[] = [];
 
   try {
+    const XLSX = await import('xlsx');
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
 
     // Get sheet to parse
@@ -102,8 +102,9 @@ export function parseExcel(buffer: ArrayBuffer, options: ExcelParseOptions = {})
 /**
  * Get list of sheet names from an Excel file
  */
-export function getSheetNames(buffer: ArrayBuffer): string[] {
+export async function getSheetNames(buffer: ArrayBuffer): Promise<string[]> {
   try {
+    const XLSX = await import('xlsx');
     const workbook = XLSX.read(buffer, { type: 'array' });
     return workbook.SheetNames;
   } catch {

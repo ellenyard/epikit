@@ -84,11 +84,6 @@ export function DataQualityPanel({
   const dateColumns = columns.filter(c => c.type === 'date');
   const numericColumns = columns.filter(c => c.type === 'number');
 
-  // Debug logging
-  console.log('[DataQualityPanel] Total columns:', columns.length);
-  console.log('[DataQualityPanel] Column types:', columns.map(c => ({ key: c.key, type: c.type })));
-  console.log('[DataQualityPanel] Numeric columns:', numericColumns.length);
-
   const addDateOrderRule = () => {
     if (!newRuleFirstDate || !newRuleSecondDate || newRuleFirstDate === newRuleSecondDate) return;
 
@@ -120,24 +115,13 @@ export function DataQualityPanel({
   };
 
   const addNumericRangeRule = () => {
-    console.log('[DataQualityPanel] addNumericRangeRule called');
-    console.log('[DataQualityPanel] newNumericField:', newNumericField);
-
-    if (!newNumericField) {
-      console.log('[DataQualityPanel] No field selected, returning');
-      return;
-    }
+    if (!newNumericField) return;
 
     const fieldCol = columns.find(c => c.key === newNumericField);
     const min = Number(newNumericMin);
     const max = Number(newNumericMax);
 
-    console.log('[DataQualityPanel] min:', min, 'max:', max);
-
-    if (isNaN(min) || isNaN(max) || min >= max) {
-      console.log('[DataQualityPanel] Invalid min/max, returning');
-      return;
-    }
+    if (isNaN(min) || isNaN(max) || min >= max) return;
 
     const newRule: NumericRangeRule = {
       id: Math.random().toString(36).substring(2, 11),
@@ -147,15 +131,11 @@ export function DataQualityPanel({
       max,
     };
 
-    console.log('[DataQualityPanel] Created rule:', newRule);
-    console.log('[DataQualityPanel] Current rules count:', config.numericRangeRules.length);
-
     const newConfig = {
       ...config,
       numericRangeRules: [...config.numericRangeRules, newRule],
     };
 
-    console.log('[DataQualityPanel] New config rules count:', newConfig.numericRangeRules.length);
     onConfigChange(newConfig);
 
     setNewNumericField('');
