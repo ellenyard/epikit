@@ -98,13 +98,13 @@ function getAreaKey(feature: GeoJsonFeature | undefined, boundaryKey: string): s
 function makeAreaProperties(area: JoinedArea, metric: AreaMetric, rateMultiplier: number) {
   return {
     ...area.feature.properties,
-    epikit_area_key: area.key,
-    epikit_count: area.count,
-    epikit_denominator: area.denominator,
-    epikit_rate: area.rate,
-    epikit_metric: metric,
-    epikit_rate_multiplier: metric === 'rate' ? rateMultiplier : null,
-    epikit_mapped_value: area.value,
+    linelist_area_key: area.key,
+    linelist_count: area.count,
+    linelist_denominator: area.denominator,
+    linelist_rate: area.rate,
+    linelist_metric: metric,
+    linelist_rate_multiplier: metric === 'rate' ? rateMultiplier : null,
+    linelist_mapped_value: area.value,
   };
 }
 

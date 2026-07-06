@@ -82,7 +82,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
               </svg>
             </div>
             <h2 id="onboarding-title" className="text-xl font-semibold text-gray-800">
-              Welcome to EpiKit
+              Welcome to LineList
             </h2>
           </div>
           <button
@@ -124,16 +124,16 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-4">Welcome to EpiKit!</h3>
+                <h3 className="text-2xl font-bold text-gray-800 mb-4">Welcome to LineList!</h3>
                 <p className="text-lg text-gray-600 max-w-2xl mx-auto">
                   Your complete toolkit for outbreak investigation and epidemiological analysis
                 </p>
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-                <h4 className="font-semibold text-blue-900 mb-3">What is EpiKit?</h4>
+                <h4 className="font-semibold text-blue-900 mb-3">What is LineList?</h4>
                 <p className="text-blue-800 mb-4">
-                  EpiKit is a free, web-based platform designed for junior epidemiologists and public health professionals.
+                  LineList is a web-based platform designed for junior epidemiologists and public health professionals.
                   It helps you clean and analyze outbreak data without requiring coding skills.
                   <strong className="block mt-2">Within a minute, you can load demo data and generate your first epi curve.</strong>
                 </p>
@@ -148,7 +148,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
-                    <span><strong>Form Builder:</strong> Create custom data collection forms</span>
+                    <span><strong>Data Visualization:</strong> Create clear charts for reports and presentations</span>
                   </li>
                   <li className="flex items-start">
                     <svg className="w-5 h-5 text-blue-500 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -193,7 +193,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
-                    How EpiKit Protects Your Data
+                    How LineList Protects Your Data
                   </h4>
                   <ul className="space-y-2 text-green-800 text-sm">
                     <li className="flex items-start">
@@ -202,15 +202,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>No server uploads:</strong> Your data never leaves your computer</span>
+                      <span><strong>No application-server uploads:</strong> Imported datasets stay in your browser</span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>No cloud storage:</strong> Data is stored in browser memory only</span>
+                      <span><strong>No cloud dataset storage:</strong> Data is saved in this browser's local storage</span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>Session-based:</strong> Data is cleared when you close the browser tab</span>
+                      <span><strong>Portable backups:</strong> Export a project file to preserve or transfer your work</span>
                     </li>
                   </ul>
                 </div>
@@ -500,7 +500,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-4">You're All Set!</h3>
                 <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                  Here's how to get the most out of EpiKit
+                  Here's how to get the most out of LineList
                 </p>
               </div>
 
@@ -621,7 +621,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                   onClick={handleComplete}
                   className="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors inline-flex items-center text-lg"
                 >
-                  Get Started with EpiKit
+                  Get Started with LineList
                   <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                   </svg>

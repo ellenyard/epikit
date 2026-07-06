@@ -142,7 +142,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               {activeSection === 'faq' && 'Frequently Asked Questions'}
               {activeSection === 'privacy' && 'Privacy & Data Handling'}
               {activeSection === 'saving-sharing' && 'Saving & Sharing'}
-              {activeSection === 'about' && 'About EpiKit'}
+              {activeSection === 'about' && 'About LineList'}
               {activeSection === 'glossary' && 'Epidemiology Glossary'}
             </h3>
             <button
@@ -162,14 +162,14 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               <div className="space-y-6 max-w-4xl">
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
                   <p className="text-blue-800">
-                    <strong>Welcome to EpiKit!</strong> This guide will help you get started with outbreak investigation and analysis.
+                    <strong>Welcome to LineList!</strong> This guide will help you get started with outbreak investigation and analysis.
                   </p>
                 </div>
 
                 <section>
                   <h4 className="text-lg font-semibold text-gray-800 mb-3">1. Importing Your Data</h4>
                   <div className="prose prose-sm text-gray-600">
-                    <p className="mb-3">To analyze data in EpiKit:</p>
+                    <p className="mb-3">To analyze data in LineList:</p>
                     <ol className="list-decimal ml-6 space-y-2">
                       <li>Navigate to any analysis module (Review/Clean, Epi Curve, Maps, etc.)</li>
                       <li>Click the <strong>"Import Data"</strong> button in the dataset selector bar</li>
@@ -320,7 +320,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                       </svg>
                       <p className="text-sm text-amber-800">
-                        <strong>Important:</strong> EpiKit processes data client-side only. To reproduce your analysis, you must document settings and export files manually.
+                        <strong>Important:</strong> LineList processes imported datasets client-side. To reproduce your analysis, document settings and export project backups.
                       </p>
                     </div>
                   </div>
@@ -358,7 +358,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <strong>Archive All Materials:</strong> Keep together:
                         <ul className="list-disc ml-5 mt-1 space-y-1 text-gray-600">
                           <li>Original raw data file (if allowed by your data policy)</li>
-                          <li>Cleaned/de-identified dataset exported from EpiKit</li>
+                          <li>Cleaned/de-identified dataset exported from LineList</li>
                           <li>Screenshots of all charts and tables</li>
                           <li>Documentation of analysis settings</li>
                         </ul>
@@ -398,15 +398,15 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               <div className="space-y-6 max-w-4xl">
                 <div className="bg-gray-50 border-l-4 border-gray-500 p-4">
                   <p className="text-gray-800">
-                    Information about EpiKit and how to get support
+                    Information about LineList and how to get support
                   </p>
                 </div>
 
                 <section className="border border-gray-200 rounded-lg p-5 bg-white">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-4">About EpiKit</h4>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">About LineList</h4>
                   <div className="space-y-3 text-sm text-gray-700">
                     <p>
-                      EpiKit is a free, open-source web application designed for outbreak investigation and epidemiological analysis.
+                      LineList is a web application designed for outbreak investigation and epidemiological analysis.
                       Built for junior epidemiologists and public health professionals, it provides essential tools for data
                       quality assurance and statistical analysis—all without requiring coding skills.
                     </p>
@@ -414,10 +414,10 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                       <h5 className="font-medium text-blue-900 mb-2">Key Features</h5>
                       <ul className="space-y-1 text-blue-800">
-                        <li>• <strong>Client-side processing:</strong> Your data never leaves your computer</li>
+                        <li>• <strong>Client-side processing:</strong> Imported datasets are processed in your browser</li>
                         <li>• <strong>No installation required:</strong> Works directly in your web browser</li>
-                        <li>• <strong>Zero cost:</strong> Free to use for all public health professionals</li>
-                        <li>• <strong>Privacy-first design:</strong> No server uploads, no cloud storage</li>
+                        <li>• <strong>Free core tools:</strong> Essential outbreak-analysis workflows are available without charge</li>
+                        <li>• <strong>Privacy-first design:</strong> No application-server upload or cloud storage of imported datasets</li>
                       </ul>
                     </div>
 
@@ -481,14 +481,14 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                 </section>
 
                 <section className="border border-gray-200 rounded-lg p-5 bg-white">
-                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Citing EpiKit</h4>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">Citing LineList</h4>
                   <div className="space-y-3 text-sm text-gray-700">
                     <p>
-                      If you use EpiKit in your outbreak investigations or research, please acknowledge it in your reports:
+                      If you use LineList in your outbreak investigations or research, please acknowledge it in your reports:
                     </p>
 
                     <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 font-mono text-xs">
-                      Data analysis was conducted using EpiKit (version 1.0.0), a web-based epidemiological analysis tool designed for outbreak investigation.
+                      Data analysis was conducted using LineList (version 1.0.0), a web-based epidemiological analysis tool designed for outbreak investigation.
                     </div>
                   </div>
                 </section>
@@ -502,7 +502,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               <div className="space-y-3 max-w-4xl">
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-4">
                   <p className="text-blue-800">
-                    Answers to common questions about using EpiKit
+                    Answers to common questions about using LineList
                   </p>
                 </div>
 
@@ -516,12 +516,12 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'storage',
                     question: 'Is my data stored on the server?',
-                    answer: 'No! All data processing happens entirely in your web browser (client-side). Your data never leaves your computer. EpiKit does not upload data to any server or cloud storage. Data exists only in browser memory and is cleared when you close the tab.'
+                    answer: 'Imported datasets are processed in your browser and saved in this browser\'s local storage so you can return later. LineList does not upload imported datasets to an application server or cloud storage. Map layers and other externally hosted resources may still generate normal network requests. Use project export to create backups or move work to another device.'
                   },
                   {
                     id: 'phi',
                     question: 'Can I upload data with Protected Health Information (PHI)?',
-                    answer: 'No, you should NOT upload data containing PHI such as names, addresses, dates of birth, SSNs, or other direct identifiers. Always de-identify your data before importing it into EpiKit. Use case IDs instead of names, generalize dates and locations, and follow your organization\'s data handling policies.'
+                    answer: 'No, you should NOT import data containing PHI such as names, addresses, dates of birth, SSNs, or other direct identifiers. Always de-identify your data before importing it into LineList. Use case IDs instead of names, generalize dates and locations, and follow your organization\'s data handling policies.'
                   },
                   {
                     id: 'date-variable',
@@ -531,7 +531,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'missing-data',
                     question: 'What happens if my data has missing values?',
-                    answer: 'EpiKit will identify missing values in the Data Quality panel. Missing values are excluded from calculations. For critical variables (like date of onset), you may need to follow up with data sources to obtain complete information.'
+                    answer: 'LineList will identify missing values in the Data Quality panel. Missing values are excluded from calculations. For critical variables (like date of onset), you may need to follow up with data sources to obtain complete information.'
                   },
                   {
                     id: 'export',
@@ -555,8 +555,8 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   },
                   {
                     id: 'data-quality',
-                    question: 'What data quality checks does EpiKit perform?',
-                    answer: 'EpiKit can check for duplicate records (with fuzzy matching for typos), date order issues (e.g., onset date before exposure date), and numeric range violations (e.g., age outside 0-120). Configure these checks in the Data Quality panel in the Review/Clean module, then click "Run Checks" to identify issues.'
+                    question: 'What data quality checks does LineList perform?',
+                    answer: 'LineList can check for duplicate records (with fuzzy matching for typos), date order issues (e.g., onset date before exposure date), and numeric range violations (e.g., age outside 0-120). Configure these checks in the Data Quality panel in the Review/Clean module, then click "Run Checks" to identify issues.'
                   },
                   {
                     id: 'create-variable',
@@ -596,7 +596,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               <div className="space-y-6 max-w-4xl">
                 <div className="bg-red-50 border-l-4 border-red-500 p-4">
                   <p className="text-red-800 font-medium">
-                    Important information about data privacy and security in EpiKit
+                    Important information about data privacy and security in LineList
                   </p>
                 </div>
 
@@ -616,19 +616,19 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
-                        <span>Your data never leaves your computer</span>
+                        <span>Imported datasets are not sent to a LineList application server</span>
                       </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
-                        <span>No server uploads or cloud storage</span>
+                        <span>No application-server upload or cloud storage of imported datasets</span>
                       </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
-                        <span>Data stored only in browser memory (RAM)</span>
+                        <span>Data is saved in this browser's local storage</span>
                       </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
-                        <span>Data is cleared when you close the browser tab</span>
+                        <span>Project export provides portable backups and device transfer</span>
                       </li>
                     </ul>
                   </div>
@@ -644,7 +644,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       <div>
                         <h5 className="font-bold text-red-900 text-lg mb-2">DO NOT Upload PHI</h5>
                         <p className="text-red-800 text-sm mb-3">
-                          Even though EpiKit processes data client-side, you should NEVER upload data containing PHI.
+                          Even though LineList processes imported datasets client-side, you should NEVER import data containing PHI.
                           This protects against accidental disclosure and ensures compliance with privacy regulations.
                         </p>
                       </div>
@@ -675,7 +675,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <h4 className="text-lg font-semibold text-gray-800 mb-3">De-identification Best Practices</h4>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
                     <p className="text-blue-800 text-sm mb-4">
-                      Before importing data into EpiKit, follow these de-identification guidelines:
+                      Before importing data into LineList, follow these de-identification guidelines:
                     </p>
                     <div className="space-y-3 text-sm text-blue-800">
                       <div className="flex items-start">
@@ -783,7 +783,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <h6 className="font-semibold text-amber-900 mb-2">1. Apply Coordinate Jittering</h6>
                         <p className="text-amber-800 mb-2">
                           Add small random offsets to latitude and longitude values (e.g., ±0.001° to ±0.01°) before
-                          importing into EpiKit. This obscures exact locations while preserving spatial patterns useful
+                          importing into LineList. This obscures exact locations while preserving spatial patterns useful
                           for outbreak investigation.
                         </p>
                         <div className="bg-white border border-amber-200 rounded p-3 font-mono text-xs">
@@ -833,12 +833,12 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <h4 className="text-lg font-semibold text-gray-800 mb-3">About the Demo Dataset</h4>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
                     <p className="text-blue-800 text-sm mb-3">
-                      The foodborne outbreak demo dataset included with EpiKit is <strong>entirely synthetic</strong>
+                      The foodborne outbreak demo dataset included with LineList is <strong>entirely synthetic</strong>
                       and created for training purposes only. It does not represent any real outbreak or actual patient data.
                     </p>
                     <p className="text-blue-800 text-sm">
                       The demo includes 48 fictional case records designed to illustrate common outbreak investigation
-                      scenarios and analysis techniques. You can safely explore all EpiKit features with this dataset
+                      scenarios and analysis techniques. You can safely explore all LineList features with this dataset
                       without any privacy concerns.
                     </p>
                   </div>

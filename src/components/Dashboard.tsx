@@ -70,7 +70,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <line x1="3" y1="27" x2="29" y2="27" stroke="#64748b" strokeWidth="1"/>
             </svg>
           </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-3">Welcome to EpiKit</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-3">Welcome to LineList</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
             Your outbreak investigation toolkit for cleaning and analyzing epidemiological data
           </p>
@@ -245,7 +245,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <div className="flex-1">
               <h3 className="font-semibold text-amber-900 mb-1">New to outbreak investigation?</h3>
               <p className="text-sm text-amber-800 mb-3">
-                Check out our tutorials and guides to learn how to use EpiKit's analysis tools effectively.
+                Check out our tutorials and guides to learn how to use LineList's analysis tools effectively.
               </p>
               <button
                 onClick={onOpenHelp}
