@@ -473,8 +473,16 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 mt-4">
                       <h5 className="font-medium text-gray-800 mb-2">Technical Support</h5>
                       <p className="text-gray-700">
-                        For technical issues, bug reports, or feature requests, please contact your system administrator
-                        or the development team through your organization's support channels.
+                        Found a bug or have a feature request? Please open an issue on the{' '}
+                        <a
+                          href="https://github.com/ellenyard/epikit/issues"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 underline hover:text-blue-800"
+                        >
+                          LineList GitHub repository
+                        </a>
+                        .
                       </p>
                     </div>
                   </div>

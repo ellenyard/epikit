@@ -20,12 +20,8 @@
  * - Persists to localStorage on every change (auto-save)
  * - Edit log tracks all data modifications for audit trail
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import type { Dataset, DataColumn, CaseRecord, EditLogEntry } from './types/analysis';
-import { Review } from './components/review/Review';
-import { EpiCurve } from './components/analysis/EpiCurve';
-import { Maps } from './components/analysis/Maps';
-import { AnalysisWorkflow } from './components/analysis/AnalysisWorkflow';
 import { DataImport } from './components/analysis/DataImport';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { HelpCenter } from './components/HelpCenter';
@@ -33,8 +29,17 @@ import { HelpIcon } from './components/HelpIcon';
 import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
-import { VisualizeWorkflow } from './components/visualize/VisualizeWorkflow';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LoadingSpinner } from './components/shared/LoadingSpinner';
+
+// Heavy analysis modules are code-split so the initial load (Dashboard + shell)
+// stays small. Maps pulls in Leaflet/markercluster and Visualize pulls in the
+// full chart gallery; neither is needed until the user opens that module.
+const Review = lazy(() => import('./components/review/Review').then((m) => ({ default: m.Review })));
+const EpiCurve = lazy(() => import('./components/analysis/EpiCurve').then((m) => ({ default: m.EpiCurve })));
+const Maps = lazy(() => import('./components/analysis/Maps').then((m) => ({ default: m.Maps })));
+const AnalysisWorkflow = lazy(() => import('./components/analysis/AnalysisWorkflow').then((m) => ({ default: m.AnalysisWorkflow })));
+const VisualizeWorkflow = lazy(() => import('./components/visualize/VisualizeWorkflow').then((m) => ({ default: m.VisualizeWorkflow })));
 import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords, surveillanceDemoColumns, surveillanceDemoRecords } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
@@ -745,8 +750,10 @@ function App() {
             onDeleteDataset={deleteDataset}
           />
         ) : activeDataset ? (
-          // Modules that require a dataset
-          activeModule === 'review' ? (
+          // Modules that require a dataset. Each is lazily loaded, so a shared
+          // Suspense boundary shows a spinner while the module chunk downloads.
+          <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-white"><LoadingSpinner size="lg" message="Loading module…" /></div>}>
+          {activeModule === 'review' ? (
             <ErrorBoundary moduleName="Review/Clean" onReset={() => {}}>
               <Review
                 datasets={datasets}
@@ -785,7 +792,8 @@ function App() {
             <ErrorBoundary moduleName="Visualize" onReset={() => {}}>
               <VisualizeWorkflow dataset={activeDataset} />
             </ErrorBoundary>
-          ) : null
+          ) : null}
+          </Suspense>
         ) : (
           // No dataset selected - show prompt
           <div className="flex-1 flex items-center justify-center bg-white">
