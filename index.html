@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LineList — Outbreak Investigation Toolkit</title>
-    <meta name="description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser with LineList." />
+    <meta name="description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser. A free, privacy-first toolkit for field epidemiologists — no installation, no data upload." />
     <meta name="author" content="Ellen Yard" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://linelist.org/" />
@@ -13,7 +13,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="LineList" />
     <meta property="og:title" content="LineList — Outbreak Investigation Toolkit" />
-    <meta property="og:description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser." />
+    <meta property="og:description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser. Free, privacy-first, no installation." />
     <meta property="og:url" content="https://linelist.org/" />
     <meta name="twitter:card" content="summary" />
     <meta name="twitter:title" content="LineList — Outbreak Investigation Toolkit" />
@@ -43,11 +43,427 @@
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.svg" />
     <meta name="theme-color" content="#1e293b" />
+
+    <style>
+      :root {
+        --slate-900: #0f172a;
+        --slate-800: #1e293b;
+        --slate-700: #334155;
+        --slate-600: #475569;
+        --slate-500: #64748b;
+        --slate-400: #94a3b8;
+        --slate-200: #e2e8f0;
+        --slate-100: #f1f5f9;
+        --slate-50: #f8fafc;
+        --blue-700: #1d4ed8;
+        --blue-600: #2563eb;
+        --blue-500: #3b82f6;
+        --blue-100: #dbeafe;
+        --blue-50: #eff6ff;
+        --white: #ffffff;
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        color: var(--slate-700);
+        line-height: 1.6;
+        background: var(--white);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      a { color: inherit; text-decoration: none; }
+
+      .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+      /* Header */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        background: rgba(255, 255, 255, 0.85);
+        backdrop-filter: saturate(180%) blur(8px);
+        border-bottom: 1px solid var(--slate-200);
+      }
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 64px;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--slate-900); font-size: 18px; }
+      .brand-mark {
+        width: 36px; height: 36px; border-radius: 9px;
+        background: var(--slate-800);
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .nav-links { display: flex; align-items: center; gap: 28px; }
+      .nav-links a { color: var(--slate-600); font-size: 15px; font-weight: 500; }
+      .nav-links a:hover { color: var(--slate-900); }
+
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        font-weight: 600; font-size: 15px;
+        padding: 10px 18px; border-radius: 10px;
+        transition: all 0.15s ease;
+        cursor: pointer; border: none;
+      }
+      .btn-primary { background: var(--blue-600); color: var(--white); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+      .btn-primary:hover { background: var(--blue-700); box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
+      .btn-ghost { background: var(--white); color: var(--slate-700); border: 1px solid var(--slate-200); }
+      .btn-ghost:hover { border-color: var(--slate-400); color: var(--slate-900); }
+      .btn-lg { padding: 14px 26px; font-size: 16px; border-radius: 12px; }
+
+      /* Hero */
+      .hero {
+        background: linear-gradient(to bottom right, var(--slate-50), var(--blue-50));
+        padding: 88px 0 96px;
+        text-align: center;
+        border-bottom: 1px solid var(--slate-200);
+      }
+      .eyebrow {
+        display: inline-block;
+        font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+        color: var(--blue-700); background: var(--blue-100);
+        padding: 6px 14px; border-radius: 999px; margin-bottom: 24px;
+      }
+      .hero h1 {
+        font-size: 52px; line-height: 1.08; font-weight: 800;
+        color: var(--slate-900); letter-spacing: -0.02em;
+        max-width: 760px; margin: 0 auto 20px;
+      }
+      .hero p.lede {
+        font-size: 20px; color: var(--slate-600);
+        max-width: 640px; margin: 0 auto 36px;
+      }
+      .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+      .hero-note { margin-top: 20px; font-size: 14px; color: var(--slate-500); }
+
+      /* Trust strip */
+      .trust {
+        display: flex; flex-wrap: wrap; justify-content: center; gap: 28px;
+        padding: 22px 24px;
+        border-bottom: 1px solid var(--slate-200);
+        background: var(--white);
+      }
+      .trust span { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; color: var(--slate-600); }
+      .trust svg { color: var(--blue-600); flex-shrink: 0; }
+
+      /* Sections */
+      section.block { padding: 80px 0; }
+      .section-head { text-align: center; max-width: 620px; margin: 0 auto 52px; }
+      .section-head h2 { font-size: 34px; font-weight: 800; color: var(--slate-900); letter-spacing: -0.01em; margin-bottom: 14px; }
+      .section-head p { font-size: 18px; color: var(--slate-600); }
+
+      /* Feature grid */
+      .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+      .feature {
+        background: var(--white);
+        border: 1px solid var(--slate-200);
+        border-radius: 14px;
+        padding: 26px;
+        transition: all 0.15s ease;
+      }
+      .feature:hover { border-color: var(--blue-100); box-shadow: 0 8px 24px rgba(15,23,42,0.06); transform: translateY(-2px); }
+      .feature-icon {
+        width: 44px; height: 44px; border-radius: 11px;
+        background: var(--blue-100); color: var(--blue-600);
+        display: inline-flex; align-items: center; justify-content: center;
+        margin-bottom: 16px;
+      }
+      .feature h3 { font-size: 17px; font-weight: 700; color: var(--slate-900); margin-bottom: 8px; }
+      .feature p { font-size: 14.5px; color: var(--slate-600); }
+
+      /* How it works */
+      .steps-section { background: var(--slate-900); color: var(--slate-200); }
+      .steps-section .section-head h2 { color: var(--white); }
+      .steps-section .section-head p { color: var(--slate-400); }
+      .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+      .step { text-align: center; padding: 0 12px; }
+      .step-num {
+        width: 48px; height: 48px; border-radius: 999px;
+        background: var(--blue-600); color: var(--white);
+        font-weight: 700; font-size: 20px;
+        display: inline-flex; align-items: center; justify-content: center;
+        margin-bottom: 18px;
+      }
+      .step h3 { font-size: 19px; font-weight: 700; color: var(--white); margin-bottom: 8px; }
+      .step p { font-size: 15px; color: var(--slate-400); }
+
+      /* Audience */
+      .audience-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
+      .chip {
+        background: var(--slate-100); color: var(--slate-700);
+        font-size: 15px; font-weight: 500;
+        padding: 10px 18px; border-radius: 999px;
+        border: 1px solid var(--slate-200);
+      }
+
+      /* Privacy callout */
+      .privacy {
+        background: var(--blue-50);
+        border: 1px solid var(--blue-100);
+        border-radius: 16px;
+        padding: 40px;
+        display: flex; gap: 24px; align-items: flex-start;
+      }
+      .privacy-icon {
+        flex-shrink: 0;
+        width: 52px; height: 52px; border-radius: 13px;
+        background: var(--blue-600); color: var(--white);
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .privacy h3 { font-size: 22px; font-weight: 700; color: var(--slate-900); margin-bottom: 10px; }
+      .privacy p { font-size: 15.5px; color: var(--slate-700); margin-bottom: 10px; }
+      .privacy p.warn { font-weight: 600; color: var(--slate-900); }
+
+      /* Final CTA */
+      .final-cta { text-align: center; padding: 80px 0; }
+      .final-cta h2 { font-size: 36px; font-weight: 800; color: var(--slate-900); margin-bottom: 16px; letter-spacing: -0.01em; }
+      .final-cta p { font-size: 18px; color: var(--slate-600); margin-bottom: 32px; }
+
+      /* Footer */
+      footer { border-top: 1px solid var(--slate-200); padding: 40px 0; background: var(--slate-50); }
+      .footer-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+      .footer-brand { display: flex; align-items: center; gap: 10px; font-weight: 700; color: var(--slate-900); }
+      .footer-links { display: flex; gap: 24px; font-size: 14px; color: var(--slate-600); }
+      .footer-links a:hover { color: var(--slate-900); }
+      .footer-copy { font-size: 13px; color: var(--slate-500); width: 100%; }
+
+      @media (max-width: 860px) {
+        .features, .steps { grid-template-columns: 1fr; }
+        .nav-links a:not(.btn) { display: none; }
+        .hero h1 { font-size: 38px; }
+        .hero p.lede { font-size: 18px; }
+        .privacy { flex-direction: column; gap: 16px; padding: 28px; }
+        section.block { padding: 60px 0; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- Header -->
+    <header>
+      <div class="container nav">
+        <a class="brand" href="/">
+          <span class="brand-mark">
+            <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <rect x="4" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.6"/>
+              <rect x="8" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.75"/>
+              <rect x="12" y="10" width="3" height="16" rx="0.5" fill="#3b82f6"/>
+              <rect x="16" y="14" width="3" height="12" rx="0.5" fill="#3b82f6" opacity="0.85"/>
+              <rect x="20" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.7"/>
+              <rect x="24" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.5"/>
+              <line x1="3" y1="27" x2="29" y2="27" stroke="#64748b" stroke-width="1"/>
+            </svg>
+          </span>
+          LineList
+        </a>
+        <nav class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#privacy">Privacy</a>
+          <a class="btn btn-primary" href="/app/">Launch app</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <span class="eyebrow">Free · Browser-based · Privacy-first</span>
+        <h1>Outbreak investigation data, cleaned and analyzed in your browser</h1>
+        <p class="lede">
+          LineList is a guided toolkit for reviewing, cleaning, analyzing, mapping, and visualizing
+          line-list data — built for field epidemiologists who need answers, not code.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg" href="/app/">Launch LineList →</a>
+          <a class="btn btn-ghost btn-lg" href="#features">Explore features</a>
+        </div>
+        <p class="hero-note">No sign-up. No installation. Your data never leaves your browser.</p>
+      </div>
+    </section>
+
+    <!-- Trust strip -->
+    <div class="trust">
+      <span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Runs entirely client-side
+      </span>
+      <span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        No coding required
+      </span>
+      <span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Free core tools
+      </span>
+      <span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Works offline once loaded
+      </span>
+    </div>
+
+    <!-- Features -->
+    <section class="block" id="features">
+      <div class="container">
+        <div class="section-head">
+          <h2>Everything you need for a line-list analysis</h2>
+          <p>From messy spreadsheet to publication-ready figures, without leaving the page.</p>
+        </div>
+        <div class="features">
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 16a4 4 0 0 1-.88-7.9A5 5 0 0 1 15.9 6 5 5 0 0 1 17 15.9M15 13l-3-3-3 3M12 10v11" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Import CSV &amp; Excel</h3>
+            <p>Bring in data with worksheet selection and smart date-format handling — or paste straight from a spreadsheet.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Review &amp; clean</h3>
+            <p>Data-quality checks, line-list editing, derived variables, and a full edit history you can audit and export.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 15l3-4 3 3 4-6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Epidemic curves</h3>
+            <p>Build epi curves with stratification, annotations, and incubation-period overlays in a few clicks.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6 3-6-3zM9 7v13M15 4v13" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Maps</h3>
+            <p>Spot maps, area (choropleth) maps, and freehand sketch maps for transmission scenarios and field settings.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>
+            <h3>Statistics &amp; 2×2</h3>
+            <p>Descriptive stats, frequency tables, cross-tabulations, and 2×2 analysis with the measures epidemiologists expect.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v16h16M8 16l3-5 3 2 4-7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Chart gallery &amp; exports</h3>
+            <p>A publication-oriented gallery — bar, dot, forest, slope, waffle and more — with clean image exports.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20l9-5-9-5-9 5 9 5zM12 4L3 9l9 5 9-5-9-5z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Training datasets &amp; tutorials</h3>
+            <p>Synthetic outbreak datasets and embedded, step-by-step tutorials to learn each tool as you go.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Portable projects</h3>
+            <p>Export a whole project to a single file and import it on another device — a simple, cloud-free backup.</p>
+          </div>
+          <div class="feature">
+            <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <h3>Locale &amp; accessibility</h3>
+            <p>Configurable number and date formats plus accessibility controls for diverse teams and settings.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="block steps-section" id="how">
+      <div class="container">
+        <div class="section-head">
+          <h2>Three steps, start to finish</h2>
+          <p>A guided workflow that mirrors how an investigation actually unfolds.</p>
+        </div>
+        <div class="steps">
+          <div class="step">
+            <span class="step-num">1</span>
+            <h3>Import</h3>
+            <p>Load your CSV or Excel line list — or start from a built-in training dataset to explore first.</p>
+          </div>
+          <div class="step">
+            <span class="step-num">2</span>
+            <h3>Clean &amp; analyze</h3>
+            <p>Run quality checks, fix records, derive variables, then compute curves, tables, and 2×2 measures.</p>
+          </div>
+          <div class="step">
+            <span class="step-num">3</span>
+            <h3>Visualize &amp; export</h3>
+            <p>Map cases, build publication-ready charts, and export figures and a portable project file.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Audience -->
+    <section class="block">
+      <div class="container">
+        <div class="section-head">
+          <h2>Built for the people doing the fieldwork</h2>
+          <p>LineList assumes epidemiological judgment, not programming skill.</p>
+        </div>
+        <div class="audience-list">
+          <span class="chip">FETP residents</span>
+          <span class="chip">Junior epidemiologists</span>
+          <span class="chip">Outbreak investigators</span>
+          <span class="chip">Public health students</span>
+          <span class="chip">Surveillance officers</span>
+          <span class="chip">Instructors &amp; trainers</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Privacy -->
+    <section class="block" id="privacy" style="padding-top: 0;">
+      <div class="container">
+        <div class="privacy">
+          <span class="privacy-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <div>
+            <h3>Your data stays in your browser</h3>
+            <p>
+              Imported datasets are processed locally and saved only in your browser's storage. LineList does not
+              upload your data to an application server or offer cloud dataset storage. Map tiles and other externally
+              hosted resources generate normal network requests.
+            </p>
+            <p class="warn">
+              Do not import protected health information or direct identifiers. De-identify datasets and follow your
+              organization's policies before use.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Final CTA -->
+    <section class="final-cta">
+      <div class="container">
+        <h2>Ready to work through your line list?</h2>
+        <p>Open the toolkit in your browser — no account, nothing to install.</p>
+        <a class="btn btn-primary btn-lg" href="/app/">Launch LineList →</a>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+      <div class="container footer-inner">
+        <a class="footer-brand" href="/">
+          <svg width="20" height="20" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <rect x="4" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.6"/>
+            <rect x="8" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.75"/>
+            <rect x="12" y="10" width="3" height="16" rx="0.5" fill="#3b82f6"/>
+            <rect x="16" y="14" width="3" height="12" rx="0.5" fill="#3b82f6" opacity="0.85"/>
+            <rect x="20" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.7"/>
+            <rect x="24" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.5"/>
+          </svg>
+          LineList
+        </a>
+        <nav class="footer-links">
+          <a href="/app/">Launch app</a>
+          <a href="#features">Features</a>
+          <a href="#privacy">Privacy</a>
+          <a href="https://github.com/ellenyard/epikit" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </nav>
+        <p class="footer-copy">LineList is a free, browser-based toolkit for outbreak investigation. Built by Ellen Yard.</p>
+      </div>
+    </footer>
   </body>
 </html>
