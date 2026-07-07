@@ -59,15 +59,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="text-center mb-12">
           <div className="inline-flex items-center justify-center w-20 h-20 bg-slate-800 rounded-2xl shadow-lg mb-6">
             <svg className="w-12 h-12" viewBox="0 0 32 32" fill="none">
-              {/* Epi curve bars */}
-              <rect x="4" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.6"/>
-              <rect x="8" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.75"/>
-              <rect x="12" y="10" width="3" height="16" rx="0.5" fill="#3b82f6"/>
-              <rect x="16" y="14" width="3" height="12" rx="0.5" fill="#3b82f6" opacity="0.85"/>
-              <rect x="20" y="18" width="3" height="8" rx="0.5" fill="#3b82f6" opacity="0.7"/>
-              <rect x="24" y="22" width="3" height="4" rx="0.5" fill="#3b82f6" opacity="0.5"/>
-              {/* Baseline */}
-              <line x1="3" y1="27" x2="29" y2="27" stroke="#64748b" strokeWidth="1"/>
+              {/* Line list: case rows, each with a leading marker */}
+              <circle cx="8" cy="10" r="1.9" fill="#3b82f6"/>
+              <rect x="12.5" y="8.5" width="12.5" height="3" rx="1.5" fill="#3b82f6" opacity="0.45"/>
+              <circle cx="8" cy="16" r="1.9" fill="#3b82f6"/>
+              <rect x="12.5" y="14.5" width="12.5" height="3" rx="1.5" fill="#3b82f6"/>
+              <circle cx="8" cy="22" r="1.9" fill="#3b82f6"/>
+              <rect x="12.5" y="20.5" width="12.5" height="3" rx="1.5" fill="#3b82f6" opacity="0.45"/>
             </svg>
           </div>
           <h1 className="text-4xl font-bold text-gray-900 mb-3">Welcome to LineList</h1>
