@@ -18,7 +18,7 @@
     <meta property="og:image" content="https://linelist.org/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="LineList — Outbreak Investigation Toolkit" />
+    <meta property="og:image:alt" content="LineList - Outbreak Investigation Toolkit" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="LineList: Outbreak Investigation Toolkit" />
     <meta name="twitter:description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser." />
@@ -151,6 +151,14 @@
       }
       .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
       .hero-note { margin-top: 20px; font-size: 14px; color: var(--slate-500); }
+      .hero-image { margin-top: 48px; }
+      .hero-image img {
+        width: 100%; max-width: 960px; height: auto;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(15,23,42,0.12), 0 8px 20px rgba(15,23,42,0.06);
+        border: 1px solid var(--slate-200);
+        display: block; margin: 0 auto;
+      }
 
       /* Trust strip */
       .trust {
@@ -295,6 +303,10 @@
         <p class="hero-note">No sign-up. No installation. Your data never leave your browser.</p>
       </div>
     </section>
+
+    <div class="container hero-image">
+      <img src="/hero-dashboard.png" alt="LineList dashboard showing import, review, analyze, and visualize workflow cards" width="960" height="504" loading="lazy" />
+    </div>
 
     <!-- Trust strip -->
     <div class="trust">
