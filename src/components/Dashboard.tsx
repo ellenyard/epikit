@@ -75,64 +75,68 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Quick Action Cards */}
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          {/* Step 1: Import Data Card */}
+        <div className="grid md:grid-cols-4 gap-4 mb-12">
+          {/* Import Data Card */}
           <button
             onClick={onImportData}
-            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-left hover:shadow-lg hover:border-blue-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-5 text-left hover:shadow-lg hover:border-blue-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
           >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">1</span>
-              <span className="text-xs font-medium text-blue-600 uppercase tracking-wide">Start here</span>
-            </div>
-            <div className="w-14 h-14 bg-blue-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-200 transition-colors">
-              <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-3 group-hover:bg-blue-200 transition-colors">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Import Data</h3>
-            <p className="text-sm text-gray-600">
-              Upload a CSV file or paste data from a spreadsheet to begin your analysis
+            <h3 className="text-base font-semibold text-gray-900 mb-1.5">Import your data</h3>
+            <p className="text-sm text-gray-600 leading-snug">
+              Upload a CSV or paste from a spreadsheet
             </p>
           </button>
 
-          {/* Step 2: Review & Analyze Card */}
+          {/* Review & Clean Card */}
           <button
             onClick={() => onNavigate('review')}
-            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-left hover:shadow-lg hover:border-green-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
+            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-5 text-left hover:shadow-lg hover:border-teal-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2"
           >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 text-xs font-bold">2</span>
-              <span className="text-xs font-medium text-green-600 uppercase tracking-wide">Then</span>
-            </div>
-            <div className="w-14 h-14 bg-green-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-green-200 transition-colors">
-              <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-teal-100 rounded-xl flex items-center justify-center mb-3 group-hover:bg-teal-200 transition-colors">
+              <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Review & Analyze</h3>
-            <p className="text-sm text-gray-600">
-              Clean your data, check quality, explore variables, and build analysis tables
+            <h3 className="text-base font-semibold text-gray-900 mb-1.5">Review &amp; clean</h3>
+            <p className="text-sm text-gray-600 leading-snug">
+              Check quality, fix records, derive variables
             </p>
           </button>
 
-          {/* Try Demo Card */}
+          {/* Analyze Card */}
           <button
-            onClick={handleLoadDemoAndNavigate}
-            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-6 text-left hover:shadow-lg hover:border-purple-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+            onClick={() => onNavigate('analysis')}
+            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-5 text-left hover:shadow-lg hover:border-green-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
           >
-            <div className="flex items-center gap-2 mb-3">
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-purple-100 text-purple-700 text-xs font-bold">?</span>
-              <span className="text-xs font-medium text-purple-600 uppercase tracking-wide">Or explore</span>
-            </div>
-            <div className="w-14 h-14 bg-purple-100 rounded-xl flex items-center justify-center mb-4 group-hover:bg-purple-200 transition-colors">
-              <svg className="w-7 h-7 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+            <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-3 group-hover:bg-green-200 transition-colors">
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 15l3-4 3 3 4-6" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Try Demo Dataset</h3>
-            <p className="text-sm text-gray-600">
-              Explore with a sample foodborne outbreak investigation
+            <h3 className="text-base font-semibold text-gray-900 mb-1.5">Analyze</h3>
+            <p className="text-sm text-gray-600 leading-snug">
+              Epi curves, 2×2 tables, frequencies, stats
+            </p>
+          </button>
+
+          {/* Visualize & Export Card */}
+          <button
+            onClick={() => onNavigate('visualize')}
+            className="group bg-white rounded-xl shadow-sm border border-gray-200 p-5 text-left hover:shadow-lg hover:border-purple-300 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+          >
+            <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-3 group-hover:bg-purple-200 transition-colors">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-6-3V4l6 3 6-3 6 3v13l-6 3-6-3zM9 7v13M15 4v13" />
+              </svg>
+            </div>
+            <h3 className="text-base font-semibold text-gray-900 mb-1.5">Visualize &amp; export</h3>
+            <p className="text-sm text-gray-600 leading-snug">
+              Maps, charts, publication-ready figures
             </p>
           </button>
         </div>
@@ -227,7 +231,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
               <p className="text-gray-500 mb-2">No datasets yet</p>
-              <p className="text-sm text-gray-400">Import data or try the demo to get started</p>
+              <p className="text-sm text-gray-400 mb-4">Import data to get started, or try a sample dataset</p>
+              <button
+                onClick={handleLoadDemoAndNavigate}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 hover:border-purple-300 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                </svg>
+                Try a sample dataset
+              </button>
             </div>
           )}
         </div>
