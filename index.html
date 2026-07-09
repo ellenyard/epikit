@@ -195,31 +195,6 @@
       .feature h3 { font-size: 17px; font-weight: 700; color: var(--slate-900); margin-bottom: 8px; }
       .feature p { font-size: 14.5px; color: var(--slate-600); }
 
-      /* How it works */
-      .steps-section { background: var(--slate-900); color: var(--slate-200); }
-      .steps-section .section-head h2 { color: var(--white); }
-      .steps-section .section-head p { color: var(--slate-400); }
-      .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
-      .step { text-align: center; padding: 0 12px; }
-      .step-num {
-        width: 48px; height: 48px; border-radius: 999px;
-        background: var(--blue-600); color: var(--white);
-        font-weight: 700; font-size: 20px;
-        display: inline-flex; align-items: center; justify-content: center;
-        margin-bottom: 18px;
-      }
-      .step h3 { font-size: 19px; font-weight: 700; color: var(--white); margin-bottom: 8px; }
-      .step p { font-size: 15px; color: var(--slate-400); }
-
-      /* Audience */
-      .audience-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 8px; }
-      .chip {
-        background: var(--slate-100); color: var(--slate-700);
-        font-size: 15px; font-weight: 500;
-        padding: 10px 18px; border-radius: 999px;
-        border: 1px solid var(--slate-200);
-      }
-
       /* Privacy callout */
       .privacy {
         background: var(--blue-50);
@@ -252,7 +227,7 @@
       .footer-copy { font-size: 13px; color: var(--slate-500); width: 100%; }
 
       @media (max-width: 860px) {
-        .features, .steps { grid-template-columns: 1fr; }
+        .features { grid-template-columns: 1fr; }
         .nav-links a:not(.btn) { display: none; }
         .hero h1 { font-size: 38px; }
         .hero p.lede { font-size: 18px; }
@@ -280,7 +255,6 @@
         </a>
         <nav class="nav-links">
           <a href="#features">Features</a>
-          <a href="#how">How it works</a>
           <a href="#privacy">Privacy</a>
           <a class="btn btn-primary" href="/app/">Launch app</a>
         </nav>
@@ -291,10 +265,9 @@
     <section class="hero">
       <div class="container">
         <span class="eyebrow">Free · Browser-based · Privacy-first</span>
-        <h1>Outbreak investigation data, cleaned and analyzed in your browser</h1>
+        <h1>Review, clean, analyze, map, and visualize your outbreak data</h1>
         <p class="lede">
-          LineList is a guided toolkit for reviewing, cleaning, analyzing, mapping, and visualizing
-          line-list data. Built for field epidemiologists who need answers, not code.
+          Built for field epidemiologists by field epidemiologists.
         </p>
         <div class="hero-cta">
           <a class="btn btn-primary btn-lg" href="/app/">Launch LineList →</a>
@@ -332,8 +305,7 @@
     <section class="block" id="features">
       <div class="container">
         <div class="section-head">
-          <h2>Everything you need for a line-list analysis</h2>
-          <p>From messy spreadsheet to publication-ready figures, without leaving the page.</p>
+          <h2>Features</h2>
         </div>
         <div class="features">
           <div class="feature">
@@ -381,51 +353,6 @@
             <h3>Locale &amp; accessibility</h3>
             <p>Configurable number and date formats plus accessibility controls for diverse teams and settings.</p>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- How it works -->
-    <section class="block steps-section" id="how">
-      <div class="container">
-        <div class="section-head">
-          <h2>Three steps, start to finish</h2>
-          <p>A guided workflow that mirrors how an investigation actually unfolds.</p>
-        </div>
-        <div class="steps">
-          <div class="step">
-            <span class="step-num">1</span>
-            <h3>Import</h3>
-            <p>Load your CSV or Excel line list, or start from a built-in training dataset to explore first.</p>
-          </div>
-          <div class="step">
-            <span class="step-num">2</span>
-            <h3>Clean &amp; analyze</h3>
-            <p>Run quality checks, fix records, derive variables, then compute curves, tables, and 2×2 measures.</p>
-          </div>
-          <div class="step">
-            <span class="step-num">3</span>
-            <h3>Visualize &amp; export</h3>
-            <p>Map cases, build publication-ready charts, and export figures and a portable project file.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Audience -->
-    <section class="block">
-      <div class="container">
-        <div class="section-head">
-          <h2>Built for the people doing the fieldwork</h2>
-          <p>LineList assumes epidemiological judgment, not programming skill.</p>
-        </div>
-        <div class="audience-list">
-          <span class="chip">FETP residents</span>
-          <span class="chip">Junior epidemiologists</span>
-          <span class="chip">Outbreak investigators</span>
-          <span class="chip">Public health students</span>
-          <span class="chip">Surveillance officers</span>
-          <span class="chip">Instructors &amp; trainers</span>
         </div>
       </div>
     </section>
