@@ -1495,12 +1495,12 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     </div>
 
                     {/* X-Axis Labels */}
-                    <div className="flex">
+                    <div className="flex" style={shouldRotateLabels ? { marginTop: 10 } : {}}>
                       {displayData.bins.map((bin, index) => (
                         <div
                           key={index}
                           className="relative"
-                          style={{ width: barWidth, height: shouldRotateLabels ? 60 : 30 }}
+                          style={{ width: barWidth, height: shouldRotateLabels ? 80 : 30 }}
                         >
                           {shouldShowLabel(index) && (
                             <span
@@ -1511,7 +1511,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                                       transform: 'rotate(-45deg)',
                                       transformOrigin: '0 0',
                                       left: barWidth / 2,
-                                      top: 5,
+                                      top: 15,
                                     }
                                   : {
                                       left: '50%',
@@ -1740,7 +1740,9 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset
       const binDuration = binEnd - binStart;
       const offsetWithinBin = annotationTime - binStart;
       const fraction = binDuration > 0 ? offsetWithinBin / binDuration : 0;
-      x = binIndex * barWidth + fraction * barWidth;
+      // Center the marker on the bin when the annotation falls at the bin boundary
+      // (e.g., a date-only annotation like "Jan 10" at midnight should center on Jan 10's bar)
+      x = binIndex * barWidth + Math.max(fraction * barWidth, barWidth / 2);
     }
   }
 
