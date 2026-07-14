@@ -44,11 +44,11 @@ This checklist focuses on showing the value of the existing product, making it e
 - [x] Add a three-step workflow section: **Review and clean → Analyze → Map and communicate**.
 - [x] Create three illustrated feature sections using the new screenshots.
 - [x] Write outcome-focused headings and captions for each screenshot.
-- [ ] Reduce the current nine-card feature grid to a compact “Also included” section.
-- [ ] Add a short “Who LineList is for” statement.
-- [ ] Keep the privacy section prominent but visually separate from the main product story.
-- [ ] Update the final call to action to **Try the sample outbreak**.
-- [ ] Review page length, spacing, and visual rhythm on desktop and mobile.
+- [x] Reduce the current nine-card feature grid to a compact “Also included” section.
+- [x] Add a short “Who LineList is for” statement.
+- [x] Keep the privacy section prominent but visually separate from the main product story.
+- [x] Update the final call to action to **Try the sample outbreak**.
+- [x] Review page length, spacing, and visual rhythm on desktop and mobile.
 
 **Done when:** The page tells a coherent story from messy data to a usable outbreak-investigation result.
 
