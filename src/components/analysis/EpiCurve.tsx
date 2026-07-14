@@ -1408,7 +1408,13 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                   onClick={handleChartClick}
                   title="Click to add annotation"
                 >
-                  <div className="relative" style={{ width: displayData.bins.length * barWidth }}>
+                  <div
+                    className="relative"
+                    style={{
+                      width: displayData.bins.length * barWidth,
+                      marginRight: shouldRotateLabels ? 60 : 0,
+                    }}
+                  >
                     {/* Grid Lines */}
                     {showGridLines && (
                       <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
@@ -1495,12 +1501,12 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                     </div>
 
                     {/* X-Axis Labels */}
-                    <div className="flex" style={shouldRotateLabels ? { marginTop: 10 } : {}}>
+                    <div className="flex border-t border-gray-200">
                       {displayData.bins.map((bin, index) => (
                         <div
                           key={index}
                           className="relative"
-                          style={{ width: barWidth, height: shouldRotateLabels ? 80 : 30 }}
+                          style={{ width: barWidth, height: shouldRotateLabels ? 96 : 34 }}
                         >
                           {shouldShowLabel(index) && (
                             <span
@@ -1508,15 +1514,15 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                               style={
                                 shouldRotateLabels
                                   ? {
-                                      transform: 'rotate(-45deg)',
+                                      transform: 'rotate(45deg)',
                                       transformOrigin: '0 0',
-                                      left: barWidth / 2,
-                                      top: 15,
+                                      left: '50%',
+                                      top: 10,
                                     }
                                   : {
                                       left: '50%',
                                       transform: 'translateX(-50%)',
-                                      top: 5,
+                                      top: 8,
                                       textAlign: 'center',
                                     }
                               }
@@ -1606,7 +1612,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                   {metrics717.detectionDays !== null && (
                     <div className={`flex items-center gap-1.5 ${metrics717.detectionMet ? 'text-green-700' : 'text-amber-700'}`}>
                       <span className="font-medium">{metrics717.detectionMet ? '✓' : '⚠'}</span>
-                      <span>Detection: {metrics717.detectionDays} days</span>
+                      <span>Detection: {metrics717.detectionDays} day{metrics717.detectionDays !== 1 ? 's' : ''}</span>
                       <span className="text-gray-400">(target ≤7)</span>
                     </div>
                   )}
@@ -1620,7 +1626,7 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
                   {metrics717.responseDays !== null && (
                     <div className={`flex items-center gap-1.5 ${metrics717.responseMet ? 'text-green-700' : 'text-amber-700'}`}>
                       <span className="font-medium">{metrics717.responseMet ? '✓' : '⚠'}</span>
-                      <span>Response: {metrics717.responseDays} days</span>
+                      <span>Response: {metrics717.responseDays} day{metrics717.responseDays !== 1 ? 's' : ''}</span>
                       <span className="text-gray-400">(target ≤7)</span>
                     </div>
                   )}
@@ -1970,7 +1976,7 @@ function generateSVG(
 ): string {
   const width = Math.max(800, data.bins.length * 40 + 100);
   const height = 500;
-  const margin = { top: 60, right: 40, bottom: 80, left: 60 };
+  const margin = { top: 60, right: 80, bottom: 110, left: 60 };
   const chartWidth = width - margin.left - margin.right;
   const chartHeight = height - margin.top - margin.bottom;
   const barWidth = chartWidth / data.bins.length;
@@ -2046,7 +2052,9 @@ function generateSVG(
     }
 
     // X-axis label
-    svg += `<text x="${x + barWidth / 2}" y="${margin.top + chartHeight + 15}" text-anchor="middle" font-size="11" transform="rotate(-45, ${x + barWidth / 2}, ${margin.top + chartHeight + 15})">${bin.label}</text>`;
+    const labelX = x + barWidth / 2;
+    const labelY = margin.top + chartHeight + 12;
+    svg += `<text x="${labelX}" y="${labelY}" text-anchor="start" font-size="11" transform="rotate(45, ${labelX}, ${labelY})">${bin.label}</text>`;
   });
 
   svg += '</svg>';

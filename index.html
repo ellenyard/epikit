@@ -131,7 +131,7 @@
       /* Hero */
       .hero {
         background: linear-gradient(to bottom right, var(--slate-50), var(--blue-50));
-        padding: 72px 0;
+        padding: 72px 0 80px;
         text-align: center;
         border-bottom: 1px solid var(--slate-200);
       }
@@ -146,7 +146,39 @@
         color: var(--slate-900); letter-spacing: -0.02em;
         max-width: 760px; margin: 0 auto 20px;
       }
-      .hero p.lede { font-size: 20px; color: var(--slate-600); }
+      .hero p.lede {
+        max-width: 780px;
+        margin: 0 auto;
+        font-size: 20px;
+        color: var(--slate-600);
+      }
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 30px;
+      }
+      .hero-note {
+        margin-top: 14px;
+        font-size: 14px;
+        color: var(--slate-500);
+      }
+      .hero-visual {
+        margin-top: 48px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid var(--slate-200);
+        border-radius: 18px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14), 0 4px 14px rgba(15, 23, 42, 0.06);
+      }
+      .hero-visual img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 11px;
+      }
 
       /* Sections */
       section.block { padding: 80px 0; }
@@ -200,6 +232,11 @@
         .nav-links a:not(.btn) { display: none; }
         .hero h1 { font-size: 38px; }
         .hero p.lede { font-size: 18px; }
+        .hero { padding: 52px 0 60px; }
+        .hero-actions { flex-direction: column; align-items: stretch; margin-top: 26px; }
+        .hero-actions .btn { justify-content: center; }
+        .hero-visual { margin-top: 36px; padding: 6px; border-radius: 13px; }
+        .hero-visual img { border-radius: 8px; }
         .privacy { flex-direction: column; gap: 16px; padding: 28px; }
         section.block { padding: 60px 0; }
       }
@@ -234,10 +271,25 @@
     <section class="hero">
       <div class="container">
         <span class="eyebrow">Free · Privacy-first · Publication-ready</span>
-        <h1>Clean, analyze, and visualize your outbreak data</h1>
+        <h1>Turn outbreak data into answers—without writing code</h1>
         <p class="lede">
-          Built by field epidemiologists for field epidemiologists.
+          Review and clean a line list, build epi curves and maps, calculate key measures, and export publication-ready figures—all in your browser.
         </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary btn-lg" href="/app/">Try a sample outbreak</a>
+          <a class="btn btn-ghost btn-lg" href="/app/">Import your own data</a>
+        </div>
+        <p class="hero-note">No account required · Synthetic sample data included</p>
+        <div class="hero-visual">
+          <img
+            src="/hero-epicurve.png?v=2"
+            width="1280"
+            height="820"
+            alt="LineList epidemic curve in 12-hour bins, stratified by confirmed, probable, and suspected cases, with an exposure annotation and 7-1-7 response metrics"
+            fetchpriority="high"
+            decoding="async"
+          />
+        </div>
       </div>
     </section>
 
