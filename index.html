@@ -177,8 +177,64 @@
         display: block;
         width: 100%;
         height: auto;
-        border-radius: 11px;
       }
+
+      /* Product screenshot frames */
+      .browser-frame {
+        overflow: hidden;
+        background: var(--white);
+        border: 1px solid var(--slate-200);
+        border-radius: 12px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12), 0 3px 10px rgba(15, 23, 42, 0.05);
+      }
+      .browser-bar {
+        position: relative;
+        display: flex;
+        align-items: center;
+        min-height: 38px;
+        padding: 0 14px;
+        background: var(--slate-50);
+        border-bottom: 1px solid var(--slate-200);
+      }
+      .browser-dots { display: flex; gap: 6px; }
+      .browser-dots span { width: 8px; height: 8px; border-radius: 999px; background: var(--slate-300); }
+      .browser-title {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--slate-500);
+        white-space: nowrap;
+      }
+      .browser-frame picture,
+      .browser-frame img { display: block; width: 100%; height: auto; }
+
+      .workflow-previews { display: grid; gap: 56px; }
+      .workflow-preview {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(240px, 0.8fr);
+        align-items: center;
+        gap: 44px;
+      }
+      .workflow-preview:nth-child(even) .browser-frame { order: 2; }
+      .workflow-copy { max-width: 360px; }
+      .workflow-step {
+        display: inline-block;
+        margin-bottom: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--blue-700);
+      }
+      .workflow-copy h3 {
+        margin-bottom: 10px;
+        font-size: 25px;
+        line-height: 1.2;
+        color: var(--slate-900);
+      }
+      .workflow-copy p { font-size: 16px; color: var(--slate-600); }
 
       /* Sections */
       section.block { padding: 80px 0; }
@@ -236,7 +292,11 @@
         .hero-actions { flex-direction: column; align-items: stretch; margin-top: 26px; }
         .hero-actions .btn { justify-content: center; }
         .hero-visual { margin-top: 36px; padding: 6px; border-radius: 13px; }
-        .hero-visual img { border-radius: 8px; }
+        .browser-bar { min-height: 32px; }
+        .workflow-previews { gap: 44px; }
+        .workflow-preview { grid-template-columns: 1fr; gap: 22px; }
+        .workflow-preview:nth-child(even) .browser-frame { order: initial; }
+        .workflow-copy { max-width: none; }
         .privacy { flex-direction: column; gap: 16px; padding: 28px; }
         section.block { padding: 60px 0; }
       }
@@ -260,7 +320,7 @@
           LineList
         </a>
         <nav class="nav-links">
-          <a href="#features">Features</a>
+          <a href="#workflow">Features</a>
           <a href="#privacy">Privacy</a>
           <a class="btn btn-primary" href="/app/">Launch app</a>
         </nav>
@@ -276,19 +336,114 @@
           Review and clean a line list, build epi curves and maps, calculate key measures, and export publication-ready figures—all in your browser.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary btn-lg" href="/app/">Try a sample outbreak</a>
-          <a class="btn btn-ghost btn-lg" href="/app/">Import your own data</a>
+          <a class="btn btn-primary btn-lg" href="/app/?sample=outbreak">Try a sample outbreak</a>
+          <a class="btn btn-ghost btn-lg" href="/app/?action=import">Import your own data</a>
         </div>
         <p class="hero-note">No account required · Synthetic sample data included</p>
         <div class="hero-visual">
-          <img
-            src="/hero-epicurve.png?v=2"
-            width="1280"
-            height="820"
-            alt="LineList epidemic curve in 12-hour bins, stratified by confirmed, probable, and suspected cases, with an exposure annotation and 7-1-7 response metrics"
-            fetchpriority="high"
-            decoding="async"
-          />
+          <div class="browser-frame">
+            <div class="browser-bar" aria-hidden="true">
+              <span class="browser-dots"><span></span><span></span><span></span></span>
+              <span class="browser-title">LineList · Synthetic outbreak</span>
+            </div>
+            <picture>
+              <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+              <img
+                src="/screenshots/epicurve.png"
+                width="1440"
+                height="900"
+                alt="LineList epidemic curve using 12-hour bins and case-status strata, with an exposure annotation and 7-1-7 response metrics"
+                fetchpriority="high"
+                decoding="async"
+              />
+            </picture>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Product workflow previews -->
+    <section class="block" id="workflow">
+      <div class="container">
+        <div class="section-head">
+          <h2>From line list to shareable result</h2>
+          <p>See the core workflow using the included synthetic foodborne outbreak.</p>
+        </div>
+        <div class="workflow-previews">
+          <article class="workflow-preview">
+            <div class="browser-frame">
+              <div class="browser-bar" aria-hidden="true">
+                <span class="browser-dots"><span></span><span></span><span></span></span>
+                <span class="browser-title">Review &amp; clean</span>
+              </div>
+              <picture>
+                <source srcset="/screenshots/review-clean.webp" type="image/webp" />
+                <img
+                  src="/screenshots/review-clean.png"
+                  width="1440"
+                  height="900"
+                  alt="Synthetic foodborne outbreak line list beside the Data Quality panel showing no issues detected"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
+            </div>
+            <div class="workflow-copy">
+              <span class="workflow-step">1 · Review and clean</span>
+              <h3>Catch problems before they reach your analysis</h3>
+              <p>Inspect the full line list, run data-quality checks, filter records, and create derived variables in one workspace.</p>
+            </div>
+          </article>
+
+          <article class="workflow-preview">
+            <div class="browser-frame">
+              <div class="browser-bar" aria-hidden="true">
+                <span class="browser-dots"><span></span><span></span><span></span></span>
+                <span class="browser-title">Analyze</span>
+              </div>
+              <picture>
+                <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+                <img
+                  src="/screenshots/epicurve.png"
+                  width="1440"
+                  height="900"
+                  alt="Synthetic epidemic curve stratified by confirmed, probable, and suspected cases, with exposure timing and 7-1-7 milestones"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
+            </div>
+            <div class="workflow-copy">
+              <span class="workflow-step">2 · Analyze</span>
+              <h3>Turn onset dates into a defensible epi curve</h3>
+              <p>Choose time bins, stratify cases, annotate a suspected exposure, and place response milestones directly on the curve.</p>
+            </div>
+          </article>
+
+          <article class="workflow-preview">
+            <div class="browser-frame">
+              <div class="browser-bar" aria-hidden="true">
+                <span class="browser-dots"><span></span><span></span><span></span></span>
+                <span class="browser-title">Communicate &amp; export</span>
+              </div>
+              <picture>
+                <source srcset="/screenshots/visualize-chart.webp" type="image/webp" />
+                <img
+                  src="/screenshots/visualize-chart.png"
+                  width="1440"
+                  height="900"
+                  alt="Publication-ready horizontal bar chart of synthetic cases by classification with PNG, clipboard, and Excel export controls"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
+            </div>
+            <div class="workflow-copy">
+              <span class="workflow-step">3 · Communicate</span>
+              <h3>Create a clear chart and export it</h3>
+              <p>Apply readable chart defaults, add titles and sources, then export the result for a report, briefing, or handoff.</p>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -392,7 +547,7 @@
         </a>
         <nav class="footer-links">
           <a href="/app/">Launch app</a>
-          <a href="#features">Features</a>
+          <a href="#workflow">Features</a>
           <a href="#privacy">Privacy</a>
           <a href="https://github.com/ellenyard/epikit" target="_blank" rel="noopener noreferrer">GitHub</a>
         </nav>
