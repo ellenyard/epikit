@@ -16,16 +16,33 @@ import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } fr
 interface EpiCurveProps {
   dataset: Dataset;
   onExportDataset?: () => void;
+  preset?: 'sample-outbreak';
 }
 
-export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
+function createSampleOutbreakAnnotations(): Annotation[] {
+  return [{
+    id: '__sample_outbreak_exposure__',
+    type: 'exposure',
+    category: 'exposure',
+    date: parseLocalDate('2026-01-10'),
+    label: 'Exposure: 12–2 PM',
+    description: 'Synthetic community picnic exposure',
+    color: getAnnotationColor('exposure'),
+    source: 'manual',
+  }];
+}
+
+export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
+  const isSampleOutbreakPreset = preset === 'sample-outbreak';
   const chartRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartBodyRef = useRef<HTMLDivElement>(null);
-  const userChangedBinSize = useRef(false);
+  const userChangedBinSize = useRef(isSampleOutbreakPreset);
 
-  // Persistence key for this dataset
-  const persistenceKey = `epikit_epicurve_${dataset.id}`;
+  // Keep the guided sample separate from a user's normal saved demo settings.
+  const persistenceKey = isSampleOutbreakPreset
+    ? `epikit_epicurve_sample_${dataset.id}`
+    : `epikit_epicurve_${dataset.id}`;
 
   // Load persisted state once during initialization (avoids race conditions with auto-detect effects)
   const [saved] = useState<Record<string, unknown>>(() => {
@@ -65,29 +82,31 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   }, [isResizing]);
 
   // Configuration state (initialized from localStorage)
-  const [dateColumn, setDateColumn] = useState<string>(() => (saved.dateColumn as string) || '');
-  const [timeColumn, setTimeColumn] = useState<string>(() => (saved.timeColumn as string) || '');
-  const [binSize, setBinSize] = useState<BinSize>(() => (saved.binSize as BinSize) || 'daily');
-  const [stratifyBy, setStratifyBy] = useState<string>(() => (saved.stratifyBy as string) ?? '');
+  const [dateColumn, setDateColumn] = useState<string>(() => isSampleOutbreakPreset ? 'onset_date' : (saved.dateColumn as string) || '');
+  const [timeColumn, setTimeColumn] = useState<string>(() => isSampleOutbreakPreset ? 'onset_time' : (saved.timeColumn as string) || '');
+  const [binSize, setBinSize] = useState<BinSize>(() => isSampleOutbreakPreset ? '12hour' : (saved.binSize as BinSize) || 'daily');
+  const [stratifyBy, setStratifyBy] = useState<string>(() => isSampleOutbreakPreset ? 'case_status' : (saved.stratifyBy as string) ?? '');
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'default');
 
   // Filter state
-  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [filterBy, setFilterBy] = useState<string>(() => isSampleOutbreakPreset ? '' : (saved.filterBy as string) ?? '');
   const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    if (isSampleOutbreakPreset) return new Set();
     const arr = saved.selectedFilterValues;
     return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
   });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
   // Display options
-  const [showGridLines, setShowGridLines] = useState(() => saved.showGridLines !== undefined ? saved.showGridLines as boolean : true);
-  const [showCaseCounts, setShowCaseCounts] = useState(() => saved.showCaseCounts !== undefined ? saved.showCaseCounts as boolean : true);
-  const [chartTitle, setChartTitle] = useState(() => (saved.chartTitle as string) ?? 'Epidemic Curve');
-  const [xAxisLabel, setXAxisLabel] = useState(() => (saved.xAxisLabel as string) ?? 'Date of Onset');
-  const [yAxisLabel, setYAxisLabel] = useState(() => (saved.yAxisLabel as string) ?? 'Number of Cases');
+  const [showGridLines, setShowGridLines] = useState(() => isSampleOutbreakPreset || (saved.showGridLines !== undefined ? saved.showGridLines as boolean : true));
+  const [showCaseCounts, setShowCaseCounts] = useState(() => isSampleOutbreakPreset || (saved.showCaseCounts !== undefined ? saved.showCaseCounts as boolean : true));
+  const [chartTitle, setChartTitle] = useState(() => isSampleOutbreakPreset ? 'Epidemic Curve' : (saved.chartTitle as string) ?? 'Epidemic Curve');
+  const [xAxisLabel, setXAxisLabel] = useState(() => isSampleOutbreakPreset ? 'Onset Date' : (saved.xAxisLabel as string) ?? 'Date of Onset');
+  const [yAxisLabel, setYAxisLabel] = useState(() => isSampleOutbreakPreset ? 'Number of Cases' : (saved.yAxisLabel as string) ?? 'Number of Cases');
 
   // Annotations (dates need reconstruction from ISO strings)
   const [annotations, setAnnotations] = useState<Annotation[]>(() => {
+    if (isSampleOutbreakPreset) return createSampleOutbreakAnnotations();
     const arr = saved.annotations;
     if (Array.isArray(arr)) {
       return arr.map((a: Record<string, unknown>) => ({
@@ -112,23 +131,23 @@ export function EpiCurve({ dataset, onExportDataset }: EpiCurveProps) {
   const [clickAddPosition, setClickAddPosition] = useState<{ x: number; y: number; date: string } | null>(null);
 
   // Manual date range override
-  const [useManualDateRange, setUseManualDateRange] = useState(() => saved.useManualDateRange !== undefined ? saved.useManualDateRange as boolean : false);
-  const [manualStartDate, setManualStartDate] = useState(() => (saved.manualStartDate as string) || '');
-  const [manualEndDate, setManualEndDate] = useState(() => (saved.manualEndDate as string) || '');
+  const [useManualDateRange, setUseManualDateRange] = useState(() => isSampleOutbreakPreset ? false : saved.useManualDateRange !== undefined ? saved.useManualDateRange as boolean : false);
+  const [manualStartDate, setManualStartDate] = useState(() => isSampleOutbreakPreset ? '' : (saved.manualStartDate as string) || '');
+  const [manualEndDate, setManualEndDate] = useState(() => isSampleOutbreakPreset ? '' : (saved.manualEndDate as string) || '');
 
   // Exposure window estimation
-  const [selectedPathogen, setSelectedPathogen] = useState<string>(() => (saved.selectedPathogen as string) ?? '');
-  const [showExposureWindow, setShowExposureWindow] = useState(() => saved.showExposureWindow !== undefined ? saved.showExposureWindow as boolean : false);
+  const [selectedPathogen, setSelectedPathogen] = useState<string>(() => isSampleOutbreakPreset ? '' : (saved.selectedPathogen as string) ?? '');
+  const [showExposureWindow, setShowExposureWindow] = useState(() => isSampleOutbreakPreset ? false : saved.showExposureWindow !== undefined ? saved.showExposureWindow as boolean : false);
   const [showExposurePanel, setShowExposurePanel] = useState(false);
 
   // 7-1-7 Response Timeline
   const [show717Panel, setShow717Panel] = useState(false);
-  const [outbreakStartDate, setOutbreakStartDate] = useState<string>(() => (saved.outbreakStartDate as string) ?? '');
-  const [detectionDate, setDetectionDate] = useState<string>(() => (saved.detectionDate as string) ?? '');
-  const [notificationDate, setNotificationDate] = useState<string>(() => (saved.notificationDate as string) ?? '');
-  const [responseCompleteDate, setResponseCompleteDate] = useState<string>(() => (saved.responseCompleteDate as string) ?? '');
-  const [show717OnChart, setShow717OnChart] = useState(() => saved.show717OnChart !== undefined ? saved.show717OnChart as boolean : true);
-  const [show717Metrics, setShow717Metrics] = useState(() => saved.show717Metrics !== undefined ? saved.show717Metrics as boolean : true);
+  const [outbreakStartDate, setOutbreakStartDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-10' : (saved.outbreakStartDate as string) ?? '');
+  const [detectionDate, setDetectionDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-11' : (saved.detectionDate as string) ?? '');
+  const [notificationDate, setNotificationDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-12' : (saved.notificationDate as string) ?? '');
+  const [responseCompleteDate, setResponseCompleteDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-13' : (saved.responseCompleteDate as string) ?? '');
+  const [show717OnChart, setShow717OnChart] = useState(() => isSampleOutbreakPreset || (saved.show717OnChart !== undefined ? saved.show717OnChart as boolean : true));
+  const [show717Metrics, setShow717Metrics] = useState(() => isSampleOutbreakPreset || (saved.show717Metrics !== undefined ? saved.show717Metrics as boolean : true));
 
   // Save all state to localStorage when it changes
   useEffect(() => {
