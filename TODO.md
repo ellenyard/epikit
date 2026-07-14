@@ -16,34 +16,34 @@ This checklist focuses on showing the value of the existing product, making it e
 
 ## 2. Sample-outbreak experience
 
-- [ ] Decide where **Try a sample outbreak** should land: Review/Clean, Epi Curve, or a short guided path.
-- [ ] Add a direct URL or app state that opens the foodborne outbreak demo in the chosen starting place.
-- [ ] Add a small “Start here” prompt for first-time sample users.
-- [ ] Verify that the demo is clearly labeled as synthetic.
-- [ ] Test the full path from homepage button to first useful result.
+- [x] Decide where **Try a sample outbreak** should land: Review/Clean, Epi Curve, or a short guided path. *(Chosen: a completed Epi Curve.)*
+- [x] Add a direct URL or app state that opens the foodborne outbreak demo in the chosen starting place.
+- [x] Add a small “Start here” prompt for first-time sample users.
+- [x] Verify that the demo is clearly labeled as synthetic.
+- [x] Test the full path from homepage button to first useful result.
 
 **Done when:** A first-time visitor can reach a meaningful demo screen in one click and create an epi curve within about one minute.
 
 ## 3. Product screenshots
 
-- [ ] Create a consistent screenshot style and browser-window frame.
-- [ ] Capture a hero image showing a compelling completed result, preferably an epi curve.
-- [ ] Capture Review/Clean with the line list and Data Quality panel visible.
-- [ ] Capture an analysis view with an epi curve, stratification, or incubation-period overlay.
-- [ ] Capture a map or chart-gallery view that demonstrates communication and export.
-- [ ] Use only synthetic data and check every visible field for accidental identifiers.
-- [ ] Crop screenshots so important labels remain readable.
-- [ ] Export optimized WebP versions and retain source-quality PNGs.
-- [ ] Add descriptive alt text, image dimensions, and responsive sizing.
-- [ ] Lazy-load screenshots below the hero.
+- [x] Create a consistent screenshot style and browser-window frame.
+- [x] Capture a hero image showing a compelling completed result, preferably an epi curve.
+- [x] Capture Review/Clean with the line list and Data Quality panel visible.
+- [x] Capture an analysis view with an epi curve, stratification, or incubation-period overlay.
+- [x] Capture a map or chart-gallery view that demonstrates communication and export.
+- [x] Use only synthetic data and check every visible field for accidental identifiers.
+- [x] Crop screenshots so important labels remain readable.
+- [x] Export optimized WebP versions and retain source-quality PNGs.
+- [x] Add descriptive alt text, image dimensions, and responsive sizing.
+- [x] Lazy-load screenshots below the hero.
 
 **Done when:** The homepage shows the workflow and quality of the output without requiring visitors to launch the app.
 
 ## 4. Homepage structure and feature story
 
-- [ ] Add a three-step workflow section: **Review and clean → Analyze → Map and communicate**.
-- [ ] Create three illustrated feature sections using the new screenshots.
-- [ ] Write outcome-focused headings and captions for each screenshot.
+- [x] Add a three-step workflow section: **Review and clean → Analyze → Map and communicate**.
+- [x] Create three illustrated feature sections using the new screenshots.
+- [x] Write outcome-focused headings and captions for each screenshot.
 - [ ] Reduce the current nine-card feature grid to a compact “Also included” section.
 - [ ] Add a short “Who LineList is for” statement.
 - [ ] Keep the privacy section prominent but visually separate from the main product story.

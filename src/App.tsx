@@ -63,6 +63,32 @@ const DEMO_SURVEILLANCE_DATASET_ID = 'demo-surveillance-monthly-2025';
 // Existing users with stale demo data will get the updated version automatically.
 const DEMO_DATA_VERSION = 7;
 
+interface InitialAppEntry {
+  activeModule: Module;
+  activeDatasetId?: string;
+  showImport: boolean;
+  sampleOutbreak: boolean;
+}
+
+function getInitialAppEntry(): InitialAppEntry {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get('sample') === 'outbreak') {
+    return {
+      activeModule: 'epicurve',
+      activeDatasetId: DEMO_DATASET_ID,
+      showImport: false,
+      sampleOutbreak: true,
+    };
+  }
+
+  return {
+    activeModule: 'dashboard',
+    showImport: params.get('action') === 'import',
+    sampleOutbreak: false,
+  };
+}
+
 /** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({
   id: DEMO_DATASET_ID,
@@ -96,12 +122,15 @@ const createSurveillanceDemoDataset = (): Dataset => ({
   updatedAt: new Date().toISOString(),
 });
 
-function loadInitialDatasets(): Dataset[] {
+function loadInitialDatasets(ensureOutbreakDemo = false): Dataset[] {
   const saved = localStorage.getItem('epikit_datasets');
   const datasets = saved ? JSON.parse(saved) as Dataset[] : [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
   const savedVersion = localStorage.getItem('epikit_demoDataVersion');
 
   if (savedVersion && Number(savedVersion) >= DEMO_DATA_VERSION) {
+    if (ensureOutbreakDemo && !datasets.some(d => d.id === DEMO_DATASET_ID)) {
+      return [createDemoDataset(), ...datasets];
+    }
     return datasets;
   }
 
@@ -118,12 +147,14 @@ function loadInitialDatasets(): Dataset[] {
 function App() {
   // Locale settings for number formatting (decimal/thousand separators)
   const { config: localeConfig } = useLocale();
+  const [initialEntry] = useState<InitialAppEntry>(() => getInitialAppEntry());
 
   // ---------------------------------------------------------------------------
   // UI STATE - Controls which module/modal is currently visible
   // ---------------------------------------------------------------------------
-  const [activeModule, setActiveModule] = useState<Module>('dashboard');
-  const [showImport, setShowImport] = useState(false);
+  const [activeModule, setActiveModule] = useState<Module>(initialEntry.activeModule);
+  const [showImport, setShowImport] = useState(initialEntry.showImport);
+  const [showSampleGuide, setShowSampleGuide] = useState(initialEntry.sampleOutbreak);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showHelpCenter, setShowHelpCenter] = useState(false);
   const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
@@ -139,11 +170,12 @@ function App() {
   // Each dataset has columns (schema) and records (rows of data).
   // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
-    return loadInitialDatasets();
+    return loadInitialDatasets(initialEntry.sampleOutbreak);
   });
 
   // Which dataset is currently selected for viewing/editing
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(() => {
+    if (initialEntry.activeDatasetId) return initialEntry.activeDatasetId;
     const saved = localStorage.getItem('epikit_activeDatasetId');
     return saved || DEMO_DATASET_ID;
   });
@@ -711,7 +743,7 @@ function App() {
               <option value="">Select a dataset...</option>
               {datasets.map(d => (
                 <option key={d.id} value={d.id}>
-                  {d.name} ({d.records.length} records)
+                  {d.name} ({d.records.length} records){initialEntry.sampleOutbreak && d.id === DEMO_DATASET_ID ? ' — Synthetic sample' : ''}
                 </option>
               ))}
             </select>
@@ -733,6 +765,27 @@ function App() {
                 // Note: We could enhance HelpCenter to accept a default section prop
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {initialEntry.sampleOutbreak && activeDatasetId === DEMO_DATASET_ID && activeModule === 'epicurve' && showSampleGuide && (
+        <div role="status" className="border-b border-blue-200 bg-blue-50 px-3 sm:px-4 py-2.5 text-sm text-blue-950">
+          <div className="mx-auto grid max-w-5xl grid-cols-[auto_1fr_auto] items-start gap-x-3 gap-y-2">
+            <span className="mt-0.5 shrink-0 rounded-full bg-blue-600 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-white">
+              Synthetic sample
+            </span>
+            <p className="col-span-3 row-start-2 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+              <strong>Start here:</strong> This completed curve uses 12-hour bins and case-status strata. Try changing <strong>Bin Size</strong> or <strong>Stratify By</strong>, then export the result.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowSampleGuide(false)}
+              className="col-start-3 row-start-1 shrink-0 rounded px-2 py-0.5 font-medium text-blue-700 hover:bg-blue-100 hover:text-blue-900"
+              aria-label="Dismiss sample guidance"
+            >
+              Dismiss
+            </button>
           </div>
         </div>
       )}
@@ -774,7 +827,12 @@ function App() {
             </ErrorBoundary>
           ) : activeModule === 'epicurve' ? (
             <ErrorBoundary moduleName="Epi Curve" onReset={() => {}}>
-              <EpiCurve dataset={activeDataset} onExportDataset={handleDatasetExport} />
+              <EpiCurve
+                key={`${activeDataset.id}-${initialEntry.sampleOutbreak && activeDataset.id === DEMO_DATASET_ID ? 'sample' : 'default'}`}
+                dataset={activeDataset}
+                onExportDataset={handleDatasetExport}
+                preset={initialEntry.sampleOutbreak && activeDataset.id === DEMO_DATASET_ID ? 'sample-outbreak' : undefined}
+              />
             </ErrorBoundary>
           ) : activeModule === 'maps' ? (
             <ErrorBoundary moduleName="Maps" onReset={() => {}}>
