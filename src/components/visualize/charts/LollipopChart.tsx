@@ -12,7 +12,6 @@ import {
   svgText,
   svgAxisLine,
   svgGridLine,
-  escapeXml,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 import { getChartColor, type ChartColorScheme } from '../../../utils/chartColors';
@@ -65,7 +64,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       for (const record of dataset.records) {
         const cat = record[categoryCol];
         const val = record[numericCol];
-        if (cat == null || cat === '' || val == null) continue;
+        if (cat == null || cat === '' || val == null || val === '') continue;
         const num = Number(val);
         if (isNaN(num)) continue;
         const key = String(cat);
@@ -73,18 +72,24 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
         grouped.get(key)!.push(num);
 
         if (lowerCICol) {
-          const ciLower = Number(record[lowerCICol]);
-          if (!isNaN(ciLower)) {
-            if (!ciLowerGrouped.has(key)) ciLowerGrouped.set(key, []);
-            ciLowerGrouped.get(key)!.push(ciLower);
+          const rawCI = record[lowerCICol];
+          if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+            const ciLower = Number(rawCI);
+            if (!isNaN(ciLower)) {
+              if (!ciLowerGrouped.has(key)) ciLowerGrouped.set(key, []);
+              ciLowerGrouped.get(key)!.push(ciLower);
+            }
           }
         }
 
         if (upperCICol) {
-          const ciUpper = Number(record[upperCICol]);
-          if (!isNaN(ciUpper)) {
-            if (!ciUpperGrouped.has(key)) ciUpperGrouped.set(key, []);
-            ciUpperGrouped.get(key)!.push(ciUpper);
+          const rawCI = record[upperCICol];
+          if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+            const ciUpper = Number(rawCI);
+            if (!isNaN(ciUpper)) {
+              if (!ciUpperGrouped.has(key)) ciUpperGrouped.set(key, []);
+              ciUpperGrouped.get(key)!.push(ciUpper);
+            }
           }
         }
       }
@@ -161,8 +166,8 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     const plotW = width - margin.left - margin.right;
     const plotH = height - margin.top - margin.bottom;
 
-    // Value scale
-    const maxVal = Math.max(...lollipopData.map(d => d.value));
+    // Value scale (include CI upper bounds so whiskers stay on-plot)
+    const maxVal = Math.max(...lollipopData.map(d => Math.max(d.value, d.upper ?? d.value)));
     const niceMax = getNiceMax(maxVal);
 
     const xScale = (v: number) => margin.left + (v / niceMax) * plotW;
@@ -203,7 +208,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       const color = getChartColor(i, colorScheme);
 
       // Category label on the left
-      svg += svgText(margin.left - 8, y, escapeXml(truncateLabel(point.category, 22)), {
+      svg += svgText(margin.left - 8, y, truncateLabel(point.category, 22), {
         anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em',
       });
 

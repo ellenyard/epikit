@@ -44,7 +44,7 @@ import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecord
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
-import { exportProject, downloadProject, parseProjectFile } from './utils/persistence';
+import { exportProject, downloadProject, parseProjectFile, saveDatasets, saveEditLog, saveActiveDatasetId } from './utils/persistence';
 import type { VariableConfig } from './types/analysis';
 
 /** Available navigation modules in the app */
@@ -123,8 +123,23 @@ const createSurveillanceDemoDataset = (): Dataset => ({
 });
 
 function loadInitialDatasets(ensureOutbreakDemo = false): Dataset[] {
-  const saved = localStorage.getItem('epikit_datasets');
-  const datasets = saved ? JSON.parse(saved) as Dataset[] : [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
+  // Parse persisted datasets defensively: corrupted localStorage must not crash
+  // the app at startup. On failure, drop the corrupt key and fall back to the
+  // bundled demo datasets.
+  let datasets: Dataset[];
+  try {
+    const saved = localStorage.getItem('epikit_datasets');
+    const parsed: unknown = saved ? JSON.parse(saved) : null;
+    if (Array.isArray(parsed)) {
+      datasets = parsed as Dataset[];
+    } else {
+      if (saved) localStorage.removeItem('epikit_datasets');
+      datasets = [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
+    }
+  } catch {
+    localStorage.removeItem('epikit_datasets');
+    datasets = [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
+  }
   const savedVersion = localStorage.getItem('epikit_demoDataVersion');
 
   if (savedVersion && Number(savedVersion) >= DEMO_DATA_VERSION) {
@@ -161,6 +176,7 @@ function App() {
   const [showLocaleSettings, setShowLocaleSettings] = useState(false);
   const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
+  const [showStorageWarning, setShowStorageWarning] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,8 +202,17 @@ function App() {
   // Each entry records: what changed, old/new values, reason, and who made it.
   // ---------------------------------------------------------------------------
   const [editLog, setEditLog] = useState<EditLogEntry[]>(() => {
-    const saved = localStorage.getItem('epikit_editLog');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('epikit_editLog');
+      const parsed: unknown = saved ? JSON.parse(saved) : null;
+      if (parsed === null) return [];
+      if (Array.isArray(parsed)) return parsed as EditLogEntry[];
+      localStorage.removeItem('epikit_editLog');
+      return [];
+    } catch {
+      localStorage.removeItem('epikit_editLog');
+      return [];
+    }
   });
 
   // Onboarding wizard can be accessed from Help Center
@@ -281,16 +306,21 @@ function App() {
   // All state changes are automatically persisted so users don't lose work.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    localStorage.setItem('epikit_datasets', JSON.stringify(datasets));
+    if (saveDatasets(datasets)) return;
+    // Defer so the warning isn't set synchronously inside the effect body
+    const timer = setTimeout(() => setShowStorageWarning(true), 0);
+    return () => clearTimeout(timer);
   }, [datasets]);
 
   useEffect(() => {
-    localStorage.setItem('epikit_editLog', JSON.stringify(editLog));
+    if (saveEditLog(editLog)) return;
+    const timer = setTimeout(() => setShowStorageWarning(true), 0);
+    return () => clearTimeout(timer);
   }, [editLog]);
 
   useEffect(() => {
     if (activeDatasetId) {
-      localStorage.setItem('epikit_activeDatasetId', activeDatasetId);
+      saveActiveDatasetId(activeDatasetId);
     }
   }, [activeDatasetId]);
 
@@ -298,12 +328,16 @@ function App() {
     setEditLog(prev => {
       const next = [...prev, entry];
       // Show backup reminder every 20 edits if not already shown recently
-      const lastReminder = localStorage.getItem('epikit_lastBackupReminder');
-      const lastReminderTime = lastReminder ? Number(lastReminder) : 0;
-      const hoursSinceReminder = (Date.now() - lastReminderTime) / (1000 * 60 * 60);
-      if (next.length > 0 && next.length % 20 === 0 && hoursSinceReminder > 4) {
-        setShowBackupReminder(true);
-        localStorage.setItem('epikit_lastBackupReminder', String(Date.now()));
+      try {
+        const lastReminder = localStorage.getItem('epikit_lastBackupReminder');
+        const lastReminderTime = lastReminder ? Number(lastReminder) : 0;
+        const hoursSinceReminder = (Date.now() - lastReminderTime) / (1000 * 60 * 60);
+        if (next.length > 0 && next.length % 20 === 0 && hoursSinceReminder > 4) {
+          setShowBackupReminder(true);
+          localStorage.setItem('epikit_lastBackupReminder', String(Date.now()));
+        }
+      } catch {
+        // Storage unavailable (quota/private mode) — skip the reminder timestamp
       }
       return next;
     });
@@ -381,13 +415,21 @@ function App() {
 
   // Handle onboarding demo load
   const handleLoadDemo = useCallback(() => {
-    // Demo dataset is already loaded, just ensure it's selected
+    // Re-create the demo dataset if the user deleted it, then select it
+    setDatasets(prev =>
+      prev.some(d => d.id === DEMO_DATASET_ID) ? prev : [createDemoDataset(), ...prev]
+    );
     setActiveDatasetId(DEMO_DATASET_ID);
   }, []);
 
   // Handle navigation from onboarding/help
   const handleNavigateToModule = useCallback((module: string) => {
     setActiveModule(module as Module);
+  }, []);
+
+  // Recover from a module crash: send the user back to the dashboard
+  const handleResetModuleError = useCallback(() => {
+    setActiveModule('dashboard');
   }, []);
 
   // Handle variable creation from Analysis workflow
@@ -807,7 +849,7 @@ function App() {
           // Suspense boundary shows a spinner while the module chunk downloads.
           <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-white"><LoadingSpinner size="lg" message="Loading module…" /></div>}>
           {activeModule === 'review' ? (
-            <ErrorBoundary moduleName="Review/Clean" onReset={() => {}}>
+            <ErrorBoundary moduleName="Review/Clean" onReset={handleResetModuleError}>
               <Review
                 datasets={datasets}
                 activeDatasetId={activeDatasetId}
@@ -826,7 +868,7 @@ function App() {
               />
             </ErrorBoundary>
           ) : activeModule === 'epicurve' ? (
-            <ErrorBoundary moduleName="Epi Curve" onReset={() => {}}>
+            <ErrorBoundary moduleName="Epi Curve" onReset={handleResetModuleError}>
               <EpiCurve
                 key={`${activeDataset.id}-${initialEntry.sampleOutbreak && activeDataset.id === DEMO_DATASET_ID ? 'sample' : 'default'}`}
                 dataset={activeDataset}
@@ -835,11 +877,11 @@ function App() {
               />
             </ErrorBoundary>
           ) : activeModule === 'maps' ? (
-            <ErrorBoundary moduleName="Maps" onReset={() => {}}>
+            <ErrorBoundary moduleName="Maps" onReset={handleResetModuleError}>
               <Maps dataset={activeDataset} datasets={datasets} />
             </ErrorBoundary>
           ) : activeModule === 'analysis' ? (
-            <ErrorBoundary moduleName="Analysis" onReset={() => {}}>
+            <ErrorBoundary moduleName="Analysis" onReset={handleResetModuleError}>
               <AnalysisWorkflow
                 dataset={activeDataset}
                 onCreateVariable={handleCreateVariable}
@@ -847,7 +889,7 @@ function App() {
               />
             </ErrorBoundary>
           ) : activeModule === 'visualize' ? (
-            <ErrorBoundary moduleName="Visualize" onReset={() => {}}>
+            <ErrorBoundary moduleName="Visualize" onReset={handleResetModuleError}>
               <VisualizeWorkflow dataset={activeDataset} />
             </ErrorBoundary>
           ) : null}
@@ -943,6 +985,39 @@ function App() {
         </div>
       )}
 
+      {/* Storage Full Warning Toast */}
+      {showStorageWarning && (
+        <div className="fixed bottom-4 left-4 z-50 max-w-sm animate-slide-up">
+          <div className="bg-white rounded-xl shadow-lg border border-red-200 p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Browser storage is full</p>
+                <p className="text-xs text-gray-500 mt-1">Your latest changes could not be saved. Export a project backup to keep your work safe.</p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => { handleSaveProject(); setShowStorageWarning(false); }}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    Save Backup
+                  </button>
+                  <button
+                    onClick={() => setShowStorageWarning(false)}
+                    className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Project Load Confirmation Modal */}
       {showProjectLoadConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -952,8 +1027,8 @@ function App() {
               Loading <span className="font-medium">{showProjectLoadConfirm.filename}</span> will replace all current data including:
             </p>
             <ul className="text-sm text-gray-600 mb-4 space-y-1 ml-4">
-              <li>• {showProjectLoadConfirm.project?.datasets.length || 0} dataset(s)</li>
-              <li>• {showProjectLoadConfirm.project?.editLog.length || 0} edit log entries</li>
+              <li>• {showProjectLoadConfirm.project?.datasets?.length ?? 0} dataset(s)</li>
+              <li>• {showProjectLoadConfirm.project?.editLog?.length ?? 0} edit log entries</li>
               <li>• All saved analysis settings</li>
             </ul>
             <p className="text-sm text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">

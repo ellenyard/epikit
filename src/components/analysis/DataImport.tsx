@@ -26,6 +26,9 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [step, setStep] = useState<ImportStep>('upload');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Guards against races when a new file is selected while a previous one
+  // is still being read/parsed
+  const selectionRef = useRef(0);
 
   // Excel sheet selection
   const [sheetNames, setSheetNames] = useState<string[]>([]);
@@ -44,6 +47,9 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
+    const selectionId = ++selectionRef.current;
+    const isStale = () => selectionRef.current !== selectionId;
+
     setFile(selectedFile);
     setDatasetName(selectedFile.name.replace(/\.[^/.]+$/, ''));
     setIsLoading(true);
@@ -52,10 +58,12 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
       if (isExcelFile(selectedFile.name)) {
         // Excel file - read as ArrayBuffer
         const buffer = await selectedFile.arrayBuffer();
+        if (isStale()) return;
         setFileBuffer(buffer);
 
         // Check for multiple sheets
         const sheets = await getSheetNames(buffer);
+        if (isStale()) return;
         if (sheets.length > 1) {
           setSheetNames(sheets);
           setSelectedSheet(sheets[0]);
@@ -65,38 +73,43 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
         }
 
         // Single sheet - parse directly
-        await parseAndAnalyze(buffer, 'excel');
+        await parseAndAnalyze(buffer, 'excel', undefined, selectionId);
       } else {
         // CSV file
         const content = await selectedFile.text();
-        await parseAndAnalyze(content, 'csv');
+        if (isStale()) return;
+        await parseAndAnalyze(content, 'csv', undefined, selectionId);
       }
     } catch {
+      if (isStale()) return;
       setPreview({ columns: [], records: [], errors: ['Failed to read file'] });
       setStep('preview');
     } finally {
-      setIsLoading(false);
+      if (!isStale()) setIsLoading(false);
     }
   };
 
   const handleSheetSelect = async () => {
     if (!fileBuffer) return;
+    const selectionId = selectionRef.current;
     setIsLoading(true);
 
     try {
-      await parseAndAnalyze(fileBuffer, 'excel', selectedSheet);
+      await parseAndAnalyze(fileBuffer, 'excel', selectedSheet, selectionId);
     } catch {
+      if (selectionRef.current !== selectionId) return;
       setPreview({ columns: [], records: [], errors: ['Failed to parse sheet'] });
       setStep('preview');
     } finally {
-      setIsLoading(false);
+      if (selectionRef.current === selectionId) setIsLoading(false);
     }
   };
 
   const parseAndAnalyze = async (
     data: string | ArrayBuffer,
     type: 'csv' | 'excel',
-    sheetName?: string
+    sheetName?: string,
+    selectionId?: number
   ) => {
     let result;
     if (type === 'csv') {
@@ -104,6 +117,9 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
     } else {
       result = await parseExcel(data as ArrayBuffer, { sheetName });
     }
+
+    // A newer file selection superseded this parse; drop the stale result
+    if (selectionId !== undefined && selectionRef.current !== selectionId) return;
 
     setPreview(result);
 
@@ -138,8 +154,11 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
       format,
     }));
 
-    const updatedRecords = applyDateFormats(preview.records, formatMappings) as CaseRecord[];
-    setPreview({ ...preview, records: updatedRecords });
+    const { records: updatedRecords, failedCount } = applyDateFormats(preview.records, formatMappings);
+    const errors = failedCount > 0
+      ? [...preview.errors, `${failedCount} date value${failedCount === 1 ? '' : 's'} could not be converted with the selected format and ${failedCount === 1 ? 'was' : 'were'} left unchanged`]
+      : preview.errors;
+    setPreview({ ...preview, records: updatedRecords as CaseRecord[], errors });
     setStep('preview');
   };
 
@@ -149,6 +168,7 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
   };
 
   const resetToUpload = () => {
+    selectionRef.current++; // Invalidate any in-flight parse
     setFile(null);
     setFileBuffer(null);
     setPreview(null);

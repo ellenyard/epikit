@@ -339,6 +339,12 @@ export function validateVariableConfig(
     return 'Variable name is required';
   }
 
+  // 'id' is reserved: every record has an internal id field, and creating a
+  // variable with that key would overwrite record ids
+  if (config.name.trim().toLowerCase() === 'id') {
+    return '"id" is a reserved name and cannot be used for a variable';
+  }
+
   // Check if name already exists
   if (existingColumns.some(col => col.key === config.name)) {
     return `Variable "${config.name}" already exists`;

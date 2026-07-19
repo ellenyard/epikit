@@ -94,6 +94,34 @@ try {
   assert.deepEqual(classifyValues([1, 2, 3, 4, 5], 'equal', 5).length, 4);
   assert.deepEqual(classifyValues([1, 2, 3, 4, 5], 'manual', 5, '2, 4'), [2, 4]);
 
+  // Single unique value -> one class with no breaks
+  assert.deepEqual(classifyValues([5, 5, 5], 'equal', 5), []);
+  assert.deepEqual(classifyValues([5, 5, 5], 'quantile', 5), []);
+  // Quantile breaks are deduplicated on skewed data (many zero-count areas)
+  assert.deepEqual(classifyValues([0, 0, 0, 0, 5], 'quantile', 5), [0]);
+
+  // Duplicate denominators are detected via normalized keys (case variants merge)
+  const duplicateDenominatorDataset = {
+    ...denominatorDataset,
+    records: [
+      { id: 'd1', district: 'North', population: 1000 },
+      { id: 'd2', district: 'north', population: 1000 },
+      { id: 'd3', district: 'South', population: 500 },
+    ],
+  };
+  const duplicateJoin = buildAreaJoin({
+    records,
+    areaField: 'district',
+    boundaries,
+    boundaryKey: 'district',
+    metric: 'rate',
+    denominatorDataset: duplicateDenominatorDataset,
+    denominatorKey: 'district',
+    denominatorValue: 'population',
+    rateMultiplier: 100000,
+  });
+  assert.deepEqual(duplicateJoin.summary.duplicateDenominatorKeys, ['north']);
+
   console.log('Area map regression checks passed.');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

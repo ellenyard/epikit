@@ -53,11 +53,11 @@ export function Maps({ dataset, datasets }: MapsProps) {
 
       <div className="flex-1 overflow-hidden">
         {mode === 'spot' ? (
-          <SpotMap dataset={dataset} />
+          <SpotMap key={dataset.id} dataset={dataset} />
         ) : mode === 'area' ? (
-          <AreaMap dataset={dataset} datasets={datasets} />
+          <AreaMap key={dataset.id} dataset={dataset} datasets={datasets} />
         ) : (
-          <SketchMap />
+          <SketchMap key={dataset.id} />
         )}
       </div>
     </div>

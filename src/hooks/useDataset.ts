@@ -142,7 +142,7 @@ export function useDataset(options?: UseDatasetOptions) {
 }
 
 // Utility functions for filtering and sorting
-export function filterRecords(records: CaseRecord[], filters: FilterCondition[]): CaseRecord[] {
+export function filterRecords(records: CaseRecord[], filters: FilterCondition[], columns?: DataColumn[]): CaseRecord[] {
   if (filters.length === 0) return records;
 
   return records.filter(record => {
@@ -158,9 +158,23 @@ export function filterRecords(records: CaseRecord[], filters: FilterCondition[])
         case 'contains':
           return String(value).toLowerCase().includes(String(filterValue).toLowerCase());
         case 'greater_than':
-          return Number(value) > Number(filterValue);
-        case 'less_than':
-          return Number(value) < Number(filterValue);
+        case 'less_than': {
+          // Missing values never match a numeric/date comparison
+          if (value === null || value === undefined || value === '') return false;
+          // Compare date-typed columns as timestamps instead of Number() (NaN)
+          const columnType = columns?.find(c => c.key === filter.column)?.type;
+          let left: number;
+          let right: number;
+          if (columnType === 'date') {
+            left = new Date(String(value)).getTime();
+            right = new Date(String(filterValue)).getTime();
+          } else {
+            left = Number(value);
+            right = Number(filterValue);
+          }
+          if (isNaN(left) || isNaN(right)) return false;
+          return filter.operator === 'greater_than' ? left > right : left < right;
+        }
         case 'is_empty':
           return value === null || value === undefined || value === '';
         case 'is_not_empty':

@@ -47,7 +47,8 @@ function generateBarSvg(
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
 
-  const maxValue = Math.max(...sortedData.map(d => d.value), 0);
+  // Include CI upper bounds in the domain so whiskers stay on-plot
+  const maxValue = Math.max(...sortedData.map(d => Math.max(d.value, d.upper ?? d.value)), 0);
   const niceMax = maxValue === 0 ? 10 : getNiceMax(maxValue);
   const barCount = sortedData.length;
   const barGap = 4;
@@ -184,24 +185,32 @@ export function BarChart({ dataset }: BarChartProps) {
       const cat = record[categoryVar];
       if (cat === null || cat === undefined || cat === '') continue;
       const key = String(cat);
-      const numVal = Number(record[valueVar]);
+      const rawVal = record[valueVar];
+      if (rawVal === null || rawVal === undefined || rawVal === '') continue;
+      const numVal = Number(rawVal);
       if (isNaN(numVal)) continue;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(numVal);
 
       if (lowerCICol) {
-        const ciLower = Number(record[lowerCICol]);
-        if (!isNaN(ciLower)) {
-          if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
-          ciLowerGroups.get(key)!.push(ciLower);
+        const rawCI = record[lowerCICol];
+        if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+          const ciLower = Number(rawCI);
+          if (!isNaN(ciLower)) {
+            if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
+            ciLowerGroups.get(key)!.push(ciLower);
+          }
         }
       }
 
       if (upperCICol) {
-        const ciUpper = Number(record[upperCICol]);
-        if (!isNaN(ciUpper)) {
-          if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
-          ciUpperGroups.get(key)!.push(ciUpper);
+        const rawCI = record[upperCICol];
+        if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+          const ciUpper = Number(rawCI);
+          if (!isNaN(ciUpper)) {
+            if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
+            ciUpperGroups.get(key)!.push(ciUpper);
+          }
         }
       }
     }
@@ -505,24 +514,32 @@ export function BarChart({ dataset }: BarChartProps) {
                     const cat = record[categoryVar];
                     if (cat === null || cat === undefined || cat === '') continue;
                     const key = String(cat);
-                    const numVal = Number(record[valueVar]);
+                    const rawVal = record[valueVar];
+                    if (rawVal === null || rawVal === undefined || rawVal === '') continue;
+                    const numVal = Number(rawVal);
                     if (isNaN(numVal)) continue;
                     if (!groups.has(key)) groups.set(key, []);
                     groups.get(key)!.push(numVal);
 
                     if (lowerCICol) {
-                      const ciLower = Number(record[lowerCICol]);
-                      if (!isNaN(ciLower)) {
-                        if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
-                        ciLowerGroups.get(key)!.push(ciLower);
+                      const rawCI = record[lowerCICol];
+                      if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+                        const ciLower = Number(rawCI);
+                        if (!isNaN(ciLower)) {
+                          if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
+                          ciLowerGroups.get(key)!.push(ciLower);
+                        }
                       }
                     }
 
                     if (upperCICol) {
-                      const ciUpper = Number(record[upperCICol]);
-                      if (!isNaN(ciUpper)) {
-                        if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
-                        ciUpperGroups.get(key)!.push(ciUpper);
+                      const rawCI = record[upperCICol];
+                      if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+                        const ciUpper = Number(rawCI);
+                        if (!isNaN(ciUpper)) {
+                          if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
+                          ciUpperGroups.get(key)!.push(ciUpper);
+                        }
                       }
                     }
                   }

@@ -112,6 +112,29 @@ function getPublicAssetUrl(path: string): string {
   return `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 }
 
+function waitForNextPaint(): Promise<void> {
+  return new Promise(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+}
+
+async function waitForMapImages(element: HTMLElement): Promise<void> {
+  const images = Array.from(element.querySelectorAll('img'));
+  const pendingImages = images.filter(image => !image.complete);
+
+  if (pendingImages.length > 0) {
+    await Promise.race<void>([
+      Promise.all(pendingImages.map(image => new Promise<void>(resolve => {
+        image.addEventListener('load', () => resolve(), { once: true });
+        image.addEventListener('error', () => resolve(), { once: true });
+      }))).then(() => undefined),
+      new Promise(resolve => window.setTimeout(resolve, 2500)),
+    ]);
+  }
+
+  await waitForNextPaint();
+}
+
 export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const { config: localeConfig } = useLocale();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -130,12 +153,23 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const [boundaries, setBoundaries] = useState<GeoJsonFeatureCollection | null>(null);
   const [boundaryFileName, setBoundaryFileName] = useState('');
   const [boundaryError, setBoundaryError] = useState('');
+
+  // Discard persisted column keys that no longer exist in the relevant dataset
+  const validSavedColumn = (value: unknown, columns: Dataset['columns']): string => {
+    const key = typeof value === 'string' ? value : '';
+    return key && columns.some(col => col.key === key) ? key : '';
+  };
+  const initialDenominatorColumns = datasets.find(item => item.id === saved.denominatorDatasetId)?.columns ?? [];
+
   const [boundaryKey, setBoundaryKey] = useState<string>(() => (saved.boundaryKey as string) || '');
-  const [areaField, setAreaField] = useState<string>(() => (saved.areaField as string) || suggestAreaField(dataset.columns));
+  const [areaField, setAreaField] = useState<string>(() => validSavedColumn(saved.areaField, dataset.columns) || suggestAreaField(dataset.columns));
   const [metric, setMetric] = useState<AreaMetric>(() => (saved.metric as AreaMetric) || 'count');
-  const [denominatorDatasetId, setDenominatorDatasetId] = useState<string>(() => (saved.denominatorDatasetId as string) || '');
-  const [denominatorKey, setDenominatorKey] = useState<string>(() => (saved.denominatorKey as string) || '');
-  const [denominatorValue, setDenominatorValue] = useState<string>(() => (saved.denominatorValue as string) || '');
+  const [denominatorDatasetId, setDenominatorDatasetId] = useState<string>(() => {
+    const id = typeof saved.denominatorDatasetId === 'string' ? saved.denominatorDatasetId : '';
+    return datasets.some(item => item.id === id) ? id : '';
+  });
+  const [denominatorKey, setDenominatorKey] = useState<string>(() => validSavedColumn(saved.denominatorKey, initialDenominatorColumns));
+  const [denominatorValue, setDenominatorValue] = useState<string>(() => validSavedColumn(saved.denominatorValue, initialDenominatorColumns));
   const [rateMultiplier, setRateMultiplier] = useState<number>(() => (saved.rateMultiplier as number) || 100000);
   const [classificationMethod, setClassificationMethod] = useState<ClassificationMethod>(() => (saved.classificationMethod as ClassificationMethod) || 'quantile');
   const [classCount, setClassCount] = useState<number>(() => (saved.classCount as number) || 5);
@@ -274,6 +308,14 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       })),
     };
   }, [joinResult, metric, rateMultiplier]);
+
+  // Covers every joined value so the GeoJSON layer (and its popup contents)
+  // remounts whenever counts, denominators, or rates change
+  const joinVersion = useMemo(() => (
+    joinResult?.areas
+      .map(area => `${area.key}:${area.count}:${area.denominator ?? ''}:${area.rate ?? ''}`)
+      .join('|') ?? ''
+  ), [joinResult]);
   const activeBaseMap: BaseMap = isExporting && exportBaseMap !== 'current' ? exportBaseMap : baseMap;
 
   const handleBoundaryFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -362,14 +404,17 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   };
 
   const exportMap = async () => {
-    if (!mapContainerRef.current) return;
+    const exportElement = mapContainerRef.current;
+    if (!exportElement) return;
 
     setIsExporting(true);
     setExportStatus('Preparing area map export...');
     setExportError('');
     try {
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const canvas = await html2canvas(mapContainerRef.current, {
+      // Let React swap in the export base map, then wait for its tiles to load
+      await waitForNextPaint();
+      await waitForMapImages(exportElement);
+      const canvas = await html2canvas(exportElement, {
         useCORS: true,
         allowTaint: false,
         backgroundColor: '#ffffff',
@@ -413,6 +458,10 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const legendItems = useMemo(() => {
     if (mappedValues.length === 0) return [];
     const min = Math.min(...mappedValues);
+    // Single class: every mapped area shares one value, so show one row
+    if (breaks.length === 0) {
+      return [{ label: formatAreaValue(min), color: choroplethColors[0] }];
+    }
     const ranges: Array<{ label: string; color: string }> = [];
     for (let i = 0; i <= breaks.length; i++) {
       const lower = i === 0 ? min : breaks[i - 1];
@@ -766,7 +815,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 <ScaleControl position="bottomleft" imperial={false} metric={true} />
                 <FitGeoJsonBounds boundaries={boundaries} />
                 <GeoJSON
-                  key={`${boundaryFileName}-${boundaryKey}-${metric}-${breaks.join('|')}-${mappedValues.length}`}
+                  key={`${boundaryFileName}-${boundaryKey}-${metric}-${breaks.join('|')}-${mappedValues.length}-${joinVersion}`}
                   data={boundaries as unknown as FeatureCollection}
                   style={(feature) => styleFeature(feature as unknown as GeoJsonFeature)}
                   onEachFeature={(feature, layer) => bindFeaturePopup(feature as unknown as GeoJsonFeature, layer)}

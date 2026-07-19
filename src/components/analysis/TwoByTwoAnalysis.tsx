@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
@@ -66,8 +66,46 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
+  // Track previous dataset ID to detect actual changes (vs re-renders)
+  const prevDatasetIdRef = useRef<string>(dataset.id);
+  // Skip the save effect once after a dataset switch so stale state from the
+  // previous dataset is never written into the new dataset's storage key
+  const skipNextSaveRef = useRef(false);
+  // Skip the filter-reset effect when the filter change came from a dataset switch
+  const skipFilterResetRef = useRef(false);
+
+  // Reload persisted state when the dataset actually changes
+  useEffect(() => {
+    if (prevDatasetIdRef.current !== dataset.id) {
+      prevDatasetIdRef.current = dataset.id;
+      skipNextSaveRef.current = true;
+      let next: Record<string, unknown> = {};
+      try {
+        const raw = localStorage.getItem(persistenceKey);
+        next = raw ? JSON.parse(raw) : {};
+      } catch {
+        next = {};
+      }
+      const nextFilterBy = (next.filterBy as string) ?? '';
+      skipFilterResetRef.current = nextFilterBy !== filterBy;
+      setStudyDesign((next.studyDesign as StudyDesign) || 'cohort');
+      setOutcomeVar((next.outcomeVar as string) || '');
+      setCaseValues(Array.isArray(next.caseValues) ? new Set(next.caseValues as string[]) : new Set());
+      setSelectedExposures(Array.isArray(next.selectedExposures) ? next.selectedExposures as string[] : []);
+      setExposurePositiveValues((next.exposurePositiveValues as Record<string, string>) || {});
+      setExposureReferenceValues((next.exposureReferenceValues as Record<string, string>) || {});
+      setFilterBy(nextFilterBy);
+      setSelectedFilterValues(Array.isArray(next.selectedFilterValues) ? new Set(next.selectedFilterValues as string[]) : new Set());
+      setShowAllFilterValues(false);
+    }
+  }, [dataset.id, persistenceKey, filterBy]);
+
   // Save state to localStorage when it changes
   useEffect(() => {
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
     try {
       const toSave = {
         studyDesign,
@@ -131,6 +169,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
   // Reset selected filter values when filter variable changes
   useEffect(() => {
+    if (skipFilterResetRef.current) {
+      skipFilterResetRef.current = false;
+      return;
+    }
     setSelectedFilterValues(new Set());
     setShowAllFilterValues(false);
   }, [filterBy]);
@@ -383,6 +425,16 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     return filteredRecords.filter(isCase).length;
   }, [filteredRecords, isCase]);
 
+  // Count total non-cases (records with a valid outcome value that is not a case)
+  const totalNonCases = useMemo(() => {
+    if (!outcomeVar || caseValues.size === 0) return 0;
+    return filteredRecords.filter(record => {
+      const v = record[outcomeVar];
+      if (v === null || v === undefined || String(v).trim() === '') return false;
+      return !isCase(record);
+    }).length;
+  }, [filteredRecords, outcomeVar, caseValues, isCase]);
+
   const formatMeasure = (n: number): string => {
     if (!isFinite(n)) return 'Undefined';
     return formatSigFigs(n, 3);
@@ -505,7 +557,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
-                      <span>CASES (n={exposureResults.length > 0 ? exposureResults[0].results.totalDisease : 0})</span>
+                      <span>CASES (n={totalCases})</span>
                       <StatTooltip
                         term="Cases"
                         definition="The number and percentage of cases with each exposure level. The percentage represents the proportion of all cases that were exposed."
@@ -514,7 +566,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
-                      <span>CONTROLS (n={exposureResults.length > 0 ? exposureResults[0].results.totalNoDisease : 0})</span>
+                      <span>CONTROLS (n={totalNonCases})</span>
                       <StatTooltip
                         term="Controls"
                         definition="The number and percentage of controls with each exposure level. The percentage represents the proportion of all controls that were exposed."
@@ -571,10 +623,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     ) : (
                       <>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {r.table.a} ({formatStatPercent((r.table.a / r.totalDisease) * 100, r.total)}%)
+                          {r.table.a} ({r.totalDisease > 0 ? `${formatStatPercent((r.table.a / r.totalDisease) * 100, r.total)}%` : '—'})
                         </td>
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
-                          {r.table.b} ({formatStatPercent((r.table.b / r.totalNoDisease) * 100, r.total)}%)
+                          {r.table.b} ({r.totalNoDisease > 0 ? `${formatStatPercent((r.table.b / r.totalNoDisease) * 100, r.total)}%` : '—'})
                         </td>
                         <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
                           {formatMeasure(measure)}
@@ -593,7 +645,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
           {studyDesign === 'cohort'
             ? 'AR = Attack Rate (Row %), RR = Risk Ratio. These are bivariate risk ratios (associations were run one at a time).'
-            : 'Percentages are column percentages. OR = Odds Ratio. These are bivariate odds ratios (associations were run one at a time).'}
+            : 'Percentages are column percentages; per-exposure denominators may be smaller than the totals above due to missing exposure values. OR = Odds Ratio. These are bivariate odds ratios (associations were run one at a time).'}
         </div>
       </div>
     );
@@ -900,13 +952,14 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                 const exposureName = firstResult.exposureLabel.toLowerCase();
                 const exposedValue = firstResult.exposedValue;
                 const isSignificant = firstResult.results.chiSquarePValue < 0.05;
+                const testNotComputable = !isFinite(firstResult.results.chiSquarePValue);
                 const ciIncludesOne = ci[0] <= 1.0 && ci[1] >= 1.0;
 
                 return (
                   <p className="text-sm text-gray-700 leading-relaxed">
                     <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The attack rate ratio (ARR) for {exposureName} is {formatMeasure(arr)} with a 95% CI of {formatCI(ci)}.
                     This means that people who were exposed to {exposureName} ({exposedValue}) were {formatMeasure(arr)} times {arr > 1 ? 'more' : 'less'} likely to become ill compared to those who were not exposed.
-                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
+                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {testNotComputable ? 'not assessable (insufficient data: the table has an empty row or column)' : isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
                     This suggests a {arr > 2 ? 'strong' : arr > 1.5 ? 'moderate' : arr > 1 ? 'weak' : ''} {arr > 1 ? 'positive association' : arr < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
                     An ARR greater than 1.0 indicates increased risk, while an ARR less than 1.0 suggests the exposure may be protective.
                     The confidence interval tells us the range of plausible values for the true ARR in the population.
@@ -927,13 +980,14 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                 const exposureName = firstResult.exposureLabel.toLowerCase();
                 const exposedValue = firstResult.exposedValue;
                 const isSignificant = firstResult.results.chiSquarePValue < 0.05;
+                const testNotComputable = !isFinite(firstResult.results.chiSquarePValue);
                 const ciIncludesOne = ci[0] <= 1.0 && ci[1] >= 1.0;
 
                 return (
                   <p className="text-sm text-gray-700 leading-relaxed">
                     <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The odds ratio (OR) for {exposureName} is {formatMeasure(or)} with a 95% CI of {formatCI(ci)}.
                     This means that cases had {formatMeasure(or)} times the odds of being exposed to {exposureName} ({exposedValue}) compared to controls.
-                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
+                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {testNotComputable ? 'not assessable (insufficient data: the table has an empty row or column)' : isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
                     This suggests a {or > 3 ? 'strong' : or > 2 ? 'moderate' : or > 1 ? 'weak' : ''} {or > 1 ? 'positive association' : or < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
                     An OR greater than 1.0 indicates that cases had higher odds of exposure (suggesting the exposure may increase risk),
                     while an OR less than 1.0 suggests cases had lower odds of exposure (suggesting the exposure may be protective).

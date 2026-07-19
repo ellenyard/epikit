@@ -122,12 +122,20 @@ function parseCoordinateValue(value: unknown): number | null {
   const raw = String(value).trim();
   if (!raw) return null;
 
-  const direction = raw.match(/[NSEW]/i)?.[0].toUpperCase();
   const match = raw.match(/-?\d+(?:[.,]\d+)?/);
-  if (!match) return null;
+  if (!match || match.index === undefined) return null;
 
   let parsed = Number(match[0].replace(',', '.'));
   if (!Number.isFinite(parsed)) return null;
+
+  // Hemisphere letters only count when directly adjacent to the number,
+  // so labels like "GPS 12.5" are not mistaken for south/west.
+  const before = raw.slice(0, match.index);
+  const after = raw.slice(match.index + match[0].length);
+  const direction = (
+    after.match(/^[\s°]*([NSEW])(?![A-Za-z])/i)?.[1]
+    ?? before.match(/(?:^|[^A-Za-z])([NSEW])[\s°]*$/i)?.[1]
+  )?.toUpperCase();
 
   if ((direction === 'S' || direction === 'W') && parsed > 0) {
     parsed = -parsed;
@@ -148,10 +156,6 @@ function isCoordinateInRange(value: number, axis: CoordinateAxis): boolean {
 
 function isZeroCoordinatePlaceholder(lat: number, lng: number): boolean {
   return lat === 0 && lng === 0;
-}
-
-function looksLikeSwappedCoordinates(lat: number, lng: number): boolean {
-  return Math.abs(lat) > 60 && Math.abs(lng) <= 90 && Math.abs(lat) > Math.abs(lng);
 }
 
 function coordinatePrecision(value: unknown): number {
@@ -442,9 +446,6 @@ function analyzeCoordinateQuality(
 
     const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
     coordinateCounts.set(key, (coordinateCounts.get(key) ?? 0) + 1);
-    if (looksLikeSwappedCoordinates(lat, lng)) {
-      result.likelySwapped++;
-    }
     validRows.push({ lat, lng, rawLat, rawLng });
   });
 
@@ -505,6 +506,18 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
   return null;
 }
 
+// Component to keep the Leaflet size in sync with the resizable panel layout
+function MapSizeInvalidator({ panelWidth }: { panelWidth: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => map.invalidateSize(), 100);
+    return () => window.clearTimeout(timeout);
+  }, [map, panelWidth]);
+
+  return null;
+}
+
 export function SpotMap({ dataset }: SpotMapProps) {
   const { config: localeConfig } = useLocale();
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -524,11 +537,17 @@ export function SpotMap({ dataset }: SpotMapProps) {
     }
   });
 
+  // Discard persisted column keys that no longer exist in this dataset
+  const validSavedColumn = (value: unknown): string => {
+    const key = typeof value === 'string' ? value : '';
+    return key && dataset.columns.some(col => col.key === key) ? key : '';
+  };
+
   // State initialized from localStorage
-  const [latColumn, setLatColumn] = useState<string>(() => (saved.latColumn as string) || '');
-  const [lngColumn, setLngColumn] = useState<string>(() => (saved.lngColumn as string) || '');
-  const [classificationColumn, setClassificationColumn] = useState<string>(() => (saved.classificationColumn as string) || '');
-  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
+  const [latColumn, setLatColumn] = useState<string>(() => validSavedColumn(saved.latColumn));
+  const [lngColumn, setLngColumn] = useState<string>(() => validSavedColumn(saved.lngColumn));
+  const [classificationColumn, setClassificationColumn] = useState<string>(() => validSavedColumn(saved.classificationColumn));
+  const [filterBy, setFilterBy] = useState<string>(() => validSavedColumn(saved.filterBy));
   const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
     const arr = saved.selectedFilterValues;
     return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
@@ -975,8 +994,14 @@ export function SpotMap({ dataset }: SpotMapProps) {
     return Array.from(values).sort();
   }, [dataset.records, filterBy]);
 
-  // Reset selected filter values when filter variable changes
+  // Reset selected filter values when filter variable changes (skip the initial
+  // run so persisted selections survive a reload)
+  const filterResetSkipped = useRef(false);
   useEffect(() => {
+    if (!filterResetSkipped.current) {
+      filterResetSkipped.current = true;
+      return;
+    }
     setSelectedFilterValues(new Set());
     setShowAllFilterValues(false);
   }, [filterBy]);
@@ -1566,6 +1591,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 />
               )}
               <ScaleControl position="bottomleft" imperial={true} metric={true} />
+              <MapSizeInvalidator panelWidth={panelWidth} />
 
               {filteredCases.length > 0 && <FitBounds cases={filteredCases} />}
 

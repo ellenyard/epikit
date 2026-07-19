@@ -75,7 +75,7 @@ export function VariableExplorer({
   const numericValues = useMemo(() => {
     if (!selectedColumn || selectedColumn.type !== 'number') return [];
     return values
-      .filter(v => v !== null && v !== undefined && !isNaN(Number(v)))
+      .filter(v => v !== null && v !== undefined && String(v).trim() !== '' && !isNaN(Number(v)))
       .map(v => Number(v));
   }, [values, selectedColumn]);
 
@@ -84,6 +84,19 @@ export function VariableExplorer({
     if (!selectedColumn || selectedColumn.type !== 'number') return null;
     return calculateDescriptiveStats(numericValues);
   }, [numericValues, selectedColumn]);
+
+  // Missing count for numeric variables: everything excluded from numericValues
+  // (empty cells AND non-numeric junk). numericStats.missing is always 0 here
+  // because it receives pre-filtered values.
+  const numericMissingCount = selectedColumn?.type === 'number'
+    ? values.length - numericValues.length
+    : 0;
+
+  // Values that are present but not parseable as numbers (excluded from stats)
+  const nonNumericCount = useMemo(() => {
+    if (!selectedColumn || selectedColumn.type !== 'number') return 0;
+    return values.filter(v => v !== null && v !== undefined && String(v).trim() !== '' && isNaN(Number(v))).length;
+  }, [values, selectedColumn]);
 
   // Calculate default bin width using Sturges' rule
   const defaultBinWidth = useMemo(() => {
@@ -118,18 +131,22 @@ export function VariableExplorer({
     // Calculate bin start (round down to bin width)
     const binStart = Math.floor(min / effectiveBinWidth) * effectiveBinWidth;
     const binEnd = Math.ceil(max / effectiveBinWidth) * effectiveBinWidth;
+    // Derive the bin count arithmetically instead of accumulating float additions,
+    // so drift cannot create a spurious extra bin or drop the last one.
+    const binCount = Math.max(1, Math.round((binEnd - binStart) / effectiveBinWidth));
 
-    for (let start = binStart; start < binEnd; start += effectiveBinWidth) {
+    for (let i = 0; i < binCount; i++) {
+      const start = binStart + i * effectiveBinWidth;
       const end = start + effectiveBinWidth;
-      const count = numericValues.filter(v => v >= start && v < end).length;
-      // Handle last bin to include max value
-      const adjustedCount = end >= max
-        ? numericValues.filter(v => v >= start && v <= end).length
-        : count;
+      // Last bin always includes every remaining value >= start, so float drift
+      // in `end` can never drop the maximum value from the histogram.
+      const count = i === binCount - 1
+        ? numericValues.filter(v => v >= start).length
+        : numericValues.filter(v => v >= start && v < end).length;
       bins.push({
         binStart: start,
         binEnd: end,
-        count: adjustedCount,
+        count,
         label: `${start.toFixed(1)} - ${end.toFixed(1)}`,
       });
     }
@@ -675,7 +692,7 @@ export function VariableExplorer({
                     <p className="text-xs text-gray-500">Valid</p>
                   </div>
                   <div>
-                    <p className="text-xl font-bold text-amber-600">{numericStats.missing}</p>
+                    <p className="text-xl font-bold text-amber-600">{numericMissingCount}</p>
                     <p className="text-xs text-gray-500">Missing</p>
                   </div>
                   <div>
@@ -683,6 +700,11 @@ export function VariableExplorer({
                     <p className="text-xs text-gray-500">Sum</p>
                   </div>
                 </div>
+                {nonNumericCount > 0 && (
+                  <p className="mt-2 text-xs text-amber-600">
+                    {nonNumericCount} non-numeric value{nonNumericCount !== 1 ? 's' : ''} excluded from statistics
+                  </p>
+                )}
               </div>
             </>
           )}

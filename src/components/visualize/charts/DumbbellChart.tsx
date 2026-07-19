@@ -12,7 +12,6 @@ import {
   svgText,
   svgAxisLine,
   svgGridLine,
-  escapeXml,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 
@@ -45,9 +44,12 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
 
     for (const record of dataset.records) {
       const cat = record[categoryCol];
-      const v1 = Number(record[value1Col]);
-      const v2 = Number(record[value2Col]);
-      if (cat == null || cat === '' || isNaN(v1) || isNaN(v2)) continue;
+      const rawV1 = record[value1Col];
+      const rawV2 = record[value2Col];
+      if (cat == null || cat === '' || rawV1 == null || rawV1 === '' || rawV2 == null || rawV2 === '') continue;
+      const v1 = Number(rawV1);
+      const v2 = Number(rawV2);
+      if (isNaN(v1) || isNaN(v2)) continue;
 
       const key = String(cat);
       if (!grouped.has(key)) grouped.set(key, { v1: [], v2: [] });
@@ -89,7 +91,8 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
     let minVal = Math.min(0, ...allValues);
     let maxVal = Math.max(...allValues);
     const range = maxVal - minVal || 1;
-    minVal = Math.max(0, minVal - range * 0.05);
+    // Only clamp the domain floor to 0 when data is non-negative
+    minVal = minVal >= 0 ? Math.max(0, minVal - range * 0.05) : minVal - range * 0.05;
     maxVal = maxVal + range * 0.1;
     const valRange = maxVal - minVal || 1;
 
@@ -140,7 +143,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
 
       // Category label
       const labelText = point.category.length > 22 ? point.category.slice(0, 20) + '\u2026' : point.category;
-      svg += svgText(margin.left - 8, y, escapeXml(labelText), {
+      svg += svgText(margin.left - 8, y, labelText, {
         anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em',
       });
 

@@ -29,9 +29,9 @@ function applySettings(
 
   // Reduced motion
   if (motion) {
-    root.style.setProperty('--animation-speed', '0.01ms');
+    root.classList.add('reduce-motion');
   } else {
-    root.style.removeProperty('--animation-speed');
+    root.classList.remove('reduce-motion');
   }
 
   // Font size

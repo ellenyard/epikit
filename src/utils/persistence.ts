@@ -46,11 +46,13 @@ export interface ProjectData {
 
 // ============ localStorage Functions ============
 
-export function saveDatasets(datasets: Dataset[]): void {
+export function saveDatasets(datasets: Dataset[]): boolean {
   try {
     localStorage.setItem(STORAGE_KEYS.DATASETS, JSON.stringify(datasets));
+    return true;
   } catch (e) {
     console.error('Failed to save datasets to localStorage:', e);
+    return false;
   }
 }
 
@@ -64,15 +66,17 @@ export function loadDatasets(): Dataset[] | null {
   }
 }
 
-export function saveActiveDatasetId(id: string | null): void {
+export function saveActiveDatasetId(id: string | null): boolean {
   try {
     if (id) {
       localStorage.setItem(STORAGE_KEYS.ACTIVE_DATASET_ID, id);
     } else {
       localStorage.removeItem(STORAGE_KEYS.ACTIVE_DATASET_ID);
     }
+    return true;
   } catch (e) {
     console.error('Failed to save active dataset ID:', e);
+    return false;
   }
 }
 
@@ -85,11 +89,13 @@ export function loadActiveDatasetId(): string | null {
   }
 }
 
-export function saveEditLog(editLog: EditLogEntry[]): void {
+export function saveEditLog(editLog: EditLogEntry[]): boolean {
   try {
     localStorage.setItem(STORAGE_KEYS.EDIT_LOG, JSON.stringify(editLog));
+    return true;
   } catch (e) {
     console.error('Failed to save edit log:', e);
+    return false;
   }
 }
 
@@ -176,15 +182,61 @@ export function downloadProject(project: ProjectData, filename?: string): void {
 
 export function parseProjectFile(fileContent: string): ProjectData | null {
   try {
-    const project = JSON.parse(fileContent) as ProjectData;
+    const project = JSON.parse(fileContent) as Partial<ProjectData> | null;
 
-    // Validate required fields
-    if (!project.version || !project.datasets || !Array.isArray(project.datasets)) {
-      console.error('Invalid project file format');
+    if (!project || typeof project !== 'object') {
+      console.error('Invalid project file: not a JSON object');
       return null;
     }
 
-    return project;
+    // Version check: reject files from an incompatible (different major) version
+    const fileMajor = typeof project.version === 'string' ? project.version.split('.')[0] : null;
+    if (fileMajor !== PROJECT_VERSION.split('.')[0]) {
+      console.error(
+        `Unsupported project file version: ${project.version ?? 'unknown'} (this app reads ${PROJECT_VERSION}.x files)`
+      );
+      return null;
+    }
+
+    // Deep-validate datasets — a malformed dataset crashes the app later
+    if (!Array.isArray(project.datasets)) {
+      console.error('Invalid project file: missing datasets');
+      return null;
+    }
+    for (const d of project.datasets) {
+      if (
+        !d ||
+        typeof d !== 'object' ||
+        typeof d.id !== 'string' ||
+        typeof d.name !== 'string' ||
+        !Array.isArray(d.columns) ||
+        !Array.isArray(d.records)
+      ) {
+        console.error('Invalid project file: malformed dataset entry');
+        return null;
+      }
+    }
+    const datasets = project.datasets;
+
+    // Normalize optional fields so downstream code can trust the shape
+    const editLog = Array.isArray(project.editLog) ? project.editLog : [];
+    const activeDatasetId =
+      typeof project.activeDatasetId === 'string' && datasets.some(d => d.id === project.activeDatasetId)
+        ? project.activeDatasetId
+        : datasets[0]?.id ?? null;
+    const analysisState =
+      project.analysisState && typeof project.analysisState === 'object' && !Array.isArray(project.analysisState)
+        ? project.analysisState
+        : {};
+
+    return {
+      version: project.version as string,
+      exportedAt: typeof project.exportedAt === 'string' ? project.exportedAt : new Date().toISOString(),
+      datasets,
+      activeDatasetId,
+      editLog,
+      analysisState,
+    };
   } catch (e) {
     console.error('Failed to parse project file:', e);
     return null;

@@ -8,10 +8,12 @@
  *
  * 1. TWO-BY-TWO TABLE ANALYSIS (lines ~38-96)
  *    - Risk Ratio (Relative Risk) with 95% CI
- *    - Odds Ratio with 95% CI (Woolf method, 0.5 correction for zeros)
+ *    - Odds Ratio with 95% CI (Woolf method; Haldane-Anscombe 0.5 correction
+ *      for zero cells, applied to both the point estimate and the CI)
  *    - Risk Difference with 95% CI
  *    - Attributable Risk Percent
- *    - Chi-square test (Yates' correction)
+ *    - Chi-square test (Yates' correction, clamped at zero so the correction
+ *      never inflates the statistic when |O-E| < 0.5)
  *    - Fisher's exact test (for small samples, n≤100)
  *
  * 2. CONFIDENCE INTERVAL CALCULATIONS (lines ~98-151)
@@ -101,11 +103,24 @@ export function calculateTwoByTwo(table: TwoByTwoTable): TwoByTwoResults {
   const attackRateTotal = total > 0 ? totalDisease / total : 0;
 
   // Risk Ratio (Relative Risk)
+  // No continuity correction: RR is undefined (Infinity, rendered as
+  // "Undefined") when the unexposed attack rate is 0, matching the CI below.
   const riskRatio = attackRateUnexposed > 0 ? attackRateExposed / attackRateUnexposed : Infinity;
   const riskRatioCI = calculateRiskRatioCI(a, b, c, d);
 
   // Odds Ratio
-  const oddsRatio = (b * c) > 0 ? (a * d) / (b * c) : Infinity;
+  // Haldane-Anscombe 0.5 correction when any cell is zero (Epi Info convention),
+  // so the point estimate is consistent with the corrected CI below. When an
+  // entire marginal total is zero the ratio is truly undefined (Infinity,
+  // rendered as "Undefined").
+  const hasZeroMarginal =
+    totalExposed === 0 || totalUnexposed === 0 || totalDisease === 0 || totalNoDisease === 0;
+  const hasZeroCell = a === 0 || b === 0 || c === 0 || d === 0;
+  const oddsRatio = hasZeroMarginal
+    ? Infinity
+    : hasZeroCell
+      ? ((a + 0.5) * (d + 0.5)) / ((b + 0.5) * (c + 0.5))
+      : (a * d) / (b * c);
   const oddsRatioCI = calculateOddsRatioCI(a, b, c, d);
 
   // Risk Difference (Attributable Risk)
@@ -170,6 +185,11 @@ function calculateRiskRatioCI(a: number, b: number, c: number, d: number): [numb
 }
 
 function calculateOddsRatioCI(a: number, b: number, c: number, d: number): [number, number] {
+  // Undefined when an entire marginal total is zero
+  if (a + b === 0 || c + d === 0 || a + c === 0 || b + d === 0) {
+    return [NaN, NaN];
+  }
+
   if (a === 0 || b === 0 || c === 0 || d === 0) {
     // Add 0.5 correction for zero cells
     const aa = a + 0.5;
@@ -212,18 +232,30 @@ function calculateChiSquare(a: number, b: number, c: number, d: number, n: numbe
   const totalDisease = a + c;
   const totalNoDisease = b + d;
 
+  // Undefined when the table is empty or an entire marginal total is zero
+  // (expected counts would be 0/NaN); callers must treat NaN as "not computable"
+  if (n === 0 || totalExposed === 0 || totalUnexposed === 0 || totalDisease === 0 || totalNoDisease === 0) {
+    return { chiSquare: NaN, pValue: NaN };
+  }
+
   // Expected values
   const expA = (totalExposed * totalDisease) / n;
   const expB = (totalExposed * totalNoDisease) / n;
   const expC = (totalUnexposed * totalDisease) / n;
   const expD = (totalUnexposed * totalNoDisease) / n;
 
-  // Chi-square with Yates' correction
+  // Chi-square with Yates' correction, clamped at zero so the correction
+  // never increases the statistic when |O-E| < 0.5 (R/Epi Info behavior)
+  const yatesTerm = (observed: number, expected: number): number => {
+    if (expected <= 0) return 0;
+    return Math.pow(Math.max(Math.abs(observed - expected) - 0.5, 0), 2) / expected;
+  };
+
   const chiSquare =
-    Math.pow(Math.abs(a - expA) - 0.5, 2) / expA +
-    Math.pow(Math.abs(b - expB) - 0.5, 2) / expB +
-    Math.pow(Math.abs(c - expC) - 0.5, 2) / expC +
-    Math.pow(Math.abs(d - expD) - 0.5, 2) / expD;
+    yatesTerm(a, expA) +
+    yatesTerm(b, expB) +
+    yatesTerm(c, expC) +
+    yatesTerm(d, expD);
 
   // P-value from chi-square distribution with 1 df
   const pValue = 1 - chiSquareCDF(chiSquare, 1);

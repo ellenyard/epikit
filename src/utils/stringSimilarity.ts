@@ -60,14 +60,18 @@ function jaroSimilarity(s1: string, s2: string): number {
  * @param s2 Second string
  * @param prefixScale Weight given to common prefix (default 0.1, max 0.25)
  */
+// Cap string length so pairwise fuzzy matching over large datasets stays
+// fast (Jaro similarity is O(n*m) per comparison)
+const MAX_SIMILARITY_LENGTH = 64;
+
 export function jaroWinklerSimilarity(
   s1: string,
   s2: string,
   prefixScale: number = 0.1
 ): number {
   // Normalize strings: lowercase and trim
-  const str1 = s1.toLowerCase().trim();
-  const str2 = s2.toLowerCase().trim();
+  const str1 = s1.toLowerCase().trim().slice(0, MAX_SIMILARITY_LENGTH);
+  const str2 = s2.toLowerCase().trim().slice(0, MAX_SIMILARITY_LENGTH);
 
   if (str1 === str2) return 1;
   if (str1.length === 0 || str2.length === 0) return 0;

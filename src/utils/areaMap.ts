@@ -166,7 +166,7 @@ export function buildAreaJoin(options: BuildAreaJoinOptions): AreaJoinResult {
           value: (existing?.value ?? 0) + parsed,
         });
       }
-      denominatorRawCounts.set(label, (denominatorRawCounts.get(label) ?? 0) + 1);
+      denominatorRawCounts.set(key, (denominatorRawCounts.get(key) ?? 0) + 1);
     });
   }
 
@@ -302,34 +302,34 @@ export function classifyValues(
   if (cleanValues.length === 0) return [];
 
   const uniqueValues = Array.from(new Set(cleanValues));
-  if (uniqueValues.length === 1) return [uniqueValues[0]];
+  // A single unique value forms one class with no breaks
+  if (uniqueValues.length === 1) return [];
 
   const bins = Math.max(2, Math.min(7, Math.floor(classCount)));
 
+  let breaks: number[];
+
   if (method === 'manual') {
-    const breaks = manualBreaks
+    breaks = manualBreaks
       .split(',')
       .map(value => Number(value.trim()))
-      .filter(value => Number.isFinite(value))
-      .sort((a, b) => a - b);
-    return Array.from(new Set(breaks));
-  }
-
-  if (method === 'quantile') {
-    return Array.from({ length: bins - 1 }, (_, index) => {
+      .filter(value => Number.isFinite(value));
+  } else if (method === 'quantile') {
+    breaks = Array.from({ length: bins - 1 }, (_, index) => {
       const position = ((index + 1) / bins) * (cleanValues.length - 1);
       return cleanValues[Math.round(position)];
     });
+  } else if (method === 'natural') {
+    breaks = jenksBreaks(cleanValues, bins).slice(1, -1);
+  } else {
+    const min = cleanValues[0];
+    const max = cleanValues[cleanValues.length - 1];
+    const step = (max - min) / bins;
+    breaks = Array.from({ length: bins - 1 }, (_, index) => min + step * (index + 1));
   }
 
-  if (method === 'natural') {
-    return jenksBreaks(cleanValues, bins).slice(1, -1);
-  }
-
-  const min = cleanValues[0];
-  const max = cleanValues[cleanValues.length - 1];
-  const step = (max - min) / bins;
-  return Array.from({ length: bins - 1 }, (_, index) => min + step * (index + 1));
+  // Deduplicate breaks (quantile/natural can repeat breaks on skewed data)
+  return Array.from(new Set(breaks)).sort((a, b) => a - b);
 }
 
 export function getClassIndex(value: number | null, breaks: number[]): number | null {

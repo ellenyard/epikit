@@ -88,7 +88,7 @@ export function getDefaultConfig(): DataQualityConfig {
     checkFutureDates: false,
     numericRangeRules: [],
     missingValueFields: [],
-    enabledChecks: ['duplicate', 'date_order', 'numeric_range'],
+    enabledChecks: ['duplicate', 'date_order', 'numeric_range', 'missing_values'],
   };
 }
 
@@ -112,8 +112,11 @@ function checkDuplicates(
   // Get all data fields (excluding 'id')
   const allFields = columns.map(c => c.key);
 
-  // Use selected fields if provided, otherwise check all fields
-  const fieldsToCheck = fields.length > 0 ? fields : allFields;
+  // Use selected fields if provided, otherwise check all fields.
+  // Cap the number of compared fields so the pairwise fingerprint stays
+  // cheap on wide datasets.
+  const MAX_COMPARE_FIELDS = 10;
+  const fieldsToCheck = (fields.length > 0 ? fields : allFields).slice(0, MAX_COMPARE_FIELDS);
 
   if (fieldsToCheck.length === 0) return issues;
 
@@ -125,6 +128,38 @@ function checkDuplicates(
       type: (col?.type || 'text') as 'text' | 'date' | 'number' | 'boolean',
     };
   });
+
+  // Pairwise fuzzy matching is O(n^2); on large datasets it would hang the
+  // UI, so fall back to O(n) exact-fingerprint grouping instead
+  const MAX_FUZZY_RECORDS = 1000;
+  if (records.length > MAX_FUZZY_RECORDS) {
+    const exactGroups = new Map<string, string[]>();
+    for (const record of records) {
+      const parts = fieldsToCheck.map(f => {
+        const val = record[f];
+        return val === null || val === undefined ? '' : String(val).trim().toLowerCase();
+      });
+      if (parts.every(p => p === '')) continue;
+      const key = parts.join('');
+      const group = exactGroups.get(key);
+      if (group) group.push(record.id);
+      else exactGroups.set(key, [record.id]);
+    }
+    for (const group of exactGroups.values()) {
+      if (group.length > 1) {
+        issues.push({
+          id: generateId(),
+          checkType: 'duplicate',
+          category: 'duplicate',
+          severity: 'error',
+          recordIds: group,
+          message: `${group.length} duplicate records found`,
+          details: 'Exact match (fuzzy matching skipped for large dataset)',
+        });
+      }
+    }
+    return issues;
+  }
 
   // Track which records have been assigned to a duplicate group
   const assignedToGroup = new Set<string>();
@@ -358,8 +393,8 @@ export function runDataQualityChecks(
   const issues: DataQualityIssue[] = [];
   const { enabledChecks } = config;
 
-  // Duplicate check
-  if (enabledChecks.includes('duplicate') && config.duplicateFields.length > 0) {
+  // Duplicate check (all fields when no specific fields are configured)
+  if (enabledChecks.includes('duplicate')) {
     issues.push(...checkDuplicates(records, config.duplicateFields, columns, config.fuzzyMatching));
   }
 
@@ -373,9 +408,12 @@ export function runDataQualityChecks(
     issues.push(...checkNumericRanges(records, config.numericRangeRules));
   }
 
-  // Missing value checks
-  if (enabledChecks.includes('missing_values') && config.missingValueFields.length > 0) {
-    issues.push(...checkMissingValues(records, config.missingValueFields, columns));
+  // Missing value checks (all fields when no specific fields are configured)
+  if (enabledChecks.includes('missing_values')) {
+    const missingFields = config.missingValueFields.length > 0
+      ? config.missingValueFields
+      : columns.map(c => c.key);
+    issues.push(...checkMissingValues(records, missingFields, columns));
   }
 
   return issues;

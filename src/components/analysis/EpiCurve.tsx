@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
+import html2canvas from 'html2canvas';
 import type { Dataset } from '../../types/analysis';
 import {
   processEpiCurveData,
@@ -12,6 +13,16 @@ import {
 import type { BinSize, ColorScheme, Annotation, EpiCurveData, AnnotationType } from '../../utils/epiCurve';
 import { EpiCurveTutorial } from '../tutorials/EpiCurveTutorial';
 import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
+import { escapeXml } from '../../utils/chartExport';
+
+// Format a Date as YYYY-MM-DD using local date components.
+// (toISOString() is UTC and shifts the date back a day in UTC+ timezones.)
+function formatLocalDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 interface EpiCurveProps {
   dataset: Dataset;
@@ -37,8 +48,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartBodyRef = useRef<HTMLDivElement>(null);
-  const userChangedBinSize = useRef(isSampleOutbreakPreset);
-
   // Keep the guided sample separate from a user's normal saved demo settings.
   const persistenceKey = isSampleOutbreakPreset
     ? `epikit_epicurve_sample_${dataset.id}`
@@ -54,9 +63,13 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     }
   });
 
+  // Tracks manual bin-size changes; a bin size restored from storage counts as a user choice.
+  const userChangedBinSize = useRef(isSampleOutbreakPreset || saved.binSize !== undefined);
+
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
   const [isResizing, setIsResizing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -126,6 +139,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     label: '',
     description: '',
   });
+  const [annotationError, setAnnotationError] = useState('');
 
   // Click-to-add annotation state
   const [clickAddPosition, setClickAddPosition] = useState<{ x: number; y: number; date: string } | null>(null);
@@ -209,8 +223,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   // Check if using sub-daily bin size
   const isSubDailyBin = binSize === 'hourly' || binSize === '6hour' || binSize === '12hour';
 
-  /* eslint-disable react-hooks/set-state-in-effect -- These effects keep persisted controls aligned with the active dataset and its detected columns. */
-
   // Auto-select first date column
   useEffect(() => {
     if (!dateColumn && dateColumns.length > 0) {
@@ -220,6 +232,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
   // Auto-select matching time column when date column changes
   useEffect(() => {
+    // Don't override a time column choice restored from saved settings
+    if (saved.timeColumn !== undefined) return;
     if (dateColumn && timeColumns.length > 0) {
       // Try to find a time column that matches the date column name
       // e.g., "onset_date" -> "onset_time"
@@ -235,7 +249,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
         setTimeColumn(timeColumns[0].key);
       }
     }
-  }, [dateColumn, timeColumns, timeColumn]);
+  }, [dateColumn, timeColumns, timeColumn, saved]);
 
   // Auto-suggest bin size based on date range (only if user hasn't manually changed it)
   useEffect(() => {
@@ -253,9 +267,14 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
     if (validDates.length === 0) return;
 
-    // Calculate date range in days
-    const minTime = Math.min(...validDates.map(d => d.getTime()));
-    const maxTime = Math.max(...validDates.map(d => d.getTime()));
+    // Calculate date range in days (loop-based min/max avoids call-stack overflow on very large datasets)
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    validDates.forEach(d => {
+      const t = d.getTime();
+      if (t < minTime) minTime = t;
+      if (t > maxTime) maxTime = t;
+    });
     const daysDiff = (maxTime - minTime) / (1000 * 60 * 60 * 24);
 
     // Suggest bin size based on date range
@@ -282,7 +301,13 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   }, [dataset.records, filterBy]);
 
   // Reset selected filter values when filter variable changes
+  // (but not on mount, which would wipe selections restored from saved settings)
+  const filterResetSkipped = useRef(false);
   useEffect(() => {
+    if (!filterResetSkipped.current) {
+      filterResetSkipped.current = true;
+      return;
+    }
     setSelectedFilterValues(new Set());
     setShowAllFilterValues(false);
   }, [filterBy]);
@@ -296,8 +321,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       }
     }
   }, [dateColumn, dataset.columns]);
-
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Apply filter to records
   const filteredRecords = useMemo(() => {
@@ -328,8 +351,13 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
     if (validRecords.length === 0) return null;
 
-    const dates = validRecords.map(r => parseLocalDate(String(r[dateColumn])));
-    const firstCaseDate = new Date(Math.min(...dates.map(d => d.getTime())));
+    // Loop-based min avoids call-stack overflow on very large datasets
+    let firstTime = Infinity;
+    validRecords.forEach(r => {
+      const t = parseLocalDate(String(r[dateColumn])).getTime();
+      if (t < firstTime) firstTime = t;
+    });
+    const firstCaseDate = new Date(firstTime);
 
     // For a point-source outbreak:
     // Earliest possible exposure = first case - max incubation
@@ -345,6 +373,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       end: latestExposure,
       pathogen: selectedPathogen,
       incubation,
+      firstCaseDate,
     };
   }, [selectedPathogen, showExposureWindow, dateColumn, filteredRecords]);
 
@@ -526,9 +555,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     const endDate = parseLocalDate(manualEndDate);
     endDate.setHours(23, 59, 59, 999); // Include entire end day
 
-    // Filter bins to only those that overlap with the manual range
+    // Filter bins to only those that overlap with the manual range.
+    // bin.endDate is exclusive (the next bin's start), so a bin ending exactly
+    // at startDate does not overlap and must be excluded.
     const filteredBins = curveData.bins.filter(bin => {
-      return bin.endDate >= startDate && bin.startDate <= endDate;
+      return bin.endDate > startDate && bin.startDate <= endDate;
     });
 
     if (filteredBins.length === 0) {
@@ -540,8 +571,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       };
     }
 
-    // Recalculate max count for filtered bins
-    const maxCount = Math.max(...filteredBins.map(b => b.total), 0);
+    // Recalculate max count for filtered bins (loop avoids call-stack overflow with many bins)
+    let maxCount = 0;
+    filteredBins.forEach(b => {
+      if (b.total > maxCount) maxCount = b.total;
+    });
 
     return {
       ...curveData,
@@ -590,19 +624,19 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   const getDefaultAnnotationDate = (): string => {
     if (curveData.bins.length === 0) {
       // Fallback to today if no data
-      const today = new Date();
-      return today.toISOString().split('T')[0];
+      return formatLocalDate(new Date());
     }
     // Use the middle of the date range for better UX
     const startTime = curveData.dateRange.start.getTime();
     const endTime = curveData.dateRange.end.getTime();
     const middleTime = startTime + (endTime - startTime) / 2;
     const middleDate = new Date(middleTime);
-    return middleDate.toISOString().split('T')[0];
+    return formatLocalDate(middleDate);
   };
 
   const startAddingAnnotation = () => {
     setEditingAnnotationId(null);
+    setAnnotationError('');
     setNewAnnotation({
       type: 'exposure',
       date: getDefaultAnnotationDate(),
@@ -615,10 +649,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
   const startEditingAnnotation = (annotation: Annotation) => {
     setEditingAnnotationId(annotation.id);
+    setAnnotationError('');
     setNewAnnotation({
       type: annotation.type,
-      date: annotation.date.toISOString().split('T')[0],
-      endDate: annotation.endDate ? annotation.endDate.toISOString().split('T')[0] : '',
+      date: formatLocalDate(annotation.date),
+      endDate: annotation.endDate ? formatLocalDate(annotation.endDate) : '',
       label: annotation.label,
       description: annotation.description || '',
     });
@@ -627,6 +662,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
   const saveAnnotation = () => {
     if (!newAnnotation.date) return;
+
+    if (newAnnotation.endDate && parseLocalDate(newAnnotation.endDate) < parseLocalDate(newAnnotation.date)) {
+      setAnnotationError('End date must be on or after the start date.');
+      return;
+    }
 
     const annotation: Annotation = {
       id: editingAnnotationId || crypto.randomUUID(),
@@ -640,7 +680,10 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     };
 
     if (newAnnotation.endDate) {
-      annotation.endDate = parseLocalDate(newAnnotation.endDate);
+      // Treat a date-only end as inclusive of that whole day
+      const end = parseLocalDate(newAnnotation.endDate);
+      end.setHours(23, 59, 59, 999);
+      annotation.endDate = end;
     }
 
     if (editingAnnotationId) {
@@ -651,6 +694,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       setAnnotations([...annotations, annotation]);
     }
 
+    setAnnotationError('');
     setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
     setEditingAnnotationId(null);
     setShowAnnotationForm(false);
@@ -658,6 +702,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
   const cancelAnnotationEdit = () => {
     setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+    setAnnotationError('');
     setEditingAnnotationId(null);
     setShowAnnotationForm(false);
   };
@@ -669,16 +714,16 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     const rect = chartBodyRef.current.getBoundingClientRect();
     const clickX = e.clientX - rect.left + chartBodyRef.current.scrollLeft;
 
-    // Calculate which date was clicked
-    const totalWidth = displayData.bins.length * barWidth;
+    // Map the click onto the actual rendered bins (first bin start → last bin end).
+    // dateRange doesn't always match the rendered span (extra trailing bin, and
+    // manual-range filtering), so derive the span from the bins themselves.
+    const bins = displayData.bins;
+    const totalWidth = bins.length * barWidth;
     const fraction = Math.max(0, Math.min(1, clickX / totalWidth));
-
-    // Convert to date
-    const startTime = displayData.dateRange.start.getTime();
-    const endTime = displayData.dateRange.end.getTime();
-    const clickTime = startTime + fraction * (endTime - startTime);
-    const clickDate = new Date(clickTime);
-    const dateString = clickDate.toISOString().split('T')[0];
+    const firstStart = bins[0].startDate.getTime();
+    const lastEnd = bins[bins.length - 1].endDate.getTime();
+    const clickTime = firstStart + fraction * (lastEnd - firstStart);
+    const dateString = formatLocalDate(new Date(clickTime));
 
     // Position popup near click
     setClickAddPosition({
@@ -704,7 +749,10 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     };
 
     if (newAnnotation.endDate) {
-      annotation.endDate = parseLocalDate(newAnnotation.endDate);
+      // Treat a date-only end as inclusive of that whole day
+      const end = parseLocalDate(newAnnotation.endDate);
+      end.setHours(23, 59, 59, 999);
+      annotation.endDate = end;
     }
 
     setAnnotations([...annotations, annotation]);
@@ -735,16 +783,22 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     if (!chartRef.current) return;
 
     if (format === 'svg') {
-      // Create SVG export
-      const svgContent = generateSVG(curveData, chartTitle, xAxisLabel, yAxisLabel, showGridLines, showCaseCounts, stratifyBy, colorScheme);
+      // Create SVG export from the same filtered data and y-axis scale as the screen
+      const svgContent = generateSVG(displayData, yAxisMax, chartTitle, xAxisLabel, yAxisLabel, showGridLines, showCaseCounts, stratifyBy, colorScheme, allAnnotations, exposureWindow);
       const blob = new Blob([svgContent], { type: 'image/svg+xml' });
       downloadBlob(blob, `${chartTitle.replace(/\s+/g, '_')}.svg`);
     } else {
-      // PNG export using canvas
-      const canvas = await generateCanvas(chartRef.current);
-      canvas.toBlob(blob => {
+      // PNG export: rasterize the live chart container so the PNG matches the screen
+      setIsExporting(true);
+      try {
+        const canvas = await html2canvas(chartRef.current, { backgroundColor: '#ffffff', scale: 2 });
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
         if (blob) downloadBlob(blob, `${chartTitle.replace(/\s+/g, '_')}.png`);
-      });
+      } catch (err) {
+        console.error('PNG export failed:', err);
+      } finally {
+        setIsExporting(false);
+      }
     }
   };
 
@@ -1014,6 +1068,9 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                       className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                     />
                   </div>
+                )}
+                {annotationError && (
+                  <p className="text-xs text-red-600">{annotationError}</p>
                 )}
                 <div className="flex gap-2">
                   <button
@@ -1314,8 +1371,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                   <button
                     onClick={() => {
                       if (curveData.bins.length > 0) {
-                        setManualStartDate(curveData.dateRange.start.toISOString().split('T')[0]);
-                        setManualEndDate(curveData.dateRange.end.toISOString().split('T')[0]);
+                        setManualStartDate(formatLocalDate(curveData.dateRange.start));
+                        setManualEndDate(formatLocalDate(curveData.dateRange.end));
                       }
                     }}
                     className="text-xs text-gray-600 hover:text-gray-900 underline"
@@ -1667,7 +1724,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                     <p className="font-medium mb-1">Calculation Method:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2">
                       <li>
-                        <strong>First case date:</strong> {displayData.bins.filter(b => b.total > 0)[0]?.startDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                        <strong>First case date:</strong> {exposureWindow.firstCaseDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                       </li>
                       <li>
                         <strong>Selected pathogen:</strong> {exposureWindow.pathogen}
@@ -1698,10 +1755,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
             <ResultsActions
               actions={[
                 {
-                  label: 'Export PNG',
+                  label: isExporting ? 'Exporting…' : 'Export PNG',
                   onClick: () => exportChart('png'),
                   icon: ExportIcons.download,
                   variant: 'primary',
+                  disabled: isExporting,
                 },
                 {
                   label: 'Export SVG',
@@ -1962,48 +2020,31 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-async function generateCanvas(element: HTMLElement): Promise<HTMLCanvasElement> {
-  // Simple canvas export using html2canvas-like approach
-  const canvas = document.createElement('canvas');
-  const rect = element.getBoundingClientRect();
-  canvas.width = rect.width * 2;
-  canvas.height = rect.height * 2;
-
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(2, 2);
-  ctx.fillStyle = 'white';
-  ctx.fillRect(0, 0, rect.width, rect.height);
-
-  // Note: This is a simplified export. For production, use html2canvas library
-  ctx.font = '14px sans-serif';
-  ctx.fillStyle = '#333';
-  ctx.fillText('Export requires html2canvas library for full fidelity', 20, 30);
-  ctx.fillText('SVG export is fully supported', 20, 50);
-
-  return canvas;
-}
-
 function generateSVG(
   data: EpiCurveData,
+  yMax: number,
   title: string,
   xLabel: string,
   yLabel: string,
   showGrid: boolean,
   showCounts: boolean,
   stratifyBy: string,
-  colorScheme: ColorScheme
+  colorScheme: ColorScheme,
+  annotations: Annotation[],
+  exposureWindow: { start: Date; end: Date } | null
 ): string {
   const width = Math.max(800, data.bins.length * 40 + 100);
   const height = 500;
   const margin = { top: 60, right: 80, bottom: 110, left: 60 };
   const chartWidth = width - margin.left - margin.right;
   const chartHeight = height - margin.top - margin.bottom;
-  const barWidth = chartWidth / data.bins.length;
+  const barWidth = data.bins.length > 0 ? chartWidth / data.bins.length : chartWidth;
+  const chartBottom = margin.top + chartHeight;
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" style="background: white;">`;
 
   // Title
-  svg += `<text x="${width / 2}" y="30" text-anchor="middle" font-size="18" font-weight="bold">${title}</text>`;
+  svg += `<text x="${width / 2}" y="30" text-anchor="middle" font-size="18" font-weight="bold">${escapeXml(title)}</text>`;
 
   // Legend for stratified charts
   if (stratifyBy && data.strataKeys.length > 0) {
@@ -2017,15 +2058,15 @@ function generateSVG(
       // Legend color box
       svg += `<rect x="${x}" y="${legendY}" width="12" height="12" fill="${color}"/>`;
       // Legend text
-      svg += `<text x="${x + 16}" y="${legendY + 10}" font-size="12">${key}</text>`;
+      svg += `<text x="${x + 16}" y="${legendY + 10}" font-size="12">${escapeXml(key)}</text>`;
     });
   }
 
   // Y-axis label
-  svg += `<text x="20" y="${height / 2}" text-anchor="middle" font-size="14" transform="rotate(-90, 20, ${height / 2})">${yLabel}</text>`;
+  svg += `<text x="20" y="${height / 2}" text-anchor="middle" font-size="14" transform="rotate(-90, 20, ${height / 2})">${escapeXml(yLabel)}</text>`;
 
   // X-axis label
-  svg += `<text x="${width / 2}" y="${height - 10}" text-anchor="middle" font-size="14">${xLabel}</text>`;
+  svg += `<text x="${width / 2}" y="${height - 10}" text-anchor="middle" font-size="14">${escapeXml(xLabel)}</text>`;
 
   // Grid lines
   if (showGrid) {
@@ -2035,9 +2076,9 @@ function generateSVG(
     }
   }
 
-  // Y-axis ticks
+  // Y-axis ticks (same yMax scale as the on-screen chart)
   for (let i = 0; i <= 5; i++) {
-    const value = Math.round((data.maxCount * (5 - i)) / 5);
+    const value = Math.round((yMax * (5 - i)) / 5);
     const y = margin.top + (i / 5) * chartHeight;
     svg += `<text x="${margin.left - 10}" y="${y + 4}" text-anchor="end" font-size="12">${value}</text>`;
   }
@@ -2051,29 +2092,84 @@ function generateSVG(
       data.strataKeys.forEach((key, keyIndex) => {
         const count = bin.strata.get(key)?.length || 0;
         if (count > 0) {
-          const barHeight = (count / data.maxCount) * chartHeight;
-          const y = margin.top + chartHeight - cumHeight - barHeight;
+          const barHeight = (count / yMax) * chartHeight;
+          const y = chartBottom - cumHeight - barHeight;
           const color = getColorForStrata(key, keyIndex, colorScheme);
           svg += `<rect x="${x + 2}" y="${y}" width="${barWidth - 4}" height="${barHeight}" fill="${color}"/>`;
           cumHeight += barHeight;
         }
       });
     } else if (bin.total > 0) {
-      const barHeight = (bin.total / data.maxCount) * chartHeight;
-      const y = margin.top + chartHeight - barHeight;
+      const barHeight = (bin.total / yMax) * chartHeight;
+      const y = chartBottom - barHeight;
       svg += `<rect x="${x + 2}" y="${y}" width="${barWidth - 4}" height="${barHeight}" fill="#3B82F6"/>`;
     }
 
     // Case count
     if (showCounts && bin.total > 0) {
-      const barHeight = (bin.total / data.maxCount) * chartHeight;
-      svg += `<text x="${x + barWidth / 2}" y="${margin.top + chartHeight - barHeight - 5}" text-anchor="middle" font-size="10">${bin.total}</text>`;
+      const barHeight = (bin.total / yMax) * chartHeight;
+      svg += `<text x="${x + barWidth / 2}" y="${chartBottom - barHeight - 5}" text-anchor="middle" font-size="10">${bin.total}</text>`;
     }
 
     // X-axis label
     const labelX = x + barWidth / 2;
-    const labelY = margin.top + chartHeight + 12;
-    svg += `<text x="${labelX}" y="${labelY}" text-anchor="start" font-size="11" transform="rotate(45, ${labelX}, ${labelY})">${bin.label}</text>`;
+    const labelY = chartBottom + 12;
+    svg += `<text x="${labelX}" y="${labelY}" text-anchor="start" font-size="11" transform="rotate(45, ${labelX}, ${labelY})">${escapeXml(bin.label)}</text>`;
+  });
+
+  // Map a timestamp to an x position, mirroring the on-screen marker math:
+  // date-only (midnight) annotations are centered on their bin.
+  const xForTime = (time: number, centerInBin: boolean): number | null => {
+    if (data.bins.length === 0) return null;
+    const firstStart = data.bins[0].startDate.getTime();
+    const lastEnd = data.bins[data.bins.length - 1].endDate.getTime();
+    if (time < firstStart) return margin.left;
+    if (time >= lastEnd) return width - margin.right;
+    const binIndex = data.bins.findIndex(b => time >= b.startDate.getTime() && time < b.endDate.getTime());
+    if (binIndex === -1) return null;
+    const bin = data.bins[binIndex];
+    const binDuration = bin.endDate.getTime() - bin.startDate.getTime();
+    const fraction = binDuration > 0 ? (time - bin.startDate.getTime()) / binDuration : 0;
+    const within = centerInBin ? Math.max(fraction * barWidth, barWidth / 2) : fraction * barWidth;
+    return margin.left + binIndex * barWidth + within;
+  };
+
+  // Exposure window shading (matches the on-screen translucent red band)
+  if (exposureWindow && data.bins.length > 0) {
+    const firstStart = data.bins[0].startDate.getTime();
+    const lastEnd = data.bins[data.bins.length - 1].endDate.getTime();
+    const totalDuration = lastEnd - firstStart;
+    const toX = (time: number): number => {
+      if (time <= firstStart) return margin.left;
+      if (time >= lastEnd) return width - margin.right;
+      return margin.left + ((time - firstStart) / totalDuration) * chartWidth;
+    };
+    const x1 = toX(exposureWindow.start.getTime());
+    const x2 = toX(exposureWindow.end.getTime());
+    const w = Math.max(x2 - x1, barWidth / 2);
+    svg += `<rect x="${x1}" y="${margin.top}" width="${w}" height="${chartHeight}" fill="rgba(220, 38, 38, 0.15)"/>`;
+    svg += `<line x1="${x1}" y1="${margin.top}" x2="${x1}" y2="${chartBottom}" stroke="#F87171" stroke-width="2"/>`;
+    svg += `<line x1="${x1 + w}" y1="${margin.top}" x2="${x1 + w}" y2="${chartBottom}" stroke="#F87171" stroke-width="2"/>`;
+    svg += `<text x="${x1 + 4}" y="${margin.top + 12}" font-size="10" font-weight="500" fill="#B91C1C">Est. Exposure</text>`;
+  }
+
+  // Annotations (dashed markers / shaded ranges, as on screen)
+  annotations.forEach(ann => {
+    if (isNaN(ann.date.getTime())) return;
+    const x = xForTime(ann.date.getTime(), true);
+    if (x === null) return;
+
+    if (ann.endDate && !isNaN(ann.endDate.getTime())) {
+      const endX = xForTime(ann.endDate.getTime(), false) ?? x;
+      const w = Math.max(endX - x, barWidth / 2);
+      svg += `<rect x="${x}" y="${margin.top}" width="${w}" height="${chartHeight}" fill="${ann.color}" opacity="0.1"/>`;
+      svg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="4 3"/>`;
+      svg += `<line x1="${x + w}" y1="${margin.top}" x2="${x + w}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="4 3"/>`;
+      svg += `<text x="${x + 4}" y="${margin.top + 12}" font-size="10" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
+    } else {
+      svg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+      svg += `<text x="${x + 4}" y="${margin.top + 12}" font-size="10" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
+    }
   });
 
   svg += '</svg>';

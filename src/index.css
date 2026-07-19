@@ -114,6 +114,15 @@ textarea:focus-visible {
   }
 }
 
+/* In-app Reduced Motion toggle (mirrors the prefers-reduced-motion block) */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
 /* Custom high-contrast theme classes */
 .theme-high-contrast {
   /* Background and text */
