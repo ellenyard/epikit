@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type {
   DataQualityIssue,
   DataQualityConfig,
@@ -40,6 +40,13 @@ export function DataQualityPanel({
   );
   const [showConfig, setShowConfig] = useState(false);
   const [hasRunChecks, setHasRunChecks] = useState(false);
+
+  // Reset the "checks run" indicator when the dataset changes (columns identity)
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- Run state is scoped to the current dataset. */
+    setHasRunChecks(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [columns]);
 
   const handleRunChecks = () => {
     onRunChecks();
@@ -540,7 +547,7 @@ export function DataQualityPanel({
           </div>
         ) : (
           <>
-        {(['duplicate', 'temporal', 'range'] as CategoryKey[]).map(category => {
+        {(['duplicate', 'temporal', 'range', 'completeness'] as CategoryKey[]).map(category => {
           const categoryIssues = groupedIssues[category];
           if (categoryIssues.length === 0) return null;
 

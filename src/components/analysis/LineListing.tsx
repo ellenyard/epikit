@@ -49,7 +49,7 @@ export function LineListing({
   const [editValue, setEditValue] = useState('');
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set());
   const [newRowData, setNewRowData] = useState<Record<string, unknown>>({});
-  const [pendingEdit, setPendingEdit] = useState<PendingEdit | null>(null);
+  const [pendingEdits, setPendingEdits] = useState<PendingEdit[]>([]);
   const [visibleColumns, setVisibleColumns] = useState<ColumnVisibilityState>(() => {
     const state: ColumnVisibilityState = {};
     dataset.columns.forEach(col => {
@@ -87,9 +87,15 @@ export function LineListing({
   }, [showColumnMenu]);
 
   const processedRecords = useMemo(() => {
-    const filtered = filterRecords(dataset.records, filters);
+    const filtered = filterRecords(dataset.records, filters, dataset.columns);
     return sortRecords(filtered, sort);
-  }, [dataset.records, filters, sort]);
+  }, [dataset.records, dataset.columns, filters, sort]);
+
+  // Number of selected rows that are currently visible (respecting filters)
+  const visibleSelectedCount = useMemo(
+    () => processedRecords.reduce((n, r) => (selectedRows.has(r.id) ? n + 1 : n), 0),
+    [processedRecords, selectedRows]
+  );
 
   const handleSort = (column: string) => {
     setSort(prev => {
@@ -116,7 +122,9 @@ export function LineListing({
     let newValue: unknown = editValue;
 
     if (col.type === 'number') {
-      newValue = editValue === '' ? null : Number(editValue);
+      // Map empty or unparseable input to null instead of storing NaN
+      const parsed = editValue === '' ? null : Number(editValue);
+      newValue = parsed !== null && isNaN(parsed) ? null : parsed;
     } else if (col.type === 'boolean') {
       newValue = ['true', 'yes', '1'].includes(editValue.toLowerCase());
     }
@@ -134,7 +142,9 @@ export function LineListing({
 
       // Show the edit sidebar if callback is provided
       if (onEditComplete) {
-        setPendingEdit({
+        // Queue instead of replacing, so an edit made while the editor
+        // sidebar is open still gets its own edit-log entry
+        setPendingEdits(prev => [...prev, {
           record: updatedRecord,
           recordId: editingCell.recordId,
           recordIdentifier,
@@ -142,7 +152,7 @@ export function LineListing({
           columnLabel: col.label,
           oldValue,
           newValue,
-        });
+        }]);
       }
     }
 
@@ -173,18 +183,39 @@ export function LineListing({
   };
 
   const deleteSelectedRows = () => {
-    if (!confirm(`Delete ${selectedRows.size} selected record(s)?`)) return;
-    selectedRows.forEach(id => onDeleteRecord(id));
+    // Only delete rows that are currently visible (respecting filters), so
+    // selections made before filtering can't remove hidden records
+    const visibleIds = new Set(processedRecords.map(r => r.id));
+    const idsToDelete = [...selectedRows].filter(id => visibleIds.has(id));
+    if (idsToDelete.length === 0) return;
+    if (!confirm(`Delete ${idsToDelete.length} selected record(s)?`)) return;
+    idsToDelete.forEach(id => onDeleteRecord(id));
     setSelectedRows(new Set());
   };
 
   const handleAddRow = () => {
-    onAddRecord(newRowData);
+    // Coerce values by column type (same rules as saveEdit) so number and
+    // boolean columns are not stored as raw strings
+    const record: Record<string, unknown> = {};
+    for (const col of dataset.columns) {
+      const raw = newRowData[col.key];
+      if (raw === undefined || raw === '') continue;
+      if (col.type === 'number') {
+        const parsed = Number(raw);
+        record[col.key] = isNaN(parsed) ? null : parsed;
+      } else if (col.type === 'boolean') {
+        record[col.key] = ['true', 'yes', '1'].includes(String(raw).toLowerCase());
+      } else {
+        record[col.key] = raw;
+      }
+    }
+    onAddRecord(record);
     setNewRowData({});
     onShowAddRowChange(false);
   };
 
   const handleEditPromptSave = (reason: string, initials: string) => {
+    const pendingEdit = pendingEdits[0];
     if (!pendingEdit || !onEditComplete) return;
 
     const entry: EditLogEntry = {
@@ -202,10 +233,11 @@ export function LineListing({
     };
 
     onEditComplete(entry);
-    setPendingEdit(null);
+    setPendingEdits(prev => prev.slice(1));
   };
 
   const handleEditPromptSkip = () => {
+    const pendingEdit = pendingEdits[0];
     if (!pendingEdit || !onEditComplete) return;
 
     const entry: EditLogEntry = {
@@ -223,7 +255,7 @@ export function LineListing({
     };
 
     onEditComplete(entry);
-    setPendingEdit(null);
+    setPendingEdits(prev => prev.slice(1));
   };
 
   const toggleColumnVisibility = (columnKey: string) => {
@@ -322,12 +354,12 @@ export function LineListing({
               )}
             </div>
 
-            {selectedRows.size > 0 && (
+            {visibleSelectedCount > 0 && (
               <button
                 onClick={deleteSelectedRows}
                 className="px-3 py-1.5 text-sm font-medium text-red-700 border border-red-300 rounded-lg hover:bg-red-50"
               >
-                Delete ({selectedRows.size})
+                Delete ({visibleSelectedCount})
               </button>
             )}
           </div>
@@ -512,17 +544,17 @@ export function LineListing({
         )}
       </div>
 
-      {/* Record Editor Sidebar */}
-      {pendingEdit && (
+      {/* Record Editor Sidebar (shows the oldest queued edit first) */}
+      {pendingEdits.length > 0 && (
         <RecordEditorSidebar
-          isOpen={!!pendingEdit}
-          record={pendingEdit.record}
+          isOpen={true}
+          record={pendingEdits[0].record}
           columns={dataset.columns}
-          recordIdentifier={pendingEdit.recordIdentifier}
-          editedColumnKey={pendingEdit.columnKey}
-          editedColumnLabel={pendingEdit.columnLabel}
-          oldValue={pendingEdit.oldValue}
-          newValue={pendingEdit.newValue}
+          recordIdentifier={pendingEdits[0].recordIdentifier}
+          editedColumnKey={pendingEdits[0].columnKey}
+          editedColumnLabel={pendingEdits[0].columnLabel}
+          oldValue={pendingEdits[0].oldValue}
+          newValue={pendingEdits[0].newValue}
           onSave={handleEditPromptSave}
           onSkip={handleEditPromptSkip}
         />
@@ -540,7 +572,13 @@ function formatCellValue(value: unknown, column: DataColumn): string {
 
   if (column.type === 'date' && value) {
     try {
-      const date = new Date(String(value));
+      // Date-only strings (yyyy-mm-dd) parse as UTC midnight, which renders
+      // as the previous day in UTC-negative timezones — build a local date
+      const str = String(value);
+      const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str);
+      const date = dateOnly
+        ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+        : new Date(str);
       return date.toLocaleDateString();
     } catch {
       return String(value);

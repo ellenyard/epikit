@@ -652,7 +652,9 @@ function buildSeriesPoints(
     const xVal = record[xVar];
     if (xVal === null || xVal === undefined || xVal === '') continue;
     const key = String(xVal);
-    const numVal = Number(record[yVar]);
+    const rawVal = record[yVar];
+    if (rawVal === null || rawVal === undefined || rawVal === '') continue;
+    const numVal = Number(rawVal);
     if (isNaN(numVal)) continue;
     if (groups.has(key)) {
       groups.get(key)!.push(numVal);

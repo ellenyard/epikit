@@ -102,12 +102,13 @@ export function Review({
   const activeDataset = datasets.find(d => d.id === activeDatasetId) || null;
   const activeDatasetIdForQuality = activeDataset?.id;
 
-  // Clear issues when dataset changes
+  // Clear issues and filters when dataset changes
   useEffect(() => {
     if (activeDatasetIdForQuality) {
-      /* eslint-disable react-hooks/set-state-in-effect -- Data-quality findings are scoped to the active dataset. */
+      /* eslint-disable react-hooks/set-state-in-effect -- Data-quality findings and filters are scoped to the active dataset. */
       setDataQualityIssues([]);
       setSelectedIssue(null);
+      setFilters([]);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [activeDatasetIdForQuality]);
@@ -656,7 +657,9 @@ export function Review({
 
         {/* Line Listing */}
         <div className="flex-1 overflow-hidden">
+          {/* key remounts the table (resetting sort/selection/editing state) when the dataset changes */}
           <LineListing
+            key={activeDataset.id}
             dataset={activeDataset}
             onUpdateRecord={(recordId, updates) => updateRecord(activeDataset.id, recordId, updates)}
             onDeleteRecord={(recordId) => deleteRecord(activeDataset.id, recordId)}

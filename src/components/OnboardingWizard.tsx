@@ -61,7 +61,10 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   const handleTryTool = (module: string) => {
     onLoadDemo();
     localStorage.setItem('epikit_onboarding_completed', 'true');
-    onNavigate(module);
+    // 'descriptive' and '2way' are views inside the Analysis module, not
+    // top-level modules — map them so navigation doesn't land on a blank page
+    const target = module === 'descriptive' || module === '2way' ? 'analysis' : module;
+    onNavigate(target);
     onClose();
   };
 

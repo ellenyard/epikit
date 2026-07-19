@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Dataset } from '../../types/analysis';
 import { calculateCrossTabulation } from '../../utils/statistics';
 import type { CrossTabResults } from '../../utils/statistics';
@@ -108,8 +108,48 @@ export function TableBuilder({
   });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
+  // Track previous dataset ID to detect actual changes (vs re-renders)
+  const prevDatasetIdRef = useRef<string>(dataset.id);
+  // Skip the save effect once after a dataset switch so stale state from the
+  // previous dataset is never written into the new dataset's storage key
+  const skipNextSaveRef = useRef(false);
+  // Skip the filter-reset effect when the filter change came from a dataset switch
+  const skipFilterResetRef = useRef(false);
+
+  // Reload persisted state when the dataset actually changes
+  useEffect(() => {
+    if (prevDatasetIdRef.current !== dataset.id) {
+      prevDatasetIdRef.current = dataset.id;
+      skipNextSaveRef.current = true;
+      let next: Record<string, unknown> = {};
+      try {
+        const raw = localStorage.getItem(persistenceKey);
+        next = raw ? JSON.parse(raw) : {};
+      } catch {
+        next = {};
+      }
+      const savedOpts = next.tableOptions as Record<string, unknown> | undefined;
+      const nextFilterBy = (next.filterBy as string) ?? '';
+      skipFilterResetRef.current = nextFilterBy !== filterBy;
+      setTableOptions(savedOpts
+        ? {
+            percentType: (savedOpts.percentType as PercentType) || 'column',
+            showCumPercent: savedOpts.showCumPercent !== undefined ? savedOpts.showCumPercent as boolean : false,
+            includeMissing: savedOpts.includeMissing !== undefined ? savedOpts.includeMissing as boolean : true,
+          }
+        : { percentType: 'column', showCumPercent: false, includeMissing: true });
+      setFilterBy(nextFilterBy);
+      setSelectedFilterValues(Array.isArray(next.selectedFilterValues) ? new Set(next.selectedFilterValues as string[]) : new Set());
+      setShowAllFilterValues(false);
+    }
+  }, [dataset.id, persistenceKey, filterBy]);
+
   // Save state to localStorage when it changes
   useEffect(() => {
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
     try {
       const toSave = {
         tableOptions,
@@ -151,6 +191,10 @@ export function TableBuilder({
 
   // Reset selected filter values when filter variable changes
   useEffect(() => {
+    if (skipFilterResetRef.current) {
+      skipFilterResetRef.current = false;
+      return;
+    }
     setSelectedFilterValues(new Set());
     setShowAllFilterValues(false);
   }, [filterBy]);

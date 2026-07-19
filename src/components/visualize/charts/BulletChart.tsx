@@ -44,6 +44,21 @@ export function BulletChart({ dataset }: BulletChartProps) {
     return unique.size;
   }, [categoryVar, dataset.records]);
 
+  // Detect negative source values (bullet charts can only draw from a zero baseline)
+  const hasNegativeValues = useMemo(() => {
+    if (!actualVar && !targetVar) return false;
+    for (const rec of dataset.records) {
+      for (const key of [actualVar, targetVar]) {
+        if (!key) continue;
+        const raw = rec[key];
+        if (raw === null || raw === undefined || raw === '') continue;
+        const v = Number(raw);
+        if (!isNaN(v) && v < 0) return true;
+      }
+    }
+    return false;
+  }, [actualVar, targetVar, dataset.records]);
+
   const svgContent = useMemo(() => {
     if (!categoryVar || !actualVar || !targetVar) return '';
 
@@ -127,14 +142,14 @@ export function BulletChart({ dataset }: BulletChartProps) {
       const qualWidth = (0.75 * niceMax / niceMax) * plotWidth;
       svg += `<rect x="${plotLeft}" y="${y + 4}" width="${qualWidth}" height="${barHeight - 8}" fill="#D1D5DB" rx="2"/>`;
 
-      // Actual value bar - colored, narrower
-      const actualWidth = (row.actual / niceMax) * plotWidth;
+      // Actual value bar - colored, narrower (clamp negatives to the zero baseline)
+      const actualWidth = Math.max(0, (row.actual / niceMax) * plotWidth);
       const innerBarHeight = barHeight * 0.4;
       const innerBarY = y + (barHeight - innerBarHeight) / 2;
       svg += `<rect x="${plotLeft}" y="${innerBarY}" width="${actualWidth}" height="${innerBarHeight}" fill="${escapeXml(barColor)}" rx="2"/>`;
 
-      // Target marker line
-      const targetX = plotLeft + (row.target / niceMax) * plotWidth;
+      // Target marker line (clamped to the plot area)
+      const targetX = Math.max(plotLeft, plotLeft + (row.target / niceMax) * plotWidth);
       svg += `<line x1="${targetX}" y1="${y + 2}" x2="${targetX}" y2="${y + barHeight - 2}" stroke="#111" stroke-width="2.5"/>`;
 
       // Value labels
@@ -234,6 +249,15 @@ export function BulletChart({ dataset }: BulletChartProps) {
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-xs text-amber-800">
               <strong>{uniqueCategories} categories detected.</strong> Bullet charts work best with 3-15 categories. Consider using a column with fewer unique values.
+            </p>
+          </div>
+        )}
+
+        {/* Negative value warning */}
+        {hasNegativeValues && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-xs text-amber-800">
+              <strong>Negative values detected.</strong> Bullet charts draw from a zero baseline — negative actual or target values are clamped to zero.
             </p>
           </div>
         )}

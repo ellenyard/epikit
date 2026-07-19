@@ -13,7 +13,6 @@ import {
   svgText,
   svgAxisLine,
   svgGridLine,
-  escapeXml,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 
@@ -24,6 +23,8 @@ interface ForestRow {
   upper: number;
   weight: number;
   isPooled: boolean;
+  /** True when the 2×2 table had a zero cell and the estimate used a continuity correction */
+  zeroCell?: boolean;
 }
 
 type DataMode = 'manual' | 'calculate';
@@ -260,6 +261,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
         upper: Math.max(lower, upper),
         weight: results.total, // weight by total sample size
         isPooled: false,
+        zeroCell: a === 0 || b === 0 || c === 0 || d === 0,
       });
     }
 
@@ -275,12 +277,17 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
 
     for (const record of dataset.records) {
       const label = record[labelCol];
-      const est = Number(record[estimateCol]);
-      const lo = Number(record[lowerCICol]);
-      const hi = Number(record[upperCICol]);
+      const rawEst = record[estimateCol];
+      const rawLo = record[lowerCICol];
+      const rawHi = record[upperCICol];
+      const est = Number(rawEst);
+      const lo = Number(rawLo);
+      const hi = Number(rawHi);
       const wt = weightCol ? Number(record[weightCol]) : 1;
 
-      if (label == null || label === '' || isNaN(est) || isNaN(lo) || isNaN(hi)) continue;
+      if (label == null || label === '') continue;
+      if (rawEst == null || rawEst === '' || rawLo == null || rawLo === '' || rawHi == null || rawHi === '') continue;
+      if (isNaN(est) || isNaN(lo) || isNaN(hi)) continue;
       if (effectMeasure === 'ratio' && (est <= 0 || lo <= 0 || hi <= 0)) continue;
 
       const isPooled = /\b(overall|pooled|summary|total)\b/i.test(String(label));
@@ -412,9 +419,9 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       const row = forestData[i];
       const y = yScale(i);
 
-      // Label on left
-      const labelText = row.label.length > 32 ? row.label.slice(0, 30) + '\u2026' : row.label;
-      svg += svgText(margin.left - 8, y, escapeXml(labelText), {
+      // Label on left († marks rows computed with the zero-cell continuity correction)
+      const labelText = (row.label.length > 32 ? row.label.slice(0, 30) + '\u2026' : row.label) + (row.zeroCell ? ' †' : '');
+      svg += svgText(margin.left - 8, y, labelText, {
         anchor: 'end', fontSize: 11, fill: row.isPooled ? '#000' : '#333',
         fontWeight: row.isPooled ? 'bold' : 'normal', dy: '0.35em',
       });
@@ -452,6 +459,12 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       }
     }
 
+    // Footnote for zero-cell continuity correction
+    if (forestData.some(r => r.zeroCell)) {
+      svg += svgText(margin.left, margin.top + plotH + 55, '† Zero cell in 2×2 table — estimate and CI use a 0.5 continuity correction', {
+        anchor: 'start', fontSize: 10, fill: '#888',
+      });
+    }
 
     // Source
     if (source) {

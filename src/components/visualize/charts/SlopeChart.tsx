@@ -10,7 +10,6 @@ import {
   svgSource,
   svgText,
   svgAxisLine,
-  escapeXml,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 import { INCREASE_COLOR, DECREASE_COLOR, NEUTRAL_COLOR } from '../../../utils/chartColors';
@@ -52,8 +51,15 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
         unique.add(String(v));
       }
     }
+    // Prefer the column's defined value order (e.g., Before/After) over alphabetical
+    const col = dataset.columns.find(c => c.key === groupCol);
+    if (col?.valueOrder && col.valueOrder.length > 0) {
+      const ordered = col.valueOrder.filter(v => unique.has(v));
+      const rest = Array.from(unique).filter(v => !col.valueOrder!.includes(v)).sort();
+      return [...ordered, ...rest];
+    }
     return Array.from(unique).sort();
-  }, [dataset.records, groupCol]);
+  }, [dataset.records, dataset.columns, groupCol]);
 
   const hasTwoGroups = groupValues.length === 2;
 
@@ -80,7 +86,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
         for (const rec of recs) {
           const cat = rec[categoryCol];
           const val = rec[valueCol];
-          if (cat == null || cat === '' || val == null) continue;
+          if (cat == null || cat === '' || val == null || val === '') continue;
           const num = Number(val);
           if (isNaN(num)) continue;
           const key = String(cat);
@@ -189,22 +195,23 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       svg += `<circle cx="${rightX}" cy="${y2}" r="4" fill="${color}"/>`;
 
       // Category labels
-      svg += svgText(leftX - 8, y1, escapeXml(point.category), {
+      svg += svgText(leftX - 8, y1, point.category, {
         anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em',
       });
 
       // Value labels
       if (showValues) {
-        svg += svgText(leftX + 8, y1, String(point.startValue), {
+        const fmtVal = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
+        svg += svgText(leftX + 8, y1, fmtVal(point.startValue), {
           anchor: 'start', fontSize: 10, fill: '#666', dy: '0.35em',
         });
-        svg += svgText(rightX - 8, y2, String(point.endValue), {
+        svg += svgText(rightX - 8, y2, fmtVal(point.endValue), {
           anchor: 'end', fontSize: 10, fill: '#666', dy: '0.35em',
         });
       }
 
       // Right-side category label
-      svg += svgText(rightX + 8, y2, escapeXml(point.category), {
+      svg += svgText(rightX + 8, y2, point.category, {
         anchor: 'start', fontSize: 11, fill: '#333', dy: '0.35em',
       });
     }

@@ -80,20 +80,37 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
       const entry = categoryMap.get(catStr)!;
 
       if (isTwoCol) {
-        const lv = Number(rec[leftValueCol]);
-        if (!isNaN(lv)) { entry.leftSum += lv; entry.leftCount++; }
-        const rv = Number(rec[rightValueCol]);
-        if (!isNaN(rv)) { entry.rightSum += rv; entry.rightCount++; }
+        const rawL = rec[leftValueCol];
+        if (rawL !== null && rawL !== undefined && rawL !== '') {
+          const lv = Number(rawL);
+          if (!isNaN(lv)) { entry.leftSum += lv; entry.leftCount++; }
+        }
+        const rawR = rec[rightValueCol];
+        if (rawR !== null && rawR !== undefined && rawR !== '') {
+          const rv = Number(rawR);
+          if (!isNaN(rv)) { entry.rightSum += rv; entry.rightCount++; }
+        }
       } else if (isGroupSplit) {
         const grp = String(rec[groupCol]);
-        const val = Number(rec[numericCol]);
-        if (isNaN(val)) continue;
-        if (grp === groupValues[0]) {
-          entry.leftSum += val;
-          entry.leftCount++;
-        } else if (grp === groupValues[1]) {
-          entry.rightSum += val;
-          entry.rightCount++;
+        const isLeft = grp === groupValues[0];
+        const isRight = grp === groupValues[1];
+        if (!isLeft && !isRight) continue;
+        if (aggMode === 'count') {
+          // Count mode compares group sizes — a numeric value is not required
+          if (isLeft) entry.leftCount++;
+          else entry.rightCount++;
+        } else {
+          const rawVal = rec[numericCol];
+          if (rawVal === null || rawVal === undefined || rawVal === '') continue;
+          const val = Number(rawVal);
+          if (isNaN(val)) continue;
+          if (isLeft) {
+            entry.leftSum += val;
+            entry.leftCount++;
+          } else {
+            entry.rightSum += val;
+            entry.rightCount++;
+          }
         }
       }
     }

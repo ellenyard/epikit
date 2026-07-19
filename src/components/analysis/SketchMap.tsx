@@ -74,6 +74,7 @@ interface LegendItem {
 interface ElementRenderOptions {
   selectedId: string | null;
   onSelect: (event: PointerEvent<SVGGElement>, id: string) => void;
+  hideSelection?: boolean;
 }
 
 const canvasWidth = 1200;
@@ -244,6 +245,7 @@ export function SketchMap() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ id: string; lastPoint: Point } | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
 
   const selectedElement = selectedId ? elements.find(element => element.id === selectedId) ?? null : null;
@@ -290,6 +292,7 @@ export function SketchMap() {
   };
 
   const startDrawing = (event: PointerEvent<SVGSVGElement>) => {
+    if (event.button !== 0) return;
     const point = clampToCanvas(getPoint(event));
     setSelectedId(null);
 
@@ -348,6 +351,10 @@ export function SketchMap() {
   };
 
   const finishDrawing = (event?: PointerEvent<SVGSVGElement>) => {
+    if (event && event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
     if (dragState) {
       setDragState(null);
       return;
@@ -361,19 +368,18 @@ export function SketchMap() {
       }
     }
 
-    if (event && event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
     setDraft(null);
     setIsDrawing(false);
   };
 
   const handleElementPointerDown = (event: PointerEvent<SVGGElement>, id: string) => {
+    if (event.button !== 0) return;
     event.stopPropagation();
     const point = getElementPoint(event);
     setSelectedId(id);
     setDragState({ id, lastPoint: point });
+    // Capture on the SVG so drags keep working when the pointer leaves the canvas
+    event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);
   };
 
   const undo = () => {
@@ -445,38 +451,55 @@ export function SketchMap() {
   };
 
   const exportPNG = async () => {
-    if (!exportRef.current) return;
-    const canvas = await html2canvas(exportRef.current, {
-      backgroundColor: '#ffffff',
-      scale: 2,
-      logging: false,
-    });
-    const link = document.createElement('a');
-    link.download = `sketch-map-${new Date().toISOString().split('T')[0]}.png`;
-    link.href = canvas.toDataURL('image/png');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setExportStatus('PNG downloaded.');
-    window.setTimeout(() => setExportStatus(''), 3000);
+    const exportElement = exportRef.current;
+    if (!exportElement) return;
+    setIsExporting(true);
+    try {
+      // Wait for the selection box to be removed before capturing
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const canvas = await html2canvas(exportElement, {
+        backgroundColor: '#ffffff',
+        scale: 2,
+        logging: false,
+      });
+      const link = document.createElement('a');
+      link.download = `sketch-map-${new Date().toISOString().split('T')[0]}.png`;
+      link.href = canvas.toDataURL('image/png');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setExportStatus('PNG downloaded.');
+      window.setTimeout(() => setExportStatus(''), 3000);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const exportSVG = () => {
     if (!svgRef.current) return;
-    const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
-    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-    const svg = new XMLSerializer().serializeToString(clone);
-    const blob = new Blob([svg], { type: 'image/svg+xml' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = `sketch-map-${new Date().toISOString().split('T')[0]}.svg`;
-    link.href = url;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    setExportStatus('SVG downloaded.');
-    window.setTimeout(() => setExportStatus(''), 3000);
+    setIsExporting(true);
+    // Wait for the selection box to be removed before serializing
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      try {
+        if (!svgRef.current) return;
+        const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        const svg = new XMLSerializer().serializeToString(clone);
+        const blob = new Blob([svg], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `sketch-map-${new Date().toISOString().split('T')[0]}.svg`;
+        link.href = url;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setExportStatus('SVG downloaded.');
+        window.setTimeout(() => setExportStatus(''), 3000);
+      } finally {
+        setIsExporting(false);
+      }
+    }));
   };
 
   const loadTemplate = (templateId: string) => {
@@ -933,6 +956,7 @@ export function SketchMap() {
               {[...elements, ...(draft ? [draft] : [])].map(element => renderElement(element, {
                 selectedId,
                 onSelect: handleElementPointerDown,
+                hideSelection: isExporting,
               }))}
             </svg>
             {legendPosition === 'below' && showLegend && legendItems.length > 0 && (
@@ -1032,7 +1056,7 @@ function renderTitle(title: string, subtitle: string) {
 }
 
 function renderElement(element: SketchElement, options: ElementRenderOptions) {
-  const selected = options.selectedId === element.id;
+  const selected = options.selectedId === element.id && !options.hideSelection;
   const start = element.start ?? { x: 0, y: 0 };
   const end = element.end ?? start;
   const dashArray = getDashArray(element.lineStyle, element.strokeWidth);

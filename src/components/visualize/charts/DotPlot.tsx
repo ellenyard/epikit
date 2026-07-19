@@ -58,10 +58,13 @@ function generateDotSvg(
       if (r.val2 < minVal) minVal = r.val2;
       if (r.val2 > maxVal) maxVal = r.val2;
     }
+    if (r.lower1 !== undefined && r.lower1 < minVal) minVal = r.lower1;
+    if (r.upper1 !== undefined && r.upper1 > maxVal) maxVal = r.upper1;
   }
 
   const range = maxVal - minVal || 1;
-  const paddedMin = Math.max(0, minVal - range * 0.05);
+  // Only clamp the domain floor to 0 when data is non-negative
+  const paddedMin = minVal >= 0 ? Math.max(0, minVal - range * 0.05) : minVal - range * 0.05;
   const paddedMax = maxVal + range * 0.1;
   const valRange = paddedMax - paddedMin || 1;
 
@@ -192,44 +195,59 @@ export function DotPlot({ dataset }: DotPlotProps) {
       }
       const entry = categoryMap.get(catStr)!;
 
-      const v1 = Number(rec[value1Col]);
-      if (!isNaN(v1)) {
-        entry.sum1 += v1;
-        entry.count1++;
+      const raw1 = rec[value1Col];
+      if (raw1 !== null && raw1 !== undefined && raw1 !== '') {
+        const v1 = Number(raw1);
+        if (!isNaN(v1)) {
+          entry.sum1 += v1;
+          entry.count1++;
+        }
       }
 
       if (value2Col) {
-        const v2 = Number(rec[value2Col]);
-        if (!isNaN(v2)) {
-          entry.sum2 += v2;
-          entry.count2++;
+        const raw2 = rec[value2Col];
+        if (raw2 !== null && raw2 !== undefined && raw2 !== '') {
+          const v2 = Number(raw2);
+          if (!isNaN(v2)) {
+            entry.sum2 += v2;
+            entry.count2++;
+          }
         }
       }
 
       if (lowerCICol) {
-        const ciLower = Number(rec[lowerCICol]);
-        if (!isNaN(ciLower)) {
-          entry.ciLowerSum += ciLower;
-          entry.ciLowerCount++;
+        const rawCI = rec[lowerCICol];
+        if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+          const ciLower = Number(rawCI);
+          if (!isNaN(ciLower)) {
+            entry.ciLowerSum += ciLower;
+            entry.ciLowerCount++;
+          }
         }
       }
 
       if (upperCICol) {
-        const ciUpper = Number(rec[upperCICol]);
-        if (!isNaN(ciUpper)) {
-          entry.ciUpperSum += ciUpper;
-          entry.ciUpperCount++;
+        const rawCI = rec[upperCICol];
+        if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
+          const ciUpper = Number(rawCI);
+          if (!isNaN(ciUpper)) {
+            entry.ciUpperSum += ciUpper;
+            entry.ciUpperCount++;
+          }
         }
       }
     }
 
-    const computedRows = Array.from(categoryMap.entries()).map(([cat, agg]) => ({
-      category: cat,
-      val1: agg.count1 > 0 ? agg.sum1 / agg.count1 : 0,
-      val2: value2Col && agg.count2 > 0 ? agg.sum2 / agg.count2 : null,
-      lower1: lowerCICol && agg.ciLowerCount > 0 ? agg.ciLowerSum / agg.ciLowerCount : undefined,
-      upper1: upperCICol && agg.ciUpperCount > 0 ? agg.ciUpperSum / agg.ciUpperCount : undefined,
-    }));
+    // Drop categories with no valid Value 1 data (previously rendered as a phantom 0)
+    const computedRows = Array.from(categoryMap.entries())
+      .filter(([, agg]) => agg.count1 > 0)
+      .map(([cat, agg]) => ({
+        category: cat,
+        val1: agg.sum1 / agg.count1,
+        val2: value2Col && agg.count2 > 0 ? agg.sum2 / agg.count2 : null,
+        lower1: lowerCICol && agg.ciLowerCount > 0 ? agg.ciLowerSum / agg.ciLowerCount : undefined,
+        upper1: upperCICol && agg.ciUpperCount > 0 ? agg.ciUpperSum / agg.ciUpperCount : undefined,
+      }));
 
     if (sortMode === 'value') {
       computedRows.sort((a, b) => b.val1 - a.val1);

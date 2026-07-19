@@ -235,8 +235,16 @@ export function processEpiCurveData(
     }
     return parseDate(String(r[dateColumn]));
   });
-  const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
-  const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+  // Loop-based min/max avoids call-stack overflow on very large datasets
+  let minTime = Infinity;
+  let maxTime = -Infinity;
+  dates.forEach(d => {
+    const t = d.getTime();
+    if (t < minTime) minTime = t;
+    if (t > maxTime) maxTime = t;
+  });
+  const minDate = new Date(minTime);
+  const maxDate = new Date(maxTime);
 
   // Check if annotations extend the date range
   let annotationMinDate = minDate;
@@ -328,7 +336,10 @@ export function processEpiCurveData(
     bin.strata.forEach((_, key) => strataKeysSet.add(key));
   });
 
-  const maxCount = Math.max(...bins.map(b => b.total), 1);
+  let maxCount = 1;
+  bins.forEach(b => {
+    if (b.total > maxCount) maxCount = b.total;
+  });
 
   return {
     bins,
@@ -494,8 +505,12 @@ export function findFirstCaseDate(records: CaseRecord[], dateColumn: string): Da
 
   if (validRecords.length === 0) return null;
 
-  const dates = validRecords.map(r => parseDate(String(r[dateColumn])));
-  return new Date(Math.min(...dates.map(d => d.getTime())));
+  let firstTime = Infinity;
+  validRecords.forEach(r => {
+    const t = parseDate(String(r[dateColumn])).getTime();
+    if (t < firstTime) firstTime = t;
+  });
+  return new Date(firstTime);
 }
 
 // Calculate exposure window working backward from cases

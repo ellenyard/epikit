@@ -7,6 +7,10 @@ import type { LocaleConfig } from '../contexts/LocaleContext';
  * @param config - Locale configuration
  * @returns Parsed number or NaN if invalid
  */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function parseLocaleNumber(value: string, config: LocaleConfig): number {
   if (!value || typeof value !== 'string') {
     return NaN;
@@ -15,17 +19,33 @@ export function parseLocaleNumber(value: string, config: LocaleConfig): number {
   // Remove whitespace
   let cleaned = value.trim();
 
-  // Remove thousands separators
-  if (config.thousandsSeparator) {
-    // Escape special regex characters
-    const escapedSeparator = config.thousandsSeparator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    cleaned = cleaned.replace(new RegExp(escapedSeparator, 'g'), '');
+  const thousands = config.thousandsSeparator;
+  const decimal = config.decimalSeparator;
+
+  // If the thousands separator appears in valid grouping position (digit
+  // groups of exactly 3, e.g. "1.234.567,89"), strip it and treat the locale
+  // decimal separator as the decimal mark.
+  if (thousands) {
+    const grouped = new RegExp(
+      `^-?\\d{1,3}(${escapeRegExp(thousands)}\\d{3})+(${escapeRegExp(decimal)}\\d+)?$`
+    );
+    if (grouped.test(cleaned)) {
+      cleaned = cleaned.replace(new RegExp(escapeRegExp(thousands), 'g'), '');
+      if (decimal !== '.') {
+        cleaned = cleaned.replace(new RegExp(escapeRegExp(decimal), 'g'), '.');
+      }
+      return parseFloat(cleaned);
+    }
   }
 
-  // Replace locale decimal separator with period
-  if (config.decimalSeparator !== '.') {
-    const escapedDecimal = config.decimalSeparator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    cleaned = cleaned.replace(new RegExp(escapedDecimal, 'g'), '.');
+  // Otherwise treat the thousands separator as a decimal mark. This keeps
+  // period-decimal values (e.g. "1.5", as written by exportToCSV) intact
+  // under comma-decimal locales instead of mangling them ("1.5" -> 15).
+  if (thousands && thousands !== decimal) {
+    cleaned = cleaned.replace(new RegExp(escapeRegExp(thousands), 'g'), '.');
+  }
+  if (decimal !== '.') {
+    cleaned = cleaned.replace(new RegExp(escapeRegExp(decimal), 'g'), '.');
   }
 
   return parseFloat(cleaned);

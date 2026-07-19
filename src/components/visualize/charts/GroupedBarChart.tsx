@@ -64,18 +64,31 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       if (valueMode === 'count') {
         groupMap.set(grpStr, (groupMap.get(grpStr) || 0) + 1);
       } else {
-        const val = Number(record[valueVar]);
-        if (!isNaN(val)) {
-          // Sum values for same category+group combo
-          groupMap.set(grpStr, (groupMap.get(grpStr) || 0) + val);
+        const rawVal = record[valueVar];
+        if (rawVal !== null && rawVal !== undefined && rawVal !== '') {
+          const val = Number(rawVal);
+          if (!isNaN(val)) {
+            // Sum values for same category+group combo
+            groupMap.set(grpStr, (groupMap.get(grpStr) || 0) + val);
+          }
         }
       }
     }
 
     if (categoryOrder.length === 0) return null;
 
+    // Count negative aggregated values — they cannot be drawn as bars
+    let negativeCount = 0;
+    if (valueMode === 'column') {
+      for (const catGroups of dataMap.values()) {
+        for (const v of catGroups.values()) {
+          if (v < 0) negativeCount++;
+        }
+      }
+    }
+
     const groupValues = Array.from(groupValuesSet).sort();
-    return { dataMap, groupValues, categoryOrder };
+    return { dataMap, groupValues, categoryOrder, negativeCount };
   }, [categoryVar, groupVar, valueMode, valueVar, dataset.records]);
 
   const svgContent = useMemo(() => {
@@ -101,7 +114,9 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     } else if (displayMode === 'stacked') {
       for (const catGroups of dataMap.values()) {
         let total = 0;
-        for (const v of catGroups.values()) total += v;
+        for (const v of catGroups.values()) {
+          if (v > 0) total += v; // negative values are omitted from bars
+        }
         maxValue = Math.max(maxValue, total);
       }
     } else {
@@ -279,6 +294,15 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
           tip="Use grouped bars to compare values across sub-groups; use stacked bars to show how parts contribute to totals. The 100% mode is ideal for showing proportional composition across categories."
           context="Grouped mode highlights comparison; stacked mode highlights composition; 100% mode highlights proportions."
         />
+
+        {/* Negative value warning */}
+        {chartData && chartData.negativeCount > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <p className="text-xs text-amber-800">
+              <strong>{chartData.negativeCount} negative value{chartData.negativeCount !== 1 ? 's' : ''} omitted.</strong> Bars with negative totals cannot be displayed and are excluded from the chart.
+            </p>
+          </div>
+        )}
 
         <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
           <h4 className="text-sm font-semibold text-gray-700">Variables</h4>
@@ -487,7 +511,7 @@ function drawGroupedBars(
     for (let gi = 0; gi < groupValues.length; gi++) {
       const grp = groupValues[gi];
       const value = groupMap.get(grp) || 0;
-      if (value === 0) continue;
+      if (value <= 0) continue;
 
       const barH = (value / maxValue) * plotHeight;
       const x = plotLeft + ci * categoryWidth + categoryPadding + gi * barWidth + barPadding;
@@ -541,7 +565,7 @@ function drawStackedBars(
     for (let gi = 0; gi < groupValues.length; gi++) {
       const grp = groupValues[gi];
       const value = groupMap.get(grp) || 0;
-      if (value === 0) continue;
+      if (value <= 0) continue;
 
       total += value;
       const segH = (value / maxValue) * plotHeight;
@@ -597,9 +621,11 @@ function drawPercentBars(
     const groupMap = dataMap.get(cat);
     if (!groupMap) continue;
 
-    // Compute total for this category
+    // Compute total for this category (negative values are omitted from bars)
     let total = 0;
-    for (const v of groupMap.values()) total += v;
+    for (const v of groupMap.values()) {
+      if (v > 0) total += v;
+    }
     if (total === 0) continue;
 
     const x = plotLeft + ci * categoryWidth + categoryPadding;
@@ -610,7 +636,7 @@ function drawPercentBars(
     for (let gi = 0; gi < groupValues.length; gi++) {
       const grp = groupValues[gi];
       const value = groupMap.get(grp) || 0;
-      if (value === 0) continue;
+      if (value <= 0) continue;
 
       const pct = (value / total) * 100;
       const segH = (pct / 100) * plotHeight;

@@ -82,7 +82,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     if (rows.length === 0 || cols.length === 0) return null;
 
     // Build matrix
-    const matrix = new Map<string, { sum: number; count: number }>();
+    const matrix = new Map<string, { sum: number; count: number; valueCount: number }>();
     for (const rec of dataset.records) {
       const rv = rec[rowCol];
       const cv = rec[colCol];
@@ -91,21 +91,25 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
 
       const key = `${String(rv)}|||${String(cv)}`;
       if (!matrix.has(key)) {
-        matrix.set(key, { sum: 0, count: 0 });
+        matrix.set(key, { sum: 0, count: 0, valueCount: 0 });
       }
       const entry = matrix.get(key)!;
       entry.count++;
 
       if (valueMode === 'average' && valueCol) {
-        const v = Number(rec[valueCol]);
-        if (!isNaN(v)) {
-          entry.sum += v;
+        const rawV = rec[valueCol];
+        if (rawV !== null && rawV !== undefined && rawV !== '') {
+          const v = Number(rawV);
+          if (!isNaN(v)) {
+            entry.sum += v;
+            entry.valueCount++;
+          }
         }
       }
     }
 
-    // Get cell values
-    const cellValues: number[][] = [];
+    // Get cell values (null = no data, rendered as an empty cell)
+    const cellValues: (number | null)[][] = [];
     let globalMin = Infinity;
     let globalMax = -Infinity;
 
@@ -114,14 +118,24 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       for (let ci = 0; ci < cols.length; ci++) {
         const key = `${rows[ri]}|||${cols[ci]}`;
         const entry = matrix.get(key);
-        let val = 0;
-        if (entry) {
-          val = valueMode === 'count' ? entry.count : (entry.count > 0 ? entry.sum / entry.count : 0);
+        let val: number | null;
+        if (valueMode === 'count') {
+          val = entry ? entry.count : 0;
+        } else {
+          // Average over records with a numeric value only
+          val = entry && entry.valueCount > 0 ? entry.sum / entry.valueCount : null;
         }
         cellValues[ri][ci] = val;
-        if (val < globalMin) globalMin = val;
-        if (val > globalMax) globalMax = val;
+        if (val !== null) {
+          if (val < globalMin) globalMin = val;
+          if (val > globalMax) globalMax = val;
+        }
       }
+    }
+
+    if (!isFinite(globalMin) || !isFinite(globalMax)) {
+      globalMin = 0;
+      globalMax = 0;
     }
 
     return { rows, cols, cellValues, matrix, globalMin, globalMax };
@@ -134,7 +148,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     const valRange = globalMax - globalMin || 1;
 
     const dims = getDefaultDimensions('heatmap');
-    const { width, margin } = dims;
+    const { margin } = dims;
 
     // Dynamic sizing
     const maxColLabelLen = Math.max(...cols.map(c => c.length));
@@ -149,10 +163,12 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     const legendGap = 30;
     const adjustedRight = margin.right + legendWidth + legendGap + 30;
 
-    const plotW = width - adjustedLeft - adjustedRight;
-    const cellW = Math.max(plotW / cols.length, 20);
+    // Grow the canvas width when many columns need more than the default width
+    const minPlotW = dims.width - adjustedLeft - adjustedRight;
+    const cellW = Math.max(minPlotW / cols.length, 20);
     const cellH = Math.max(Math.min(30, 400 / rows.length), 16);
     const actualPlotW = cellW * cols.length;
+    const width = Math.max(dims.width, adjustedLeft + actualPlotW + adjustedRight);
     const actualPlotH = cellH * rows.length;
     const adjustedHeight = adjustedTop + actualPlotH + margin.bottom;
 
@@ -187,6 +203,21 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       for (let ci = 0; ci < cols.length; ci++) {
         const cx = adjustedLeft + ci * cellW;
         const val = cellValues[ri][ci];
+
+        // No-data cell (average mode with no numeric values)
+        if (val === null) {
+          svg += `<rect x="${cx}" y="${adjustedTop + ri * cellH}" width="${cellW}" height="${cellH}" fill="#F9FAFB" stroke="white" stroke-width="1" rx="1"/>`;
+          if (showCellLabels && cellW >= 24 && cellH >= 14) {
+            svg += svgText(cx + cellW / 2, adjustedTop + ri * cellH + cellH / 2, '–', {
+              anchor: 'middle',
+              fontSize: Math.min(10, cellH - 4),
+              fill: '#9CA3AF',
+              dy: '0.35em',
+            });
+          }
+          continue;
+        }
+
         const t = (val - globalMin) / valRange;
         const fillColor = interpolateColor(ramp.light, ramp.dark, t);
 

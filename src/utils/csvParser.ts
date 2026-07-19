@@ -1,6 +1,8 @@
 import type { DataColumn, CaseRecord } from '../types/analysis';
 import { parseFlexibleNumber, formatCsvNumber } from './localeNumbers';
 import type { LocaleConfig } from '../contexts/LocaleContext';
+import { matchingDateFormats, resolveUnambiguousFormat, parseDateWithFormat } from './dateDetection';
+import type { DateFormat } from './dateDetection';
 
 export interface ParseResult {
   columns: DataColumn[];
@@ -58,9 +60,42 @@ function hasCommonDelimiterHint(line: string): boolean {
   return [',', ';', '\t'].some(delim => countDelimiterOccurrences(line, delim) > 0);
 }
 
+/**
+ * Split CSV text into records, honoring quoted fields that may contain line
+ * breaks. Handles \r\n, lone \r, and lone \n line endings.
+ */
+function splitCSVRecords(content: string): string[] {
+  const records: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    if (char === '"') {
+      if (inQuotes && content[i + 1] === '"') {
+        current += '""';
+        i++; // Escaped quote inside a quoted field
+      } else {
+        inQuotes = !inQuotes;
+        current += char;
+      }
+    } else if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && content[i + 1] === '\n') i++;
+      records.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  records.push(current);
+  return records;
+}
+
 export function parseCSV(content: string, options: CSVParseOptions = {}): ParseResult {
   const errors: string[] = [];
-  const lines = content.split(/\r?\n/).filter(line => line.trim());
+  const lines = splitCSVRecords(content).filter(line => line.trim());
 
   if (lines.length === 0) {
     return { columns: [], records: [], errors: ['File is empty'] };
@@ -85,19 +120,33 @@ export function parseCSV(content: string, options: CSVParseOptions = {}): ParseR
 
   // Infer column types from first few data rows
   const sampleRows = lines.slice(1, Math.min(11, lines.length)).map(line => parseCSVLine(line, delimiter));
+  const columnKeys = buildColumnKeys(headers);
   const columns: DataColumn[] = headers.map((header, index) => {
     const sampleValues = sampleRows.map(row => row[index]).filter(v => v !== undefined && v !== '');
     const inferredType = inferColumnType(sampleValues, options.localeConfig);
 
     return {
-      key: sanitizeColumnKey(header),
+      key: columnKeys[index],
       label: header.trim(),
       type: inferredType,
     };
   });
 
+  // Pick a normalization format for unambiguous date columns so dates are
+  // stored as ISO strings. Ambiguous columns keep raw values; the import
+  // wizard lets the user pick the interpretation.
+  const dateNormalization = new Map<string, DateFormat>();
+  columns.forEach((col, index) => {
+    if (col.type !== 'date') return;
+    const sampleValues = sampleRows.map(row => row[index]).filter(v => v !== undefined && v !== '');
+    const resolved = resolveUnambiguousFormat(matchingDateFormats(sampleValues));
+    if (resolved) dateNormalization.set(col.key, resolved);
+  });
+
   // Parse data rows
   const records: CaseRecord[] = [];
+  let unparseableNumberCount = 0;
+  const unparseableNumberExamples: string[] = [];
   for (let i = 1; i < lines.length; i++) {
     const values = parseCSVLine(lines[i], delimiter);
 
@@ -109,10 +158,45 @@ export function parseCSV(content: string, options: CSVParseOptions = {}): ParseR
     const record: CaseRecord = { id: crypto.randomUUID() };
     columns.forEach((col, index) => {
       const rawValue = values[index];
+
+      if (col.type === 'number' && rawValue !== '') {
+        // Values that fail numeric parsing become empty instead of silent NaN
+        const num = options.localeConfig
+          ? parseFlexibleNumber(rawValue, options.localeConfig)
+          : Number(rawValue);
+        if (isNaN(num)) {
+          unparseableNumberCount++;
+          if (unparseableNumberExamples.length < 3) {
+            unparseableNumberExamples.push(`row ${i + 1} ("${rawValue}")`);
+          }
+          record[col.key] = null;
+        } else {
+          record[col.key] = num;
+        }
+        return;
+      }
+
+      if (col.type === 'date' && rawValue !== '') {
+        const format = dateNormalization.get(col.key);
+        // Skip values with time components so times are not silently dropped
+        if (format && !/[T:]/.test(rawValue)) {
+          record[col.key] = parseDateWithFormat(rawValue, format) ?? rawValue;
+        } else {
+          record[col.key] = rawValue;
+        }
+        return;
+      }
+
       record[col.key] = parseValue(rawValue, col.type, options.localeConfig);
     });
 
     records.push(record);
+  }
+
+  if (unparseableNumberCount > 0) {
+    errors.push(
+      `${unparseableNumberCount} numeric value${unparseableNumberCount === 1 ? '' : 's'} could not be parsed and ${unparseableNumberCount === 1 ? 'was' : 'were'} set to empty (${unparseableNumberExamples.join('; ')}${unparseableNumberCount > unparseableNumberExamples.length ? '; …' : ''})`
+    );
   }
 
   return { columns, records, errors };
@@ -160,6 +244,26 @@ function sanitizeColumnKey(header: string): string {
     .replace(/^_|_$/g, '');
 }
 
+/**
+ * Build unique, collision-free column keys. 'id' is reserved for record UUIDs,
+ * duplicate keys get numeric suffixes, and empty headers get a fallback key.
+ */
+function buildColumnKeys(headers: string[]): string[] {
+  const used = new Set<string>();
+  return headers.map((header, index) => {
+    let base = sanitizeColumnKey(header) || `column_${index + 1}`;
+    if (base === 'id') base = 'id_';
+    let key = base;
+    let suffix = 2;
+    while (used.has(key)) {
+      key = `${base}_${suffix}`;
+      suffix++;
+    }
+    used.add(key);
+    return key;
+  });
+}
+
 function inferColumnType(values: string[], localeConfig?: LocaleConfig): DataColumn['type'] {
   if (values.length === 0) return 'text';
 
@@ -176,17 +280,10 @@ function inferColumnType(values: string[], localeConfig?: LocaleConfig): DataCol
     if (isNumber) return 'number';
   }
 
-  // Check for date patterns - must contain date separators and have valid structure
-  // Accepts formats like: YYYY-MM-DD, DD/MM/YYYY, MM-DD-YYYY, YYYY/MM/DD, etc.
-  // Also accepts ISO 8601 formats with time components
-  const datePattern = /^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}|^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}T\d{2}:\d{2}/;
-  const isDate = values.every(v => {
-    // Must match a date pattern AND be parseable as a valid date
-    if (!datePattern.test(v)) return false;
-    const parsed = Date.parse(v);
-    return !isNaN(parsed);
-  });
-  if (isDate) return 'date';
+  // Check for date patterns using the shared date format validators.
+  // This avoids Date.parse's US bias (DD/MM/YYYY with day > 12 used to be
+  // mistyped as text) and accepts 2-digit years.
+  if (matchingDateFormats(values).length > 0) return 'date';
 
   const isBoolean = values.every(v =>
     ['true', 'false', 'yes', 'no', '1', '0'].includes(v.toLowerCase())

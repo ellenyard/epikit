@@ -122,6 +122,19 @@ export function CreateVariableModal({
     // Generate values
     try {
       const values = generateVariableValues(records, config, sourceColumnType, localeConfig);
+
+      // Refuse to create a variable that is empty for every record — that
+      // almost always means a broken formula or wrong source variable
+      const hasAnyValue = values.some(v => v !== '' && v !== null && v !== undefined);
+      if (records.length > 0 && config.method !== 'blank' && !hasAnyValue) {
+        setError(
+          config.method === 'formula'
+            ? 'This formula produced no values for any record. Check that variable references match existing columns (e.g., {age}) and contain numeric data.'
+            : 'This configuration produced no values for any record. Check the source variable and category ranges.'
+        );
+        return;
+      }
+
       onCreateVariable(config, values);
       onClose();
     } catch (err) {
@@ -182,18 +195,32 @@ export function CreateVariableModal({
     {
       label: 'Age Decade',
       name: 'age_decade',
-      type: 'number' as const,
-      method: 'formula' as const,
-      description: 'Calculate age rounded to nearest decade (0, 10, 20, etc.)',
-      formula: 'Math.floor(age / 10) * 10',
+      type: 'categorical' as const,
+      method: 'categorize' as const,
+      description: 'Group ages into decades (0-9, 10-19, 20-29, etc.)',
+      categories: [
+        { id: '1', label: '0-9 years', min: 0, max: 9 },
+        { id: '2', label: '10-19 years', min: 10, max: 19 },
+        { id: '3', label: '20-29 years', min: 20, max: 29 },
+        { id: '4', label: '30-39 years', min: 30, max: 39 },
+        { id: '5', label: '40-49 years', min: 40, max: 49 },
+        { id: '6', label: '50-59 years', min: 50, max: 59 },
+        { id: '7', label: '60-69 years', min: 60, max: 69 },
+        { id: '8', label: '70-79 years', min: 70, max: 79 },
+        { id: '9', label: '80-89 years', min: 80, max: 89 },
+        { id: '10', label: '90+ years', min: 90, max: 999 },
+      ],
     },
     {
       label: 'Is Adult',
       name: 'is_adult',
-      type: 'boolean' as const,
-      method: 'formula' as const,
-      description: 'True if age is 18 or older, false otherwise',
-      formula: 'age >= 18',
+      type: 'categorical' as const,
+      method: 'categorize' as const,
+      description: 'Classify records as Adult (18+) or Child (0-17)',
+      categories: [
+        { id: '1', label: 'Child (0-17)', min: 0, max: 17 },
+        { id: '2', label: 'Adult (18+)', min: 18, max: 999 },
+      ],
     },
     {
       label: 'Fever Status',
