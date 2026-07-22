@@ -213,12 +213,20 @@
       .workflow-previews { display: grid; gap: 56px; }
       .workflow-preview {
         display: grid;
-        grid-template-columns: minmax(0, 1.7fr) minmax(240px, 0.8fr);
+        grid-template-columns: minmax(0, 3.1fr) minmax(210px, 0.9fr);
         align-items: center;
-        gap: 44px;
+        gap: 32px;
       }
-      .workflow-preview:nth-child(even) .browser-frame { order: 2; }
-      .workflow-copy { max-width: 360px; }
+      .workflow-media { min-width: 0; }
+      .workflow-gallery {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 14px;
+      }
+      .browser-frame.compact .browser-bar { min-height: 32px; }
+      .browser-frame.compact .browser-title { font-size: 11px; }
+      .workflow-copy { max-width: 300px; }
       .workflow-step {
         display: inline-block;
         margin-bottom: 10px;
@@ -336,7 +344,7 @@
         .browser-bar { min-height: 32px; }
         .workflow-previews { gap: 44px; }
         .workflow-preview { grid-template-columns: 1fr; gap: 22px; }
-        .workflow-preview:nth-child(even) .browser-frame { order: initial; }
+        .workflow-gallery { gap: 10px; margin-top: 10px; }
         .workflow-copy { max-width: none; }
         .audience { margin-bottom: 44px; padding: 30px 24px; }
         .audience h2 { font-size: 25px; }
@@ -378,7 +386,7 @@
     <section class="hero">
       <div class="container">
         <span class="eyebrow">Free · Privacy-first · Publication-ready</span>
-        <h1>Turn outbreak data into answers—without writing code</h1>
+        <h1>Turn outbreak data into answers</h1>
         <p class="lede">
           Review and clean a line list, build epi curves and maps, calculate key measures, and export publication-ready figures—all in your browser.
         </p>
@@ -413,27 +421,29 @@
     <section class="block" id="workflow">
       <div class="container">
         <div class="section-head">
-          <h2>From line list to shareable result</h2>
+          <h2>From line list to maps and figures</h2>
           <p>See the core workflow using the included synthetic foodborne outbreak.</p>
         </div>
         <div class="workflow-previews">
           <article class="workflow-preview">
-            <div class="browser-frame">
-              <div class="browser-bar" aria-hidden="true">
-                <span class="browser-dots"><span></span><span></span><span></span></span>
-                <span class="browser-title">Review &amp; clean</span>
+            <div class="workflow-media">
+              <div class="browser-frame">
+                <div class="browser-bar" aria-hidden="true">
+                  <span class="browser-dots"><span></span><span></span><span></span></span>
+                  <span class="browser-title">Review &amp; clean</span>
+                </div>
+                <picture>
+                  <source srcset="/screenshots/review-clean.webp" type="image/webp" />
+                  <img
+                    src="/screenshots/review-clean.png"
+                    width="1440"
+                    height="900"
+                    alt="Synthetic foodborne outbreak line list beside the Data Quality panel showing no issues detected"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </picture>
               </div>
-              <picture>
-                <source srcset="/screenshots/review-clean.webp" type="image/webp" />
-                <img
-                  src="/screenshots/review-clean.png"
-                  width="1440"
-                  height="900"
-                  alt="Synthetic foodborne outbreak line list beside the Data Quality panel showing no issues detected"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </picture>
             </div>
             <div class="workflow-copy">
               <span class="workflow-step">1 · Review and clean</span>
@@ -443,22 +453,24 @@
           </article>
 
           <article class="workflow-preview">
-            <div class="browser-frame">
-              <div class="browser-bar" aria-hidden="true">
-                <span class="browser-dots"><span></span><span></span><span></span></span>
-                <span class="browser-title">Analyze</span>
+            <div class="workflow-media">
+              <div class="browser-frame">
+                <div class="browser-bar" aria-hidden="true">
+                  <span class="browser-dots"><span></span><span></span><span></span></span>
+                  <span class="browser-title">Analyze</span>
+                </div>
+                <picture>
+                  <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+                  <img
+                    src="/screenshots/epicurve.png"
+                    width="1440"
+                    height="900"
+                    alt="Synthetic epidemic curve stratified by confirmed, probable, and suspected cases, with exposure timing and 7-1-7 milestones"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </picture>
               </div>
-              <picture>
-                <source srcset="/screenshots/epicurve.webp" type="image/webp" />
-                <img
-                  src="/screenshots/epicurve.png"
-                  width="1440"
-                  height="900"
-                  alt="Synthetic epidemic curve stratified by confirmed, probable, and suspected cases, with exposure timing and 7-1-7 milestones"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </picture>
             </div>
             <div class="workflow-copy">
               <span class="workflow-step">2 · Analyze</span>
@@ -468,27 +480,65 @@
           </article>
 
           <article class="workflow-preview">
-            <div class="browser-frame">
-              <div class="browser-bar" aria-hidden="true">
-                <span class="browser-dots"><span></span><span></span><span></span></span>
-                <span class="browser-title">Communicate &amp; export</span>
+            <div class="workflow-media">
+              <div class="browser-frame">
+                <div class="browser-bar" aria-hidden="true">
+                  <span class="browser-dots"><span></span><span></span><span></span></span>
+                  <span class="browser-title">Spot map</span>
+                </div>
+                <picture>
+                  <source srcset="/screenshots/spot-map.webp" type="image/webp" />
+                  <img
+                    src="/screenshots/spot-map.png"
+                    width="1440"
+                    height="900"
+                    alt="Synthetic foodborne outbreak spot map with jittered case locations colored by classification and map export controls"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </picture>
               </div>
-              <picture>
-                <source srcset="/screenshots/visualize-chart.webp" type="image/webp" />
-                <img
-                  src="/screenshots/visualize-chart.png"
-                  width="1440"
-                  height="900"
-                  alt="Publication-ready horizontal bar chart of synthetic cases by classification with PNG, clipboard, and Excel export controls"
-                  loading="lazy"
-                  decoding="async"
-                />
-              </picture>
+              <div class="workflow-gallery">
+                <div class="browser-frame compact">
+                  <div class="browser-bar" aria-hidden="true">
+                    <span class="browser-dots"><span></span><span></span><span></span></span>
+                    <span class="browser-title">Epi curve</span>
+                  </div>
+                  <picture>
+                    <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+                    <img
+                      src="/screenshots/epicurve.png"
+                      width="1440"
+                      height="900"
+                      alt="Synthetic epidemic curve with case-status strata, exposure timing, and response milestones"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </picture>
+                </div>
+                <div class="browser-frame compact">
+                  <div class="browser-bar" aria-hidden="true">
+                    <span class="browser-dots"><span></span><span></span><span></span></span>
+                    <span class="browser-title">Publication figure</span>
+                  </div>
+                  <picture>
+                    <source srcset="/screenshots/visualize-chart.webp" type="image/webp" />
+                    <img
+                      src="/screenshots/visualize-chart.png"
+                      width="1440"
+                      height="900"
+                      alt="Publication-ready horizontal bar chart of synthetic cases by classification with export controls"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </picture>
+                </div>
+              </div>
             </div>
             <div class="workflow-copy">
-              <span class="workflow-step">3 · Communicate</span>
-              <h3>Create a clear chart and export it</h3>
-              <p>Apply readable chart defaults, add titles and sources, then export the result for a report, briefing, or handoff.</p>
+              <span class="workflow-step">3 · Create maps and figures</span>
+              <h3>Show where cases occurred and create clear figures</h3>
+              <p>Build spot maps, epi curves, and publication-ready charts, then export them for a report, briefing, or handoff.</p>
             </div>
           </article>
         </div>
@@ -505,7 +555,7 @@
         </div>
         <div class="section-head compact">
           <h2>Also included</h2>
-          <p>Useful tools around the core review, analysis, and communication workflow.</p>
+          <p>Useful tools around the core review, analysis, and figure-creation workflow.</p>
         </div>
         <div class="features">
           <div class="feature">
@@ -584,7 +634,7 @@
     <section class="final-cta">
       <div class="container">
         <h2>See the workflow with a ready-made outbreak</h2>
-        <p>Open the synthetic foodborne investigation with the epi curve, exposure timing, and response milestones already configured.</p>
+        <p>Explore the synthetic foodborne investigation with its epi curve, spot map, exposure timing, and response milestones already configured.</p>
         <a class="btn btn-primary btn-lg" href="/app/?sample=outbreak">Try the sample outbreak →</a>
       </div>
     </section>

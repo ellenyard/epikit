@@ -6,7 +6,7 @@ interface HelpCenterProps {
   onOpenOnboarding: () => void;
 }
 
-type HelpSection = 'quick-start' | 'faq' | 'privacy' | 'about' | 'saving-sharing' | 'glossary';
+type HelpSection = 'quick-start' | 'faq' | 'privacy' | 'about' | 'saving-sharing';
 
 export const HelpCenter: React.FC<HelpCenterProps> = ({
   isOpen,
@@ -15,7 +15,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
 }) => {
   const [activeSection, setActiveSection] = useState<HelpSection>('quick-start');
   const [expandedFAQ, setExpandedFAQ] = useState<string | null>(null);
-  const [glossarySearch, setGlossarySearch] = useState('');
 
   if (!isOpen) return null;
 
@@ -96,19 +95,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               Saving & Sharing
             </button>
             <button
-              onClick={() => setActiveSection('glossary')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
-                activeSection === 'glossary'
-                  ? 'bg-blue-100 text-blue-700 font-medium'
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
-            >
-              <svg className="w-4 h-4 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-              </svg>
-              Glossary
-            </button>
-            <button
               onClick={() => setActiveSection('about')}
               className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
                 activeSection === 'about'
@@ -143,7 +129,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
               {activeSection === 'privacy' && 'Privacy & Data Handling'}
               {activeSection === 'saving-sharing' && 'Saving & Sharing'}
               {activeSection === 'about' && 'About LineList'}
-              {activeSection === 'glossary' && 'Epidemiology Glossary'}
             </h3>
             <button
               onClick={onClose}
@@ -173,13 +158,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <ol className="list-decimal ml-6 space-y-2">
                       <li>Navigate to any analysis module (Review/Clean, Epi Curve, Maps, etc.)</li>
                       <li>Click the <strong>"Import Data"</strong> button in the dataset selector bar</li>
-                      <li>Select your CSV file (ensure it's de-identified—no PHI!)</li>
+                      <li>Select your CSV or Excel file (make sure it is de-identified, with no PHI)</li>
                       <li>Review the preview to verify columns are detected correctly</li>
-                      <li>Click "Import Dataset" to load your data</li>
+                      <li>Click "Import Records" to load your data</li>
                     </ol>
                     <div className="bg-amber-50 border border-amber-300 rounded p-3 mt-3">
                       <p className="text-amber-800 text-sm">
-                        <strong>💡 Tip:</strong> CSV files should have column headers in the first row and use comma separators.
+                        <strong>💡 Tip:</strong> CSV files should have column headers in the first row and use comma separators. For Excel files with multiple sheets, choose which sheet to import.
                       </p>
                     </div>
                   </div>
@@ -190,7 +175,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <div className="prose prose-sm text-gray-600">
                     <p className="mb-3">Before analysis, always check data quality:</p>
                     <ul className="list-disc ml-6 space-y-2">
-                      <li><strong>Data Quality Tab:</strong> Identifies duplicates, missing values, and date order issues</li>
+                      <li><strong>Data Quality Tab:</strong> Identifies duplicates, missing values, date order issues, and numeric range violations</li>
                       <li><strong>Line Listing Tab:</strong> View and edit individual records</li>
                       <li><strong>Create Variable:</strong> Derive new variables (e.g., age groups, incubation period)</li>
                       <li><strong>Edit Log:</strong> Track all changes made to the dataset</li>
@@ -209,7 +194,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       </div>
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Maps</h5>
-                        <p className="text-xs">Create spot maps from coordinates or area maps from boundaries</p>
+                        <p className="text-xs">Create spot maps from coordinates, area maps from boundaries, or freehand sketch maps</p>
                       </div>
                       <div className="border border-gray-200 rounded p-3">
                         <h5 className="font-medium text-gray-800 mb-1">Analysis</h5>
@@ -229,25 +214,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                 </section>
 
                 <section>
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">4. Building Custom Forms</h4>
-                  <div className="prose prose-sm text-gray-600">
-                    <p className="mb-3">Create data collection instruments:</p>
-                    <ol className="list-decimal ml-6 space-y-2">
-                      <li>Navigate to the <strong>Forms</strong> module</li>
-                      <li>Drag field types from the palette onto the canvas</li>
-                      <li>Configure field properties (label, options, validation, help text)</li>
-                      <li>Use <strong>Skip Logic</strong> to show/hide fields based on answers</li>
-                      <li>Save your form and export it as JSON</li>
-                    </ol>
-                  </div>
-                </section>
-
-                <section>
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">5. Exporting Results</h4>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">4. Exporting Results</h4>
                   <div className="prose prose-sm text-gray-600">
                     <ul className="list-disc ml-6 space-y-2">
-                      <li><strong>Export CSV:</strong> Download your cleaned dataset from the dataset selector bar</li>
-                      <li><strong>Save Charts:</strong> Use browser print/screenshot for visualizations</li>
+                      <li><strong>Export CSV:</strong> Download your dataset with all edits and derived variables using "Export Dataset CSV" in the analysis tools</li>
+                      <li><strong>Save Charts:</strong> Use the "Export PNG" and "Copy to Clipboard" buttons on charts (SVG export is also available in Epi Curve and Sketch Map)</li>
+                      <li><strong>Export Tables:</strong> Download frequency tables and cross-tabulations as CSV from Build Tables</li>
+                      <li><strong>Save Project:</strong> Use the Save Project button in the top toolbar to download your whole project (datasets and edit log) as a JSON file</li>
                     </ul>
                   </div>
                 </section>
@@ -272,7 +245,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         </svg>
                         Datasets
                       </h5>
-                      <p className="mb-2">Export your cleaned dataset as CSV from the dataset selector bar.</p>
+                      <p className="mb-2">Export your cleaned dataset as CSV using "Export Dataset CSV", available in the results actions of tools like Epi Curve, Spot Map, and 2x2 Analysis.</p>
                       <ul className="list-disc ml-5 space-y-1 text-gray-600">
                         <li>Includes all edits and derived variables</li>
                         <li>Can be re-imported later to continue work</li>
@@ -287,11 +260,12 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         </svg>
                         Charts and Visualizations
                       </h5>
-                      <p className="mb-2">Save charts using your browser's built-in tools:</p>
+                      <p className="mb-2">Save charts using the export buttons shown with each chart:</p>
                       <ul className="list-disc ml-5 space-y-1 text-gray-600">
-                        <li><strong>Right-click:</strong> Use "Save image as..." on most charts</li>
-                        <li><strong>Screenshot:</strong> Capture specific sections with screenshot tools</li>
-                        <li><strong>Print to PDF:</strong> Use browser print function (Ctrl/Cmd + P) to save as PDF</li>
+                        <li><strong>Export PNG:</strong> Download chart images (SVG export is also available in Epi Curve and Sketch Map)</li>
+                        <li><strong>Copy to Clipboard:</strong> Paste charts directly into reports and slides</li>
+                        <li><strong>Export to Excel:</strong> Download the underlying chart data from the Visualize module</li>
+                        <li><strong>Print to PDF:</strong> Use the browser print function (Ctrl/Cmd + P) to save a page as PDF</li>
                       </ul>
                     </div>
 
@@ -302,10 +276,10 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         </svg>
                         Tables and Statistics
                       </h5>
-                      <p className="mb-2">Copy statistical tables into reports:</p>
+                      <p className="mb-2">Move statistical tables into reports:</p>
                       <ul className="list-disc ml-5 space-y-1 text-gray-600">
-                        <li>Select table cells and copy (Ctrl/Cmd + C)</li>
-                        <li>Paste into spreadsheets or word processors</li>
+                        <li>Export frequency tables and cross-tabulations as CSV from Build Tables</li>
+                        <li>Select table cells and copy (Ctrl/Cmd + C), then paste into spreadsheets or word processors</li>
                         <li>Use screenshots for formatted tables</li>
                       </ul>
                     </div>
@@ -338,7 +312,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       <div>
                         <strong>Document Analysis Settings:</strong> Record key parameters in your report:
                         <ul className="list-disc ml-5 mt-1 space-y-1 text-gray-600">
-                          <li>Epi curves: Date variable used, time unit (daily/weekly), stratification variable</li>
+                          <li>Epi curves: Date variable used, bin size, stratification variable</li>
                           <li>Spot maps: Coordinate variables, color-by variable, any aggregation applied</li>
                           <li>2×2 tables: Exposure and outcome variables tested, study design (cohort/case-control)</li>
                         </ul>
@@ -348,7 +322,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <div className="flex items-start">
                       <span className="font-bold text-blue-600 mr-2 mt-0.5">3.</span>
                       <div>
-                        <strong>Save the Edit Log:</strong> The Edit Log documents all data modifications. Screenshot or note key changes for your methods section.
+                        <strong>Save the Edit Log:</strong> The Edit Log documents all data modifications and can be exported as CSV from the Review/Clean module for your records.
                       </div>
                     </div>
 
@@ -408,7 +382,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <p>
                       LineList is a web application designed for outbreak investigation and epidemiological analysis.
                       Built for junior epidemiologists and public health professionals, it provides essential tools for data
-                      quality assurance and statistical analysis—all without requiring coding skills.
+                      quality assurance and statistical analysis, all without requiring coding skills.
                     </p>
 
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -447,7 +421,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                         </svg>
                         <div>
-                          <strong>In-App Tutorials:</strong> Each analysis tool includes a built-in tutorial with step-by-step instructions. Look for the "How to Use This Tool" panel.
+                          <strong>In-App Tutorials:</strong> Several tools, including Review/Clean, Epi Curve, Spot Map, and 2x2 Analysis, include a built-in tutorial with step-by-step instructions. Look for the "How to Use This Tool" panel.
                         </div>
                       </div>
 
@@ -504,7 +478,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             )}
 
             {/* OBSOLETE TOOL TUTORIALS SECTION REMOVED - tutorials now embedded on tool pages */}
-            {/* OBSOLETE GLOSSARY SECTION REMOVED - definitions now integrated into tool tutorials */}
 
             {activeSection === 'faq' && (
               <div className="space-y-3 max-w-4xl">
@@ -519,11 +492,11 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'import',
                     question: 'How do I import my data?',
-                    answer: 'Navigate to any analysis module and click the "Import Data" button in the dataset selector bar. Select your CSV file and click "Import Dataset". Make sure your CSV has column headers in the first row and uses comma separators.'
+                    answer: 'Navigate to any analysis module and click the "Import Data" button in the dataset selector bar. Select your CSV or Excel file and click "Import Records". CSV files should have column headers in the first row and use comma separators. For Excel files with multiple sheets, choose which sheet to import.'
                   },
                   {
                     id: 'storage',
-                    question: 'Is my data stored on the server?',
+                    question: 'Are my data stored on the server?',
                     answer: 'Imported datasets are processed in your browser and saved in this browser\'s local storage so you can return later. LineList does not upload imported datasets to an application server or cloud storage. Map layers and other externally hosted resources may still generate normal network requests. Use project export to create backups or move work to another device.'
                   },
                   {
@@ -538,13 +511,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   },
                   {
                     id: 'missing-data',
-                    question: 'What happens if my data has missing values?',
+                    question: 'What happens if my data have missing values?',
                     answer: 'LineList will identify missing values in the Data Quality panel. Missing values are excluded from calculations. For critical variables (like date of onset), you may need to follow up with data sources to obtain complete information.'
                   },
                   {
                     id: 'export',
                     question: 'How do I save my analysis results?',
-                    answer: 'You can export your cleaned dataset as CSV using the "Export CSV" button. For charts and visualizations, use your browser\'s print or screenshot functionality.'
+                    answer: 'You can export your cleaned dataset as CSV using "Export Dataset CSV" in the analysis tools, and download tables as CSV from Build Tables. Charts offer "Export PNG" and "Copy to Clipboard" buttons, and the Visualize module can export chart data to Excel. To back up your whole project (datasets and edit log) as a JSON file, use the Save Project button in the top toolbar.'
                   },
                   {
                     id: 'coordinates',
@@ -554,7 +527,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'attack-rate',
                     question: 'How do I calculate attack rates?',
-                    answer: 'Go to the Analysis module and select the "Test" tab. Choose your exposure variable (e.g., "ate potato salad") and outcome variable (e.g., "became ill"). The 2×2 table will automatically calculate attack rates for exposed and unexposed groups, plus risk ratio and statistical significance.'
+                    answer: 'Go to the Analysis module and select the "Test" step. Choose your exposure variable (e.g., "ate potato salad") and outcome variable (e.g., "became ill"). The 2×2 table will automatically calculate attack rates for exposed and unexposed groups, plus risk ratio and statistical significance.'
                   },
                   {
                     id: 'case-status',
@@ -632,7 +605,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
-                        <span>Data is saved in this browser's local storage</span>
+                        <span>Data are saved in this browser's local storage</span>
                       </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
@@ -749,7 +722,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <li>• De-identified outbreak investigation data</li>
                         <li>• Aggregate or summarized data</li>
                         <li>• Training with simulated/demo datasets</li>
-                        <li>• Data that has undergone formal de-identification review</li>
+                        <li>• Data that have undergone formal de-identification review</li>
                       </ul>
                     </div>
 
@@ -838,15 +811,16 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                 </section>
 
                 <section>
-                  <h4 className="text-lg font-semibold text-gray-800 mb-3">About the Demo Dataset</h4>
+                  <h4 className="text-lg font-semibold text-gray-800 mb-3">About the Demo Datasets</h4>
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
                     <p className="text-blue-800 text-sm mb-3">
-                      The foodborne outbreak demo dataset included with LineList is <strong>entirely synthetic</strong>
-                      and created for training purposes only. It does not represent any real outbreak or actual patient data.
+                      The demo datasets included with LineList are <strong>entirely synthetic</strong>
+                      and created for training purposes only. They do not represent any real outbreak or actual patient data.
                     </p>
                     <p className="text-blue-800 text-sm">
-                      The demo includes 48 fictional case records designed to illustrate common outbreak investigation
-                      scenarios and analysis techniques. You can safely explore all LineList features with this dataset
+                      The foodborne outbreak demo includes 96 fictional case records designed to illustrate common outbreak
+                      investigation scenarios and analysis techniques. Synthetic nutrition survey and disease surveillance
+                      demos are also included. You can safely explore all LineList features with these datasets
                       without any privacy concerns.
                     </p>
                   </div>
@@ -895,74 +869,6 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     </ul>
                   </div>
                 </section>
-              </div>
-            )}
-
-            {activeSection === 'glossary' && (
-              <div className="space-y-4 max-w-4xl">
-                <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
-                  <p className="text-blue-800 text-sm">
-                    Common epidemiology and nutrition terms used in FETP and public health practice.
-                  </p>
-                </div>
-
-                <input
-                  type="text"
-                  value={glossarySearch}
-                  onChange={(e) => setGlossarySearch(e.target.value)}
-                  placeholder="Search glossary..."
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-
-                {(() => {
-                  const terms = [
-                    { term: 'Attack Rate', definition: 'The proportion of people exposed to a risk factor who develop the disease. Calculated as: (number of ill among exposed) / (total number exposed) x 100.' },
-                    { term: 'Case Fatality Rate (CFR)', definition: 'The proportion of people diagnosed with a disease who die from it. Calculated as: (number of deaths) / (number of cases) x 100.' },
-                    { term: 'Confidence Interval (CI)', definition: 'A range of values that is likely to contain the true population parameter with a specified level of certainty (usually 95%).' },
-                    { term: 'Epi Curve (Epidemic Curve)', definition: 'A histogram showing the number of disease cases by date of onset, used to visualize the time course of an outbreak.' },
-                    { term: 'GAM (Global Acute Malnutrition)', definition: 'A measure of nutritional status combining SAM and MAM. Defined as WHZ < -2 or bilateral oedema. GAM prevalence >15% indicates a nutrition emergency.' },
-                    { term: 'HAZ (Height-for-Age Z-score)', definition: 'A standardized measure of linear growth. HAZ < -2 indicates stunting (chronic malnutrition). Based on WHO growth standards.' },
-                    { term: 'Incidence', definition: 'The number of NEW cases of a disease occurring in a population during a specific time period. Often expressed per 100,000 population per year.' },
-                    { term: 'Incidence Rate', definition: 'The rate at which new cases occur, calculated as: (new cases in time period) / (person-time at risk).' },
-                    { term: 'MAM (Moderate Acute Malnutrition)', definition: 'Moderate wasting defined by WHZ between -3 and -2, or MUAC between 11.5 and 12.5 cm (for children 6-59 months).' },
-                    { term: 'MUAC (Mid-Upper Arm Circumference)', definition: 'A quick field measurement of nutritional status. For children 6-59 months: <11.5 cm = SAM, 11.5-12.5 cm = MAM, >12.5 cm = Normal.' },
-                    { term: 'Odds Ratio (OR)', definition: 'A measure of association between an exposure and an outcome in case-control studies. OR = 1 means no association; OR > 1 suggests higher odds of outcome with exposure.' },
-                    { term: 'Prevalence', definition: 'The proportion of a population that has a particular condition at a specific point in time. Includes both new and existing cases.' },
-                    { term: 'Relative Risk (RR)', definition: 'The ratio of disease risk in the exposed group to the risk in the unexposed group. RR = 1 means no difference; RR > 1 suggests increased risk with exposure.' },
-                    { term: 'SAM (Severe Acute Malnutrition)', definition: 'Severe wasting defined by WHZ < -3, MUAC < 11.5 cm, or bilateral oedema. Requires urgent nutritional treatment.' },
-                    { term: 'SMART Survey', definition: 'Standardized Monitoring and Assessment of Relief and Transitions. A simplified, standardized methodology for measuring nutrition and mortality indicators in emergencies.' },
-                    { term: 'Stunting', definition: 'Chronic malnutrition reflected by low height-for-age (HAZ < -2). Indicates prolonged undernutrition and/or repeated illness.' },
-                    { term: 'Underweight', definition: 'Low weight-for-age (WAZ < -2). A composite indicator that can reflect both acute and chronic malnutrition.' },
-                    { term: 'WAZ (Weight-for-Age Z-score)', definition: 'A standardized measure comparing a child\'s weight to a reference population of the same age. WAZ < -2 indicates underweight.' },
-                    { term: 'WHZ (Weight-for-Height Z-score)', definition: 'A standardized measure of wasting (acute malnutrition). WHZ < -2 = MAM, WHZ < -3 = SAM. Based on WHO growth standards.' },
-                    { term: 'Z-score', definition: 'The number of standard deviations a measurement is from the reference population median. Used in nutrition to classify malnutrition status.' },
-                    { term: '2x2 Table', definition: 'A cross-tabulation of exposure (rows) and outcome (columns) with two levels each. The foundation for calculating attack rates, odds ratios, and relative risk.' },
-                    { term: 'Dietary Diversity Score', definition: 'A measure of diet quality based on the number of food groups consumed by an individual over a reference period (usually 24 hours). Ranges from 0-8 for children.' },
-                    { term: 'Bilateral Oedema', definition: 'Fluid retention causing swelling in both feet. A clinical sign of severe acute malnutrition (kwashiorkor) regardless of other anthropometric measurements.' },
-                    { term: 'Person-Time', definition: 'A measure combining the number of people observed and the duration of observation. Used as the denominator for incidence rates.' },
-                  ];
-
-                  const filtered = glossarySearch
-                    ? terms.filter(t =>
-                        t.term.toLowerCase().includes(glossarySearch.toLowerCase()) ||
-                        t.definition.toLowerCase().includes(glossarySearch.toLowerCase())
-                      )
-                    : terms;
-
-                  return (
-                    <div className="space-y-2">
-                      {filtered.length === 0 && (
-                        <p className="text-gray-500 text-sm py-4 text-center">No terms match your search.</p>
-                      )}
-                      {filtered.map(({ term, definition }) => (
-                        <div key={term} className="border border-gray-200 rounded-lg p-3">
-                          <dt className="text-sm font-semibold text-gray-900">{term}</dt>
-                          <dd className="text-sm text-gray-600 mt-1">{definition}</dd>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })()}
               </div>
             )}
           </div>

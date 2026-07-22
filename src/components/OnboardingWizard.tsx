@@ -594,7 +594,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                       </p>
                       <ul className="space-y-1 text-sm text-amber-800 ml-6">
                         <li>• Access tool-specific guides and tutorials</li>
-                        <li>• Review epidemiological concepts and glossary</li>
+                        <li>• Review epidemiological concepts in the tool tutorials</li>
                         <li>• Find answers to frequently asked questions</li>
                         <li>• Restart this onboarding wizard anytime</li>
                       </ul>
