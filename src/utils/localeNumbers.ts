@@ -48,6 +48,13 @@ export function parseLocaleNumber(value: string, config: LocaleConfig): number {
     cleaned = cleaned.replace(new RegExp(escapeRegExp(decimal), 'g'), '.');
   }
 
+  // parseFloat accepts numeric prefixes ("2026-07-01" -> 2026), which would
+  // mistype ISO date columns as numbers. Require the whole string to be a
+  // valid number instead.
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(cleaned)) {
+    return NaN;
+  }
+
   return parseFloat(cleaned);
 }
 

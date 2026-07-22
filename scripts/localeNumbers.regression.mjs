@@ -44,6 +44,15 @@ try {
   // Non-numeric input stays NaN
   assert.ok(Number.isNaN(parseLocaleNumber('abc', us)));
 
+  // ISO date strings must not parse as numbers (parseFloat prefix behavior)
+  assert.ok(Number.isNaN(parseLocaleNumber('2026-07-01', us)));
+  assert.ok(Number.isNaN(parseLocaleNumber('2026-07-01', german)));
+  assert.ok(Number.isNaN(parseLocaleNumber('2026-07-01T10:30:00', us)));
+  assert.ok(Number.isNaN(parseLocaleNumber('13/01/2024', us)));
+
+  // Scientific notation still parses
+  assert.equal(parseLocaleNumber('1e3', us), 1000);
+
   console.log('Locale number regression checks passed.');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
