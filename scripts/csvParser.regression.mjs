@@ -122,6 +122,15 @@ try {
   const groupedCsv = parseCSV('n\n1.234.567,89', { delimiter: ';', localeConfig: germanCfg });
   assert.equal(groupedCsv.records[0].n, 1234567.89);
 
+  // ISO date columns must type as date (not number) when a locale config is
+  // passed — parseFloat('2026-07-01') would otherwise yield 2026
+  const usCfg = { decimalSeparator: '.', thousandsSeparator: ',', csvDelimiter: ',' };
+  const isoDates = parseCSV('onset\n2026-07-01\n2026-07-02', { localeConfig: usCfg });
+  assert.equal(isoDates.columns[0].type, 'date');
+  assert.equal(isoDates.records[0].onset, '2026-07-01');
+  const isoDatesGerman = parseCSV('onset\n2026-07-01\n2026-07-02', { delimiter: ';', localeConfig: germanCfg });
+  assert.equal(isoDatesGerman.columns[0].type, 'date');
+
   console.log('CSV parser regression checks passed.');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
