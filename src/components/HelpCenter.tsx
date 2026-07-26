@@ -470,7 +470,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     </p>
 
                     <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 font-mono text-xs">
-                      Data analysis was conducted using LineList (version 1.0.0), a web-based epidemiological analysis tool designed for outbreak investigation.
+                      Data analysis was conducted using LineList (version 1.0.0), a web-based epidemiological analysis tool designed for outbreak investigation. Available at: https://linelist.org
                     </div>
                   </div>
                 </section>
