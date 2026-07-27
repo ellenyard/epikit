@@ -42,10 +42,7 @@ export function VisualizeWorkflow({ dataset }: VisualizeWorkflowProps) {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4">
-        <TabHeader
-          title="Visualize"
-          description="Create publication-ready charts following data visualization best practices"
-        />
+        <TabHeader title="Visualize" />
 
         {selectedChart === null ? (
           <>

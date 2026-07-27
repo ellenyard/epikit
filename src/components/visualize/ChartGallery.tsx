@@ -428,7 +428,7 @@ function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void
 }
 
 /**
- * Intent-based quick filter buttons for the "What are you trying to do?" prompt.
+ * Intent-based quick filter buttons.
  */
 function IntentFilter({
   selectedIntent,
@@ -441,7 +441,6 @@ function IntentFilter({
 
   return (
     <div className="mb-6">
-      <p className="text-sm font-medium text-gray-700 mb-2">What are you trying to do?</p>
       <div className="flex flex-wrap gap-2">
         {intents.map((intent) => (
           <button
@@ -485,7 +484,6 @@ export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
             </svg>
             Recommended for: {INTENT_LABELS[selectedIntent!]}
           </h4>
-          <p className="text-xs text-gray-500 mb-3">Charts best suited to this analytical goal</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {intentSuggestions.map(({ type, reason }) => {
               const chart = CHART_MAP.get(type);
@@ -504,21 +502,13 @@ export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
       {/* Data-driven suggestions */}
       {suggestions.length > 0 && !selectedIntent && (
         <div>
-          <h4 className="text-sm font-semibold text-green-700 uppercase tracking-wide mb-1 flex items-center gap-2">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-            </svg>
-            Suggested for Your Data
-          </h4>
-          <p className="text-xs text-gray-500 mb-3">Based on the columns in your dataset</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {suggestions.map(({ type, reason }) => {
+            {suggestions.map(({ type }) => {
               const chart = CHART_MAP.get(type);
               if (!chart) return null;
               return (
                 <div key={type} className="relative">
                   <ChartCard chart={chart} onSelect={() => onSelectChart(type)} />
-                  <p className="text-xs text-green-600 mt-1 ml-1">{reason}</p>
                 </div>
               );
             })}
@@ -529,10 +519,9 @@ export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
       {/* All charts by workflow category */}
       {CHART_GROUPS.map((group) => (
         <div key={group.label}>
-          <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
             {group.label}
           </h4>
-          <p className="text-xs text-gray-400 mb-3">{group.description}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {group.charts.map((chart) => (
               <ChartCard

@@ -2,7 +2,7 @@ import React from 'react';
 
 interface TabHeaderProps {
   title: string;
-  description: string;
+  description?: string;
   rightSlot?: React.ReactNode;
 }
 
@@ -15,7 +15,7 @@ export function TabHeader({ title, description, rightSlot }: TabHeaderProps) {
     <div className="flex items-start justify-between mb-6">
       <div className="flex-1">
         <h3 className="text-lg font-semibold text-gray-900 mb-1">{title}</h3>
-        <p className="text-sm text-gray-600">{description}</p>
+        {description && <p className="text-sm text-gray-600">{description}</p>}
       </div>
       {rightSlot && (
         <div className="ml-4 flex-shrink-0">
