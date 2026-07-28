@@ -1,9 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { VisualizationTip } from '../shared/VisualizationTip';
-import { calculateFrequency } from '../../../utils/statistics';
 import {
   getDefaultDimensions,
   svgWrapper,
@@ -22,97 +20,164 @@ interface LollipopChartProps {
 
 type ValueMode = 'count' | 'numeric';
 type SortMode = 'value-desc' | 'value-asc' | 'alpha';
+type ValueFormat = 'number' | 'percent' | 'rate';
+type Aggregation = 'mean' | 'sum' | 'median';
 
 interface LollipopDataPoint {
   category: string;
   value: number;
-  lower?: number;
-  upper?: number;
+  n: number;
+}
+
+interface LollipopData {
+  points: LollipopDataPoint[];
+  excluded: number;
+}
+
+/** Format a numeric value for tick and value labels. */
+function formatValue(val: number, format: ValueFormat, abbreviate = false): string {
+  if (format === 'rate') return val.toFixed(1);
+  let base: string;
+  if (abbreviate && Math.abs(val) >= 1000) base = `${(val / 1000).toFixed(1)}k`;
+  else base = Number.isInteger(val) ? String(val) : val.toFixed(1);
+  return format === 'percent' ? `${base}%` : base;
+}
+
+/** Wrap a category label into at most 2 lines, breaking near 22-25 chars on a space when possible. */
+function wrapCategoryLabel(label: string): string[] {
+  const MAX_LINE = 25;
+  if (label.length <= MAX_LINE) return [label];
+  let breakIdx = -1;
+  for (let i = MAX_LINE - 1; i >= 12; i--) {
+    if (label[i] === ' ') {
+      breakIdx = i;
+      break;
+    }
+  }
+  if (breakIdx === -1) breakIdx = MAX_LINE - 1;
+  const line1 = label.slice(0, breakIdx).trimEnd();
+  let line2 = label.slice(breakIdx).trim();
+  if (line2.length > MAX_LINE) line2 = `${line2.slice(0, MAX_LINE - 1).trimEnd()}...`;
+  return [line1, line2];
 }
 
 export function LollipopChart({ dataset }: LollipopChartProps) {
   const [categoryCol, setCategoryCol] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
   const [numericCol, setNumericCol] = useState('');
-  const [lowerCICol, setLowerCICol] = useState('');
-  const [upperCICol, setUpperCICol] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('value-desc');
+  const [aggregation, setAggregation] = useState<Aggregation>('mean');
+  const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
+  const [highlightCat, setHighlightCat] = useState('');
+  const [flagSmallCounts, setFlagSmallCounts] = useState(true);
+  const [referenceLine, setReferenceLine] = useState('');
+  const [referenceLabel, setReferenceLabel] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
+  const [axisTitle, setAxisTitle] = useState('');
+  const [axisTitleEdited, setAxisTitleEdited] = useState(false);
   const [source, setSource] = useState('');
-  const [showGuide, setShowGuide] = useState(false);
+
+  // Pre-select sensible defaults so a chart renders immediately on dataset load or change.
+  // Prefer a categorical column with 3-30 distinct values (a true grouping variable like
+  // Case Status) over ID-like text columns and two-value columns like Sex.
+  useEffect(() => {
+    const catValid = categoryCol !== '' && dataset.columns.some(c => c.key === categoryCol);
+    if (!catValid) {
+      const distinct = (key: string) =>
+        new Set(dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')).size;
+      const cats = dataset.columns.filter(c => c.type === 'categorical');
+      const ideal = cats.find(c => { const n = distinct(c.key); return n >= 3 && n <= 30; });
+      const fallback = cats.find(c => { const n = distinct(c.key); return n >= 2 && n <= 30; })
+        ?? dataset.columns.find(c => c.type === 'text' || c.type === 'categorical');
+      const chosen = ideal ?? fallback;
+      if (chosen) setCategoryCol(chosen.key);
+    }
+    const numValid = numericCol !== '' && dataset.columns.some(c => c.key === numericCol && c.type === 'number');
+    if (!numValid) {
+      const firstNum = dataset.columns.find(c => c.type === 'number');
+      if (firstNum) setNumericCol(firstNum.key);
+    }
+  }, [dataset, categoryCol, numericCol]);
+
+  // Auto-fill the axis title from the numeric column label (or count mode wording) until manually edited
+  useEffect(() => {
+    if (axisTitleEdited) return;
+    if (valueMode === 'count') {
+      setAxisTitle('Number of records');
+    } else {
+      const label = dataset.columns.find(c => c.key === numericCol)?.label;
+      setAxisTitle(label || '');
+    }
+  }, [valueMode, numericCol, axisTitleEdited, dataset]);
+
+  const referenceValue = useMemo(() => {
+    if (referenceLine.trim() === '') return null;
+    const v = Number(referenceLine);
+    return isNaN(v) ? null : v;
+  }, [referenceLine]);
 
   // Build lollipop data
-  const lollipopData = useMemo((): LollipopDataPoint[] => {
-    if (!categoryCol) return [];
+  const { points: lollipopData, excluded } = useMemo((): LollipopData => {
+    if (!categoryCol) return { points: [], excluded: 0 };
 
     let points: LollipopDataPoint[];
+    let excluded = 0;
 
     if (valueMode === 'count') {
-      const values = dataset.records.map(r => r[categoryCol]);
-      const freq = calculateFrequency(values);
-      points = freq.map(f => ({ category: f.value, value: f.count }));
+      const counts = new Map<string, number>();
+      for (const record of dataset.records) {
+        const cat = record[categoryCol];
+        if (cat === null || cat === undefined || cat === '') {
+          excluded++;
+          continue;
+        }
+        const key = String(cat);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      points = Array.from(counts.entries()).map(([category, count]) => ({
+        category,
+        value: count,
+        n: count,
+      }));
     } else {
-      if (!numericCol) return [];
-      // Aggregate numeric values by category (use first occurrence or sum — use first for simplicity)
+      if (!numericCol) return { points: [], excluded: 0 };
       const grouped = new Map<string, number[]>();
-      const ciLowerGrouped = new Map<string, number[]>();
-      const ciUpperGrouped = new Map<string, number[]>();
 
       for (const record of dataset.records) {
         const cat = record[categoryCol];
-        const val = record[numericCol];
-        if (cat == null || cat === '' || val == null || val === '') continue;
-        const num = Number(val);
-        if (isNaN(num)) continue;
+        const raw = record[numericCol];
+        const num = raw !== null && raw !== undefined && raw !== '' ? Number(raw) : NaN;
+        if (cat === null || cat === undefined || cat === '' || isNaN(num)) {
+          excluded++;
+          continue;
+        }
         const key = String(cat);
         if (!grouped.has(key)) grouped.set(key, []);
         grouped.get(key)!.push(num);
-
-        if (lowerCICol) {
-          const rawCI = record[lowerCICol];
-          if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
-            const ciLower = Number(rawCI);
-            if (!isNaN(ciLower)) {
-              if (!ciLowerGrouped.has(key)) ciLowerGrouped.set(key, []);
-              ciLowerGrouped.get(key)!.push(ciLower);
-            }
-          }
-        }
-
-        if (upperCICol) {
-          const rawCI = record[upperCICol];
-          if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
-            const ciUpper = Number(rawCI);
-            if (!isNaN(ciUpper)) {
-              if (!ciUpperGrouped.has(key)) ciUpperGrouped.set(key, []);
-              ciUpperGrouped.get(key)!.push(ciUpper);
-            }
-          }
-        }
       }
 
-      // Use the mean for each category when multiple values exist
-      points = Array.from(grouped.entries()).map(([category, vals]) => {
-        const point: LollipopDataPoint = {
-          category,
-          value: vals.reduce((a, b) => a + b, 0) / vals.length,
-        };
-
-        if (lowerCICol && ciLowerGrouped.has(category) && ciLowerGrouped.get(category)!.length > 0) {
-          const ciLowerVals = ciLowerGrouped.get(category)!;
-          point.lower = ciLowerVals.reduce((a, b) => a + b, 0) / ciLowerVals.length;
+      const aggregate = (values: number[]): number => {
+        switch (aggregation) {
+          case 'sum':
+            return values.reduce((a, b) => a + b, 0);
+          case 'median': {
+            const sorted = [...values].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+          }
+          default:
+            return values.reduce((a, b) => a + b, 0) / values.length;
         }
+      };
 
-        if (upperCICol && ciUpperGrouped.has(category) && ciUpperGrouped.get(category)!.length > 0) {
-          const ciUpperVals = ciUpperGrouped.get(category)!;
-          point.upper = ciUpperVals.reduce((a, b) => a + b, 0) / ciUpperVals.length;
-        }
-
-        return point;
-      });
+      points = Array.from(grouped.entries()).map(([category, vals]) => ({
+        category,
+        value: aggregate(vals),
+        n: vals.length,
+      }));
     }
 
     // Sort
@@ -124,24 +189,27 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       points.sort((a, b) => a.category.localeCompare(b.category));
     }
 
-    return points;
-  }, [categoryCol, valueMode, numericCol, lowerCICol, upperCICol, sortMode, dataset.records]);
+    return { points, excluded };
+  }, [categoryCol, valueMode, numericCol, aggregation, sortMode, dataset.records]);
+
+  // Categories available for the highlight selector (alphabetical)
+  const categoryOptions = useMemo(
+    () => [...new Set(lollipopData.map(p => p.category))].sort((a, b) => a.localeCompare(b)),
+    [lollipopData]
+  );
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
-    const hasCI = lollipopData.some(d => d.lower !== undefined && d.upper !== undefined);
+    const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
     const columns = [
-      { header: 'Category', key: 'category' },
-      { header: 'Value', key: 'value' },
+      { header: categoryCol ? colLabel(categoryCol) : 'Category', key: 'category' },
+      { header: valueMode === 'numeric' && numericCol ? colLabel(numericCol) : 'Count', key: 'value' },
+      { header: 'Records', key: 'n' },
     ];
-    if (hasCI) {
-      columns.push({ header: 'Lower CI', key: 'lower' });
-      columns.push({ header: 'Upper CI', key: 'upper' });
-    }
     const rows = lollipopData.map(d => ({
       category: d.category,
       value: d.value,
-      ...(hasCI ? { lower: d.lower ?? null, upper: d.upper ?? null } : {}),
+      n: d.n,
     }));
     return {
       title,
@@ -150,28 +218,41 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       columns,
       rows,
     };
-  }, [lollipopData, title, subtitle, source]);
+  }, [lollipopData, title, subtitle, source, dataset, categoryCol, valueMode, numericCol]);
 
   // Generate SVG
   const svgContent = useMemo(() => {
     if (lollipopData.length === 0) return '';
 
     const dims = getDefaultDimensions('lollipop');
+    const { width } = dims;
+
+    // Wrap category labels (max 2 lines) and widen the left margin to fit the longest line
+    const wrappedLabels = lollipopData.map(d => wrapCategoryLabel(d.category));
+    const maxLabelChars = wrappedLabels.reduce((m, lines) => Math.max(m, ...lines.map(l => l.length)), 0);
+    const margin = { ...dims.margin, left: Math.min(260, Math.max(60, Math.ceil(maxLabelChars * 6.8) + 16)) };
+
     // Adjust height if many categories
     const rowHeight = 28;
     const minPlotHeight = lollipopData.length * rowHeight;
-    const adjustedHeight = Math.max(dims.height, minPlotHeight + dims.margin.top + dims.margin.bottom);
-    const { width, margin } = dims;
-    const height = adjustedHeight;
+    const baseHeight = Math.max(dims.height, minPlotHeight + dims.margin.top + dims.margin.bottom);
     const plotW = width - margin.left - margin.right;
-    const plotH = height - margin.top - margin.bottom;
+    const plotH = baseHeight - margin.top - margin.bottom;
+    const axisY = margin.top + plotH;
 
-    // Value scale (include CI upper bounds so whiskers stay on-plot)
-    const maxVal = Math.max(...lollipopData.map(d => Math.max(d.value, d.upper ?? d.value)));
-    const niceMax = getNiceMax(maxVal);
+    // Value scale from a zero baseline; extend the nice max to cover the reference line
+    const maxVal = Math.max(...lollipopData.map(d => d.value));
+    const niceMax = getNiceMax(Math.max(maxVal, referenceValue ?? 0));
 
     const xScale = (v: number) => margin.left + (v / niceMax) * plotW;
     const yScale = (i: number) => margin.top + (i + 0.5) * (plotH / lollipopData.length);
+
+    const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
+
+    // Single scheme color; highlight mode uses an accent against muted gray
+    const schemeColor = getChartColor(0, colorScheme);
+    const HIGHLIGHT_COLOR = '#E57A3A';
+    const MUTED_COLOR = '#D1D5DB';
 
     let svg = '';
 
@@ -185,19 +266,27 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     for (let i = 0; i <= tickCount; i++) {
       const tickVal = (niceMax / tickCount) * i;
       const x = xScale(tickVal);
-      svg += svgGridLine(x, margin.top, x, margin.top + plotH);
+      svg += svgGridLine(x, margin.top, x, axisY);
       // Tick labels on bottom
-      const label = Number.isInteger(tickVal) ? String(tickVal) : tickVal.toFixed(1);
-      svg += svgText(x, margin.top + plotH + 18, label, {
+      svg += svgText(x, axisY + 18, formatValue(tickVal, valueFormat, true), {
         anchor: 'middle', fontSize: 11, fill: '#888',
       });
     }
 
-    // Y-axis line
-    svg += svgAxisLine(margin.left, margin.top, margin.left, margin.top + plotH);
+    // Y-axis line (zero baseline the sticks grow from)
+    svg += svgAxisLine(margin.left, margin.top, margin.left, axisY);
 
     // Bottom axis line
-    svg += svgAxisLine(margin.left, margin.top + plotH, margin.left + plotW, margin.top + plotH);
+    svg += svgAxisLine(margin.left, axisY, margin.left + plotW, axisY);
+
+    // Reference line
+    if (referenceValue !== null) {
+      const refX = xScale(referenceValue);
+      svg += `<line x1="${refX}" y1="${margin.top}" x2="${refX}" y2="${axisY}" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+      if (referenceLabel) {
+        svg += svgText(refX + 4, margin.top + 4, referenceLabel, { anchor: 'start', fontSize: 10, fill: '#777', dy: '0.35em' });
+      }
+    }
 
     // Draw lollipops
     const dotRadius = 6;
@@ -205,45 +294,61 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       const point = lollipopData[i];
       const y = yScale(i);
       const xEnd = xScale(point.value);
-      const color = getChartColor(i, colorScheme);
+      const color = highlightCat
+        ? (point.category === highlightCat ? HIGHLIGHT_COLOR : MUTED_COLOR)
+        : schemeColor;
 
-      // Category label on the left
-      svg += svgText(margin.left - 8, y, truncateLabel(point.category, 22), {
-        anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em',
-      });
-
-      // Confidence interval
-      if (point.lower !== undefined && point.upper !== undefined) {
-        const ciLowerX = xScale(point.lower);
-        const ciUpperX = xScale(point.upper);
-        const capHeight = 3;
-
-        // CI horizontal line
-        svg += `<line x1="${Math.min(ciLowerX, ciUpperX)}" y1="${y}" x2="${Math.max(ciLowerX, ciUpperX)}" y2="${y}" stroke="#555" stroke-width="1.5"/>`;
-
-        // Left cap
-        svg += `<line x1="${Math.min(ciLowerX, ciUpperX)}" y1="${y - capHeight}" x2="${Math.min(ciLowerX, ciUpperX)}" y2="${y + capHeight}" stroke="#555" stroke-width="1.5"/>`;
-
-        // Right cap
-        svg += `<line x1="${Math.max(ciLowerX, ciUpperX)}" y1="${y - capHeight}" x2="${Math.max(ciLowerX, ciUpperX)}" y2="${y + capHeight}" stroke="#555" stroke-width="1.5"/>`;
+      // Category label on the left (wrapped to at most 2 lines)
+      const lines = wrappedLabels[i];
+      if (lines.length === 1) {
+        svg += svgText(margin.left - 8, y, lines[0], { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
+      } else {
+        svg += svgText(margin.left - 8, y - 7, lines[0], { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
+        svg += svgText(margin.left - 8, y + 7, lines[1], { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
       }
 
       // Stick (thin line from axis to dot)
       svg += `<line x1="${margin.left}" y1="${y}" x2="${xEnd}" y2="${y}" stroke="${color}" stroke-width="2" stroke-opacity="0.7"/>`;
 
-      // Dot (solid circle at the end)
-      svg += `<circle cx="${xEnd}" cy="${y}" r="${dotRadius}" fill="${color}"/>`;
+      // Dot at the end (hollow when the small-count flag applies)
+      const hollow = flagSmallCounts && point.n < 20;
+      svg += hollow
+        ? `<circle cx="${xEnd}" cy="${y}" r="${dotRadius}" fill="white" stroke="${color}" stroke-width="1.5"/>`
+        : `<circle cx="${xEnd}" cy="${y}" r="${dotRadius}" fill="${color}"/>`;
 
       // Value label next to dot
       if (showLabels) {
-        const labelVal = Number.isInteger(point.value)
-          ? String(point.value)
-          : point.value.toFixed(1);
-        svg += svgText(xEnd + dotRadius + 4, y, labelVal, {
+        svg += svgText(xEnd + dotRadius + 4, y, formatValue(point.value, valueFormat), {
           anchor: 'start', fontSize: 10, fill: '#555', dy: '0.35em',
         });
       }
     }
+
+    // Bottom area: axis title, then footnotes stacked at the bottom left, then the source line
+    let cursorY = axisY + 34;
+    if (axisTitle) {
+      svg += svgText(margin.left + plotW / 2, cursorY, axisTitle, { fontSize: 12, fill: '#444' });
+      cursorY += 4;
+    }
+
+    const footnotes: string[] = [];
+    if (valueMode === 'count') {
+      footnotes.push(`Values show the number of records per ${colLabel(categoryCol)}.`);
+    } else {
+      footnotes.push(`Values show the ${aggregation} of ${colLabel(numericCol)} per ${colLabel(categoryCol)}.`);
+    }
+    if (flagSmallCounts && lollipopData.some(d => d.n < 20)) {
+      footnotes.push('Hollow dots indicate categories based on fewer than 20 records. Interpret with caution.');
+    }
+    if (excluded > 0) {
+      footnotes.push(`${excluded} record${excluded === 1 ? '' : 's'} excluded due to missing values.`);
+    }
+    for (const note of footnotes) {
+      cursorY += 14;
+      svg += svgText(10, cursorY, note, { anchor: 'start', fontSize: 10, fill: '#999' });
+    }
+
+    const height = Math.max(cursorY + 18, baseHeight);
 
     // Source
     if (source) {
@@ -251,7 +356,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [lollipopData, showLabels, colorScheme, title, subtitle, source]);
+  }, [lollipopData, excluded, showLabels, flagSmallCounts, colorScheme, highlightCat, valueFormat, referenceValue, referenceLabel, axisTitle, title, subtitle, source, valueMode, categoryCol, numericCol, aggregation, dataset]);
 
   const displayTitle = title || 'Lollipop Chart';
 
@@ -259,39 +364,8 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     <div className="flex gap-6">
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
-
-          <VisualizationTip
-            tip="Lollipop charts are a cleaner alternative to bar charts, reducing visual clutter while maintaining precise value communication. The dot-on-stick design draws the eye to exact values."
-            context="Featured in CDC COVE. Best for ranking data with many categories — horizontal layout keeps labels readable."
-          />
-
-          <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
-            <button
-              onClick={() => setShowGuide(!showGuide)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                When to Use This Chart
-              </span>
-              <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {showGuide && (
-              <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
-                <p>• Ranking or comparing values across many categories (10–20+)</p>
-                <p>• When you want a cleaner, more modern alternative to bar charts</p>
-                <p>• Displaying incidence rates, coverage rates, or proportions by group</p>
-                <p>• When visual weight should be minimized for cleaner reports</p>
-                <p className="text-blue-500 italic mt-2">Featured in CDC COVE as "Lollipop Bar Chart" — an accepted alternative to traditional bar charts for cleaner presentations.</p>
-              </div>
-            )}
-          </div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Data Mapping</h4>
 
           <VariableMapper
             label="Category"
@@ -333,7 +407,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
           {valueMode === 'numeric' && (
             <VariableMapper
               label="Value Column"
-              description="Numeric column (mean per category)"
+              description="Numeric column aggregated per category"
               columns={dataset.columns}
               value={numericCol}
               onChange={setNumericCol}
@@ -341,30 +415,10 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               required
             />
           )}
+        </div>
 
-          {valueMode === 'numeric' && (
-            <div className="mt-2 pl-2 border-l-2 border-gray-200">
-              <p className="text-xs text-gray-500 mb-2">Optional: Confidence Intervals</p>
-              <VariableMapper
-                label="Lower CI"
-                description="Lower confidence limit"
-                columns={dataset.columns}
-                value={lowerCICol}
-                onChange={setLowerCICol}
-                filterTypes={['number']}
-                placeholder="None"
-              />
-              <VariableMapper
-                label="Upper CI"
-                description="Upper confidence limit"
-                columns={dataset.columns}
-                value={upperCICol}
-                onChange={setUpperCICol}
-                filterTypes={['number']}
-                placeholder="None"
-              />
-            </div>
-          )}
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Options</h4>
 
           {/* Sort mode */}
           <div className="mb-3">
@@ -377,6 +431,48 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               <option value="value-desc">Value (high to low)</option>
               <option value="value-asc">Value (low to high)</option>
               <option value="alpha">Alphabetical</option>
+            </select>
+          </div>
+
+          {valueMode === 'numeric' && (
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Aggregation</label>
+              <select
+                value={aggregation}
+                onChange={e => setAggregation(e.target.value as Aggregation)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="mean">Mean</option>
+                <option value="sum">Sum</option>
+                <option value="median">Median</option>
+              </select>
+            </div>
+          )}
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Value Format</label>
+            <select
+              value={valueFormat}
+              onChange={e => setValueFormat(e.target.value as ValueFormat)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="number">Number</option>
+              <option value="percent">Percent</option>
+              <option value="rate">Rate per 100,000</option>
+            </select>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Highlight category</label>
+            <select
+              value={highlightCat}
+              onChange={e => setHighlightCat(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">None</option>
+              {categoryOptions.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -395,25 +491,54 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               <option value="warm">Warm</option>
             </select>
           </div>
-        </div>
 
-        {/* Display options */}
-        <div className="border-t border-gray-200 pt-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Display Options</h4>
-          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reference line (optional)</label>
+            <input
+              type="number"
+              value={referenceLine}
+              onChange={e => setReferenceLine(e.target.value)}
+              placeholder="No reference line"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reference label</label>
+            <input
+              type="text"
+              value={referenceLabel}
+              onChange={e => setReferenceLabel(e.target.value)}
+              placeholder="e.g. National average"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mb-2">
             <input
               type="checkbox"
               checked={showLabels}
               onChange={e => setShowLabels(e.target.checked)}
-              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              className="rounded border-gray-300"
             />
-            Show data labels
+            Show value labels
+          </label>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={flagSmallCounts}
+              onChange={e => setFlagSmallCounts(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Flag small counts (n &lt; 20)
           </label>
         </div>
 
-        {/* Text inputs */}
-        <div className="border-t border-gray-200 pt-4 space-y-3">
-          <div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Annotations</h4>
+
+          <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
             <input
               type="text"
@@ -423,7 +548,8 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-          <div>
+
+          <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
             <input
               type="text"
@@ -433,7 +559,22 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
-          <div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Axis Title</label>
+            <input
+              type="text"
+              value={axisTitle}
+              onChange={e => {
+                setAxisTitle(e.target.value);
+                setAxisTitleEdited(true);
+              }}
+              placeholder="Defaults to the value being plotted"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
             <input
               type="text"
@@ -482,10 +623,4 @@ function getNiceMax(value: number): number {
   else if (normalized <= 5) nice = 5;
   else nice = 10;
   return nice * magnitude;
-}
-
-/** Truncate label to max characters with ellipsis */
-function truncateLabel(label: string, maxLen: number): string {
-  if (label.length <= maxLen) return label;
-  return label.slice(0, maxLen - 1) + '\u2026';
 }

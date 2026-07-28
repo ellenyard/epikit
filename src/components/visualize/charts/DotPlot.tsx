@@ -241,12 +241,20 @@ export function DotPlot({ dataset }: DotPlotProps) {
   const [axisTitleEdited, setAxisTitleEdited] = useState(false);
   const [source, setSource] = useState('');
 
-  // Pre-select sensible defaults so a chart renders immediately on dataset load or change
+  // Pre-select sensible defaults so a chart renders immediately on dataset load or change.
+  // Prefer a categorical column with 3-30 distinct values (a true grouping variable like
+  // Case Status) over ID-like text columns and two-value columns like Sex.
   useEffect(() => {
     const catValid = categoryCol !== '' && dataset.columns.some(c => c.key === categoryCol);
     if (!catValid) {
-      const firstText = dataset.columns.find(c => c.type === 'text' || c.type === 'categorical');
-      if (firstText) setCategoryCol(firstText.key);
+      const distinct = (key: string) =>
+        new Set(dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')).size;
+      const cats = dataset.columns.filter(c => c.type === 'categorical');
+      const ideal = cats.find(c => { const n = distinct(c.key); return n >= 3 && n <= 30; });
+      const fallback = cats.find(c => { const n = distinct(c.key); return n >= 2 && n <= 30; })
+        ?? dataset.columns.find(c => c.type === 'text' || c.type === 'categorical');
+      const chosen = ideal ?? fallback;
+      if (chosen) setCategoryCol(chosen.key);
     }
     const valValid = valueCol !== '' && dataset.columns.some(c => c.key === valueCol && c.type === 'number');
     if (!valValid) {
