@@ -1,6 +1,6 @@
 # LineList
 
-LineList is a browser-based toolkit for reviewing, cleaning, analyzing, mapping, and visualizing outbreak investigation data. It is designed for FETP residents, junior epidemiologists, and public health professionals who need guided analytical workflows without writing code.
+LineList is a browser-based toolkit for reviewing, cleaning, analyzing, mapping, and visualizing epidemiologic data. It supports both outbreak investigation and routine analysis such as summarizing surveillance data. It is designed for FETP residents, junior epidemiologists, surveillance officers, and public health professionals who need guided analytical workflows without writing code.
 
 Live application: [https://linelist.org](https://linelist.org)
 
@@ -12,7 +12,7 @@ Live application: [https://linelist.org](https://linelist.org)
 - Spot maps, area maps, and sketch maps
 - Descriptive statistics, frequency tables, cross-tabulations, and 2×2 analysis
 - Publication-oriented chart gallery and exports
-- Synthetic training datasets and embedded tutorials
+- Synthetic training datasets (foodborne outbreak, monthly disease surveillance, child nutrition survey) and embedded tutorials
 - Project export and import for portable backups
 - Locale and accessibility controls
 
@@ -50,6 +50,15 @@ npm run test:area-map
 - Tailwind CSS
 - Leaflet and OpenStreetMap-derived layers
 - Vite
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+## Disclaimer
+
+LineList is an independent project. It is not an official product of, and is not endorsed by, the
+Centers for Disease Control and Prevention.
 
 ## Acknowledgment
 

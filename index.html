@@ -3,8 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LineList: Outbreak Investigation Toolkit</title>
-    <meta name="description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser. A free, privacy-first toolkit for field epidemiologists, with no installation and no data upload." />
+    <title>LineList: Outbreak and Surveillance Data Toolkit</title>
+    <meta name="description" content="Clean, analyze, map, and visualize epidemiologic data in your browser, from outbreak investigations to routine surveillance. Free, privacy-first, no upload." />
     <meta name="author" content="Ellen Yard" />
     <meta name="robots" content="index, follow" />
     <link rel="canonical" href="https://linelist.org/" />
@@ -12,16 +12,16 @@
     <!-- Open Graph / Social sharing -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="LineList" />
-    <meta property="og:title" content="LineList: Outbreak Investigation Toolkit" />
-    <meta property="og:description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser. Free, privacy-first, no installation." />
+    <meta property="og:title" content="LineList: Outbreak and Surveillance Data Toolkit" />
+    <meta property="og:description" content="Clean, analyze, map, and visualize outbreak and surveillance data in your browser. Free, privacy-first, no installation." />
     <meta property="og:url" content="https://linelist.org/" />
     <meta property="og:image" content="https://linelist.org/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="LineList - Outbreak Investigation Toolkit" />
+    <meta property="og:image:alt" content="LineList - Outbreak and Surveillance Data Toolkit" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="LineList: Outbreak Investigation Toolkit" />
-    <meta name="twitter:description" content="Clean, analyze, map, and visualize outbreak investigation data in your browser." />
+    <meta name="twitter:title" content="LineList: Outbreak and Surveillance Data Toolkit" />
+    <meta name="twitter:description" content="Clean, analyze, map, and visualize outbreak and surveillance data in your browser." />
     <meta name="twitter:image" content="https://linelist.org/og-image.png" />
 
     <script type="application/ld+json">
@@ -30,7 +30,7 @@
         "@type": "SoftwareApplication",
         "name": "LineList",
         "url": "https://linelist.org/",
-        "description": "A browser-based toolkit for cleaning, analyzing, mapping, and visualizing outbreak investigation data.",
+        "description": "A browser-based toolkit for cleaning, analyzing, mapping, and visualizing epidemiologic data, from outbreak investigations to routine surveillance.",
         "applicationCategory": "HealthApplication",
         "operatingSystem": "Any",
         "isAccessibleForFree": true,
@@ -86,6 +86,25 @@
       }
 
       a { color: inherit; text-decoration: none; }
+
+      /* Keyboard focus: visible against both the light page and the blue buttons */
+      :focus-visible {
+        outline: 3px solid var(--blue-600);
+        outline-offset: 2px;
+      }
+      .btn-primary:focus-visible {
+        outline-color: var(--slate-900);
+        outline-offset: 3px;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        *, *::before, *::after {
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
 
       .container { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
@@ -165,6 +184,13 @@
         font-size: 14px;
         color: var(--slate-500);
       }
+      .hero-note a, .cta-alt a {
+        color: var(--blue-700);
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .cta-alt { font-size: 15px; color: var(--slate-600); margin-top: 18px; }
       .hero-visual {
         margin-top: 48px;
         padding: 10px;
@@ -331,10 +357,15 @@
       .footer-links { display: flex; gap: 24px; font-size: 14px; color: var(--slate-600); }
       .footer-links a:hover { color: var(--slate-900); }
       .footer-copy { font-size: 13px; color: var(--slate-500); width: 100%; }
+      .footer-copy a { color: var(--slate-600); text-decoration: underline; text-underline-offset: 2px; }
+      /* slate-500 keeps this at 4.55:1 on the slate-50 footer; slate-400 would be 2.45:1 */
+      .footer-disclaimer { font-size: 12px; color: var(--slate-500); width: 100%; margin-top: 10px; }
 
       @media (max-width: 860px) {
         .features { grid-template-columns: 1fr; }
-        .nav-links a:not(.btn) { display: none; }
+        .nav-links { gap: 16px; }
+        .nav-links a:not(.btn) { font-size: 14px; }
+        .nav-links .btn { padding: 9px 14px; font-size: 14px; }
         .hero h1 { font-size: 38px; }
         .hero p.lede { font-size: 18px; }
         .hero { padding: 52px 0 60px; }
@@ -355,13 +386,20 @@
         .final-cta h2 { font-size: 28px; }
         section.block { padding: 60px 0; }
       }
+
+      @media (max-width: 430px) {
+        .container { padding: 0 16px; }
+        .brand-name { display: none; }
+        .nav-links { gap: 12px; }
+        .nav-links .btn { padding: 9px 12px; }
+      }
     </style>
   </head>
   <body>
     <!-- Header -->
     <header>
       <div class="container nav">
-        <a class="brand" href="/">
+        <a class="brand" href="/" aria-label="LineList home">
           <span class="brand-mark">
             <svg width="22" height="22" viewBox="0 0 32 32" fill="none" aria-hidden="true">
               <circle cx="8" cy="10" r="1.9" fill="#3b82f6"/>
@@ -372,7 +410,7 @@
               <rect x="12.5" y="20.5" width="12.5" height="3" rx="1.5" fill="#3b82f6" opacity="0.45"/>
             </svg>
           </span>
-          LineList
+          <span class="brand-name">LineList</span>
         </a>
         <nav class="nav-links">
           <a href="#workflow">Features</a>
@@ -386,15 +424,18 @@
     <section class="hero">
       <div class="container">
         <span class="eyebrow">Free · Privacy-first · Publication-ready</span>
-        <h1>Turn outbreak data into answers</h1>
+        <h1>Turn outbreak and surveillance data into answers</h1>
         <p class="lede">
-          Review and clean a line list, build epi curves and maps, calculate key measures, and export publication-ready figures—all in your browser.
+          Review and clean your data, build epi curves, maps, and summary tables, calculate key measures, and export publication-ready figures—all in your browser.
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary btn-lg" href="/app/?sample=outbreak">Try a sample outbreak</a>
           <a class="btn btn-ghost btn-lg" href="/app/?action=import">Import your own data</a>
         </div>
-        <p class="hero-note">No account required · Synthetic sample data included</p>
+        <p class="hero-note">
+          No account required · Doing routine analysis? Open the
+          <a href="/app/?sample=surveillance">surveillance sample</a> instead.
+        </p>
         <div class="hero-visual">
           <div class="browser-frame">
             <div class="browser-bar" aria-hidden="true">
@@ -402,11 +443,26 @@
               <span class="browser-title">LineList · Synthetic outbreak</span>
             </div>
             <picture>
-              <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+              <!-- Phones get a tight crop of the region this step describes; the full
+                   1440-wide capture is unreadable below ~600px. -->
+              <source
+                media="(max-width: 860px)"
+                srcset="/screenshots/epicurve-narrow.webp"
+                type="image/webp"
+                width="680"
+                height="456"
+              />
+              <source
+                media="(max-width: 860px)"
+                srcset="/screenshots/epicurve-narrow.png"
+                width="680"
+                height="456"
+              />
+              <source srcset="/screenshots/epicurve.webp" type="image/webp" width="1440" height="690" />
               <img
                 src="/screenshots/epicurve.png"
                 width="1440"
-                height="900"
+                height="690"
                 alt="LineList epidemic curve using 12-hour bins and case-status strata, with an exposure annotation and 7-1-7 response metrics"
                 fetchpriority="high"
                 decoding="async"
@@ -422,7 +478,7 @@
       <div class="container">
         <div class="section-head">
           <h2>From line list to maps and figures</h2>
-          <p>See the core workflow using the included synthetic foodborne outbreak.</p>
+          <p>See the core workflow using the included synthetic foodborne outbreak. The same tools summarize routine surveillance and survey data.</p>
         </div>
         <div class="workflow-previews">
           <article class="workflow-preview">
@@ -433,11 +489,26 @@
                   <span class="browser-title">Review &amp; clean</span>
                 </div>
                 <picture>
-                  <source srcset="/screenshots/review-clean.webp" type="image/webp" />
+                  <!-- Phones get a tight crop of the region this step describes; the full
+                       1440-wide capture is unreadable below ~600px. -->
+                  <source
+                    media="(max-width: 860px)"
+                    srcset="/screenshots/review-clean-narrow.webp"
+                    type="image/webp"
+                    width="600"
+                    height="405"
+                  />
+                  <source
+                    media="(max-width: 860px)"
+                    srcset="/screenshots/review-clean-narrow.png"
+                    width="600"
+                    height="405"
+                  />
+                  <source srcset="/screenshots/review-clean.webp" type="image/webp" width="1215" height="880" />
                   <img
                     src="/screenshots/review-clean.png"
-                    width="1440"
-                    height="900"
+                    width="1215"
+                    height="880"
                     alt="Synthetic foodborne outbreak line list beside the Data Quality panel showing no issues detected"
                     loading="lazy"
                     decoding="async"
@@ -460,11 +531,26 @@
                   <span class="browser-title">Analyze</span>
                 </div>
                 <picture>
-                  <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+                  <!-- Phones get a tight crop of the region this step describes; the full
+                       1440-wide capture is unreadable below ~600px. -->
+                  <source
+                    media="(max-width: 860px)"
+                    srcset="/screenshots/epicurve-narrow.webp"
+                    type="image/webp"
+                    width="680"
+                    height="456"
+                  />
+                  <source
+                    media="(max-width: 860px)"
+                    srcset="/screenshots/epicurve-narrow.png"
+                    width="680"
+                    height="456"
+                  />
+                  <source srcset="/screenshots/epicurve.webp" type="image/webp" width="1440" height="690" />
                   <img
                     src="/screenshots/epicurve.png"
                     width="1440"
-                    height="900"
+                    height="690"
                     alt="Synthetic epidemic curve stratified by confirmed, probable, and suspected cases, with exposure timing and 7-1-7 milestones"
                     loading="lazy"
                     decoding="async"
@@ -487,11 +573,26 @@
                   <span class="browser-title">Spot map</span>
                 </div>
                 <picture>
-                  <source srcset="/screenshots/spot-map.webp" type="image/webp" />
+                  <!-- Phones get a tight crop of the region this step describes; the full
+                       1440-wide capture is unreadable below ~600px. -->
+                  <source
+                    media="(max-width: 860px)"
+                    srcset="/screenshots/spot-map-narrow.webp"
+                    type="image/webp"
+                    width="610"
+                    height="510"
+                  />
+                  <source
+                    media="(max-width: 860px)"
+                    srcset="/screenshots/spot-map-narrow.png"
+                    width="610"
+                    height="510"
+                  />
+                  <source srcset="/screenshots/spot-map.webp" type="image/webp" width="1440" height="785" />
                   <img
                     src="/screenshots/spot-map.png"
                     width="1440"
-                    height="900"
+                    height="785"
                     alt="Synthetic foodborne outbreak spot map with jittered case locations colored by classification and map export controls"
                     loading="lazy"
                     decoding="async"
@@ -505,11 +606,26 @@
                     <span class="browser-title">Epi curve</span>
                   </div>
                   <picture>
-                    <source srcset="/screenshots/epicurve.webp" type="image/webp" />
+                    <!-- Phones get a tight crop of the region this step describes; the full
+                         1440-wide capture is unreadable below ~600px. -->
+                    <source
+                      media="(max-width: 860px)"
+                      srcset="/screenshots/epicurve-narrow.webp"
+                      type="image/webp"
+                      width="680"
+                      height="456"
+                    />
+                    <source
+                      media="(max-width: 860px)"
+                      srcset="/screenshots/epicurve-narrow.png"
+                      width="680"
+                      height="456"
+                    />
+                    <source srcset="/screenshots/epicurve.webp" type="image/webp" width="1440" height="690" />
                     <img
                       src="/screenshots/epicurve.png"
                       width="1440"
-                      height="900"
+                      height="690"
                       alt="Synthetic epidemic curve with case-status strata, exposure timing, and response milestones"
                       loading="lazy"
                       decoding="async"
@@ -522,11 +638,26 @@
                     <span class="browser-title">Publication figure</span>
                   </div>
                   <picture>
-                    <source srcset="/screenshots/visualize-chart.webp" type="image/webp" />
+                    <!-- Phones get a tight crop of the region this step describes; the full
+                         1440-wide capture is unreadable below ~600px. -->
+                    <source
+                      media="(max-width: 860px)"
+                      srcset="/screenshots/visualize-chart-narrow.webp"
+                      type="image/webp"
+                      width="480"
+                      height="235"
+                    />
+                    <source
+                      media="(max-width: 860px)"
+                      srcset="/screenshots/visualize-chart-narrow.png"
+                      width="480"
+                      height="235"
+                    />
+                    <source srcset="/screenshots/visualize-chart.webp" type="image/webp" width="1410" height="640" />
                     <img
                       src="/screenshots/visualize-chart.png"
-                      width="1440"
-                      height="900"
+                      width="1410"
+                      height="640"
                       alt="Publication-ready horizontal bar chart of synthetic cases by classification with export controls"
                       loading="lazy"
                       decoding="async"
@@ -550,8 +681,8 @@
       <div class="container">
         <div class="audience">
           <span class="audience-kicker">Who LineList is for</span>
-          <h2>Built for people doing practical outbreak work</h2>
-          <p>LineList is designed for field epidemiologists, outbreak investigators, FETP residents and instructors, and public-health teams that need dependable results without a programming workflow.</p>
+          <h2>Built for people doing practical field epidemiology</h2>
+          <p>LineList is designed for field epidemiologists, surveillance officers, outbreak investigators, FETP residents and instructors, and public-health teams that need dependable results without a programming workflow.</p>
         </div>
         <div class="section-head compact">
           <h2>Also included</h2>
@@ -583,7 +714,7 @@
             <span class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20l9-5-9-5-9 5 9 5zM12 4L3 9l9 5 9-5-9-5z" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             <div>
               <h3>Training datasets &amp; tutorials</h3>
-              <p>Learn with synthetic investigations and step-by-step guidance inside the app.</p>
+              <p>Learn with synthetic outbreak, surveillance, and nutrition-survey datasets, plus step-by-step guidance inside the app.</p>
             </div>
           </div>
           <div class="feature">
@@ -636,6 +767,10 @@
         <h2>See the workflow with a ready-made outbreak</h2>
         <p>Explore the synthetic foodborne investigation with its epi curve, spot map, exposure timing, and response milestones already configured.</p>
         <a class="btn btn-primary btn-lg" href="/app/?sample=outbreak">Try the sample outbreak →</a>
+        <p class="cta-alt">
+          Working with routine data instead?
+          <a href="/app/?sample=surveillance">Open the monthly surveillance sample</a>
+        </p>
       </div>
     </section>
 
@@ -657,9 +792,18 @@
           <a href="/app/">Launch app</a>
           <a href="#workflow">Features</a>
           <a href="#privacy">Privacy</a>
+          <a href="/app/?action=help">Help</a>
           <a href="https://github.com/ellenyard/epikit" target="_blank" rel="noopener noreferrer">GitHub</a>
         </nav>
-        <p class="footer-copy">LineList is a free, browser-based toolkit for outbreak investigation. Built by Ellen Yard.</p>
+        <p class="footer-copy">
+          LineList is a free, browser-based toolkit for outbreak investigation and routine
+          epidemiologic analysis. Built by Ellen Yard. Released under the
+          <a href="https://github.com/ellenyard/epikit/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>.
+        </p>
+        <p class="footer-disclaimer">
+          An independent project. Not an official product of, or endorsed by, the Centers for
+          Disease Control and Prevention.
+        </p>
       </div>
     </footer>
   </body>

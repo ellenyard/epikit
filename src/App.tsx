@@ -67,24 +67,43 @@ interface InitialAppEntry {
   activeModule: Module;
   activeDatasetId?: string;
   showImport: boolean;
+  showHelp: boolean;
   sampleOutbreak: boolean;
 }
 
 function getInitialAppEntry(): InitialAppEntry {
   const params = new URLSearchParams(window.location.search);
 
-  if (params.get('sample') === 'outbreak') {
+  const action = params.get('action');
+  const sample = params.get('sample');
+
+  if (sample === 'outbreak') {
     return {
       activeModule: 'epicurve',
       activeDatasetId: DEMO_DATASET_ID,
       showImport: false,
+      showHelp: false,
       sampleOutbreak: true,
+    };
+  }
+
+  // Routine-analysis counterpart to the outbreak sample: opens the monthly
+  // district surveillance dataset in the Analysis module.
+  if (sample === 'surveillance') {
+    return {
+      activeModule: 'analysis',
+      activeDatasetId: DEMO_SURVEILLANCE_DATASET_ID,
+      showImport: false,
+      showHelp: false,
+      sampleOutbreak: false,
     };
   }
 
   return {
     activeModule: 'dashboard',
-    showImport: params.get('action') === 'import',
+    showImport: action === 'import',
+    // Lets the marketing site link straight into the Help Center at /app/?action=help
+    showHelp: action === 'help',
     sampleOutbreak: false,
   };
 }
@@ -122,7 +141,14 @@ const createSurveillanceDemoDataset = (): Dataset => ({
   updatedAt: new Date().toISOString(),
 });
 
-function loadInitialDatasets(ensureOutbreakDemo = false): Dataset[] {
+/** Rebuilds a bundled demo dataset that a returning user may have deleted. */
+const DEMO_DATASET_FACTORIES: Record<string, () => Dataset> = {
+  [DEMO_DATASET_ID]: createDemoDataset,
+  [DEMO_NUTRITION_DATASET_ID]: createNutritionDemoDataset,
+  [DEMO_SURVEILLANCE_DATASET_ID]: createSurveillanceDemoDataset,
+};
+
+function loadInitialDatasets(ensureDatasetId?: string): Dataset[] {
   // Parse persisted datasets defensively: corrupted localStorage must not crash
   // the app at startup. On failure, drop the corrupt key and fall back to the
   // bundled demo datasets.
@@ -143,8 +169,9 @@ function loadInitialDatasets(ensureOutbreakDemo = false): Dataset[] {
   const savedVersion = localStorage.getItem('epikit_demoDataVersion');
 
   if (savedVersion && Number(savedVersion) >= DEMO_DATA_VERSION) {
-    if (ensureOutbreakDemo && !datasets.some(d => d.id === DEMO_DATASET_ID)) {
-      return [createDemoDataset(), ...datasets];
+    const ensureFactory = ensureDatasetId ? DEMO_DATASET_FACTORIES[ensureDatasetId] : undefined;
+    if (ensureFactory && !datasets.some(d => d.id === ensureDatasetId)) {
+      return [ensureFactory(), ...datasets];
     }
     return datasets;
   }
@@ -171,7 +198,7 @@ function App() {
   const [showImport, setShowImport] = useState(initialEntry.showImport);
   const [showSampleGuide, setShowSampleGuide] = useState(initialEntry.sampleOutbreak);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [showHelpCenter, setShowHelpCenter] = useState(false);
+  const [showHelpCenter, setShowHelpCenter] = useState(initialEntry.showHelp);
   const [showAccessibilitySettings, setShowAccessibilitySettings] = useState(false);
   const [showLocaleSettings, setShowLocaleSettings] = useState(false);
   const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
@@ -186,7 +213,7 @@ function App() {
   // Each dataset has columns (schema) and records (rows of data).
   // ---------------------------------------------------------------------------
   const [datasets, setDatasets] = useState<Dataset[]>(() => {
-    return loadInitialDatasets(initialEntry.sampleOutbreak);
+    return loadInitialDatasets(initialEntry.activeDatasetId);
   });
 
   // Which dataset is currently selected for viewing/editing
