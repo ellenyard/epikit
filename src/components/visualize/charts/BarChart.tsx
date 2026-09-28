@@ -1,10 +1,9 @@
-import { useState, useMemo } from 'react';
-import type { Dataset } from '../../../types/analysis';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import type { Dataset, DataColumn } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
-import { VisualizationTip } from '../shared/VisualizationTip';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
-import { getChartColors } from '../../../utils/chartColors';
+import { getChartColor } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -15,107 +14,248 @@ import {
   svgGridLine,
   type ExcelExportData,
 } from '../../../utils/chartExport';
-import { calculateFrequency } from '../../../utils/statistics';
 
 interface BarChartProps {
   dataset: Dataset;
 }
 
+/** Upper bound on distinct values for a column to be auto-selected as the category axis. */
+const MAX_AUTO_CATEGORIES = 30;
+
 type SortMode = 'value' | 'alpha' | 'custom';
-type ValueMode = 'count' | 'sum' | 'mean';
+type ValueMode = 'count' | 'sum' | 'mean' | 'median';
+type ValueFormat = 'number' | 'percent';
+type Orientation = 'horizontal' | 'vertical';
 
 interface BarData {
   label: string;
   value: number;
-  lower?: number;
-  upper?: number;
+  n: number;
 }
 
-/** Generate SVG for bar chart from sorted data. */
-function generateBarSvg(
-  sortedData: BarData[],
-  colorScheme: ChartColorScheme,
-  showDataLabels: boolean,
-  chartTitle: string,
-  chartSubtitle: string,
-  chartSource: string
-): string {
-  if (sortedData.length === 0) return '';
+interface BarDataResult {
+  data: BarData[];
+  excluded: number;
+}
+
+interface BarSvgOptions {
+  sortedData: BarData[];
+  excluded: number;
+  colorScheme: ChartColorScheme;
+  showDataLabels: boolean;
+  title: string;
+  subtitle: string;
+  source: string;
+  axisTitle: string;
+  valueFormat: ValueFormat;
+  valueMode: ValueMode;
+  categoryVar: string;
+  valueVar: string;
+  highlightCat: string;
+  flagSmallCounts: boolean;
+  referenceValue: number | null;
+  referenceLabel: string;
+  orientation: Orientation;
+  dataset: Dataset;
+}
+
+/** Format a numeric value for tick and bar labels. */
+function formatValue(val: number, format: ValueFormat, abbreviate = false): string {
+  let base: string;
+  if (abbreviate && Math.abs(val) >= 1000) base = `${(val / 1000).toFixed(1)}k`;
+  else base = Number.isInteger(val) ? String(val) : val.toFixed(1);
+  return format === 'percent' ? `${base}%` : base;
+}
+
+/** Wrap a category label into at most 2 lines, breaking near 22-25 chars on a space when possible. */
+function wrapCategoryLabel(label: string): string[] {
+  const MAX_LINE = 25;
+  if (label.length <= MAX_LINE) return [label];
+  let breakIdx = -1;
+  for (let i = MAX_LINE - 1; i >= 12; i--) {
+    if (label[i] === ' ') {
+      breakIdx = i;
+      break;
+    }
+  }
+  if (breakIdx === -1) breakIdx = MAX_LINE - 1;
+  const line1 = label.slice(0, breakIdx).trimEnd();
+  let line2 = label.slice(breakIdx).trim();
+  if (line2.length > MAX_LINE) line2 = `${line2.slice(0, MAX_LINE - 1).trimEnd()}...`;
+  return [line1, line2];
+}
+
+/** Sort bar data by the selected mode (custom uses the column's valueOrder). */
+function sortBarData(data: BarData[], sortMode: SortMode, valueOrder?: string[]): BarData[] {
+  const sorted = [...data];
+
+  if (sortMode === 'value') {
+    sorted.sort((a, b) => b.value - a.value);
+  } else if (sortMode === 'alpha') {
+    sorted.sort((a, b) => a.label.localeCompare(b.label));
+  } else if (sortMode === 'custom' && valueOrder) {
+    const order = valueOrder;
+    sorted.sort((a, b) => {
+      const ia = order.indexOf(a.label);
+      const ib = order.indexOf(b.label);
+      // Items not in the order go to the end
+      const posA = ia === -1 ? order.length : ia;
+      const posB = ib === -1 ? order.length : ib;
+      return posA - posB;
+    });
+  }
+
+  return sorted;
+}
+
+/** Bar color for a category: single scheme color, or accent against muted gray when highlighting. */
+function barColor(label: string, highlightCat: string, schemeColor: string): string {
+  if (!highlightCat) return schemeColor;
+  return label === highlightCat ? '#E57A3A' : '#D1D5DB';
+}
+
+/** True when a highlight is active and this bar is not the highlighted one. */
+function isMutedByHighlight(label: string, highlightCat: string): boolean {
+  return !!highlightCat && label !== highlightCat;
+}
+
+/**
+ * Small-count styling. Stacking fill-opacity on top of the highlight gray renders the bar
+ * effectively invisible, so already-muted bars are flagged with a dashed outline instead.
+ */
+function smallCountAttrs(muted: boolean): string {
+  return muted
+    ? ' stroke="#6B7280" stroke-width="1" stroke-dasharray="3,2"'
+    : ' fill-opacity="0.4"';
+}
+
+/** Footnote lines stacked at the bottom left of the chart. */
+function buildFootnotes(opts: BarSvgOptions): string[] {
+  const { sortedData, excluded, valueMode, valueFormat, categoryVar, valueVar, flagSmallCounts, dataset } = opts;
+  const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
+
+  const footnotes: string[] = [];
+  if (valueMode === 'count') {
+    footnotes.push(valueFormat === 'percent'
+      ? `Values show the percent of records per ${colLabel(categoryVar)}.`
+      : `Values show the number of records per ${colLabel(categoryVar)}.`);
+  } else {
+    footnotes.push(`Values show the ${valueMode} of ${colLabel(valueVar)} per ${colLabel(categoryVar)}.`);
+  }
+  if (flagSmallCounts && sortedData.some(d => d.n < 20)) {
+    // Under an active highlight every other bar is already gray, so "muted" would be ambiguous.
+    footnotes.push(opts.highlightCat
+      ? 'Outlined bars indicate categories based on fewer than 20 records. Interpret with caution.'
+      : 'Muted bars indicate categories based on fewer than 20 records. Interpret with caution.');
+  }
+  if (excluded > 0) {
+    footnotes.push(`${excluded} record${excluded === 1 ? '' : 's'} excluded due to missing values.`);
+  }
+  return footnotes;
+}
+
+/** Generate SVG for a horizontal bar chart from sorted data. */
+function generateHorizontalBarSvg(opts: BarSvgOptions): string {
+  const {
+    sortedData,
+    colorScheme,
+    showDataLabels,
+    title,
+    subtitle,
+    source,
+    axisTitle,
+    valueFormat,
+    highlightCat,
+    flagSmallCounts,
+    referenceValue,
+    referenceLabel,
+  } = opts;
 
   const dims = getDefaultDimensions('bar');
-  const { width, height, margin } = dims;
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
+  const { width } = dims;
 
-  // Include CI upper bounds in the domain so whiskers stay on-plot
-  const maxValue = Math.max(...sortedData.map(d => Math.max(d.value, d.upper ?? d.value)), 0);
-  const niceMax = maxValue === 0 ? 10 : getNiceMax(maxValue);
+  // Wrap category labels (max 2 lines) and widen the left margin to fit the longest line
+  const wrappedLabels = sortedData.map(d => wrapCategoryLabel(d.label));
+  const maxLabelChars = wrappedLabels.reduce((m, lines) => Math.max(m, ...lines.map(l => l.length)), 0);
+  const margin = { ...dims.margin, left: Math.min(260, Math.max(60, Math.ceil(maxLabelChars * 6.8) + 16)) };
+
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = dims.height - margin.top - margin.bottom;
+
+  // Zero baseline; extend the nice max to cover the reference line
+  const maxValue = Math.max(...sortedData.map(d => d.value), 0);
+  const domainMax = Math.max(maxValue, referenceValue ?? 0);
+  const niceMax = domainMax === 0 ? 10 : getNiceMax(domainMax);
+
+  // Fit bars within the default plot height (capped at 40px, floor 6px;
+  // the SVG grows only if bars would drop below the floor)
   const barCount = sortedData.length;
   const barGap = 4;
-  const barHeight = Math.min(
-    Math.max((plotHeight - barGap * (barCount - 1)) / barCount, 8),
-    40
-  );
+  const fitBarHeight = (plotHeight - barGap * (barCount - 1)) / barCount;
+  const barHeight = Math.max(Math.min(fitBarHeight, 40), 6);
   const totalBarsHeight = barCount * barHeight + (barCount - 1) * barGap;
-  const adjustedHeight = Math.max(height, totalBarsHeight + margin.top + margin.bottom + 20);
-  const adjustedPlotHeight = adjustedHeight - margin.top - margin.bottom;
+  const baseHeight = Math.max(dims.height, totalBarsHeight + margin.top + margin.bottom + 20);
+  const adjustedPlotHeight = baseHeight - margin.top - margin.bottom;
+  const axisY = margin.top + adjustedPlotHeight;
 
-  const colors = getChartColors(barCount, colorScheme);
+  const schemeColor = getChartColor(0, colorScheme);
 
   let svg = '';
 
-  if (chartTitle) {
-    svg += svgTitle(width, chartTitle, chartSubtitle || undefined);
+  if (title) {
+    svg += svgTitle(width, title, subtitle || undefined);
   }
 
   const tickCount = 5;
   for (let i = 1; i <= tickCount; i++) {
     const x = margin.left + (i / tickCount) * plotWidth;
-    svg += svgGridLine(x, margin.top, x, margin.top + adjustedPlotHeight);
+    svg += svgGridLine(x, margin.top, x, axisY);
   }
 
   for (let i = 0; i <= tickCount; i++) {
     const x = margin.left + (i / tickCount) * plotWidth;
     const tickValue = (niceMax * i) / tickCount;
-    const label = Number.isInteger(tickValue) ? String(tickValue) : tickValue.toFixed(1);
-    svg += svgText(x, margin.top + adjustedPlotHeight + 20, label, {
+    svg += svgText(x, axisY + 20, formatValue(tickValue, valueFormat, true), {
       anchor: 'middle',
       fontSize: 11,
       fill: '#666',
     });
   }
 
+  // Reference line
+  if (referenceValue !== null) {
+    const refX = margin.left + (referenceValue / niceMax) * plotWidth;
+    svg += `<line x1="${refX}" y1="${margin.top}" x2="${refX}" y2="${axisY}" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+    if (referenceLabel) {
+      svg += svgText(refX + 4, margin.top + 4, referenceLabel, { anchor: 'start', fontSize: 10, fill: '#777', dy: '0.35em' });
+    }
+  }
+
   sortedData.forEach((d, i) => {
     const barY = margin.top + i * (barHeight + barGap);
     const barW = maxValue > 0 ? (d.value / niceMax) * plotWidth : 0;
-    const color = colors[i % colors.length];
+    const color = barColor(d.label, highlightCat, schemeColor);
+    // Small-count bars render muted (highlight wins, but still at reduced opacity)
+    const smallCount = flagSmallCounts && d.n < 20;
+    const opacity = smallCount ? smallCountAttrs(isMutedByHighlight(d.label, highlightCat)) : '';
 
-    if (d.lower !== undefined && d.upper !== undefined) {
-      const ciLowerX = maxValue > 0 ? margin.left + (d.lower / niceMax) * plotWidth : margin.left;
-      const ciUpperX = maxValue > 0 ? margin.left + (d.upper / niceMax) * plotWidth : margin.left;
-      const ciCenterY = barY + barHeight / 2;
-      const capHeight = 3;
+    svg += `<rect x="${margin.left}" y="${barY}" width="${Math.max(barW, 0)}" height="${barHeight}" fill="${color}"${opacity} rx="2"/>`;
 
-      svg += `<line x1="${Math.min(ciLowerX, ciUpperX)}" y1="${ciCenterY}" x2="${Math.max(ciLowerX, ciUpperX)}" y2="${ciCenterY}" stroke="#333" stroke-width="1.5"/>`;
-      svg += `<line x1="${Math.min(ciLowerX, ciUpperX)}" y1="${ciCenterY - capHeight}" x2="${Math.min(ciLowerX, ciUpperX)}" y2="${ciCenterY + capHeight}" stroke="#333" stroke-width="1.5"/>`;
-      svg += `<line x1="${Math.max(ciLowerX, ciUpperX)}" y1="${ciCenterY - capHeight}" x2="${Math.max(ciLowerX, ciUpperX)}" y2="${ciCenterY + capHeight}" stroke="#333" stroke-width="1.5"/>`;
+    // Category label on the left (wrapped to at most 2 lines)
+    const labelY = barY + barHeight / 2;
+    const lines = wrappedLabels[i];
+    if (lines.length === 1) {
+      svg += svgText(margin.left - 8, labelY, lines[0], { anchor: 'end', fontSize: 12, fill: '#333', dy: '0.35em' });
+    } else {
+      svg += svgText(margin.left - 8, labelY - 7, lines[0], { anchor: 'end', fontSize: 12, fill: '#333', dy: '0.35em' });
+      svg += svgText(margin.left - 8, labelY + 7, lines[1], { anchor: 'end', fontSize: 12, fill: '#333', dy: '0.35em' });
     }
 
-    svg += `<rect x="${margin.left}" y="${barY}" width="${Math.max(barW, 0)}" height="${barHeight}" fill="${color}" rx="2"/>`;
-
-    const labelText = d.label.length > 22 ? d.label.substring(0, 20) + '...' : d.label;
-    svg += svgText(margin.left - 8, barY + barHeight / 2, labelText, {
-      anchor: 'end',
-      fontSize: 12,
-      fill: '#333',
-      dy: '0.35em',
-    });
-
     if (showDataLabels) {
-      const displayValue = Number.isInteger(d.value) ? String(d.value) : d.value.toFixed(1);
+      const displayValue = formatValue(d.value, valueFormat);
       const labelWidth = displayValue.length * 7 + 8;
       if (barW > labelWidth + 10) {
-        svg += svgText(margin.left + barW - 6, barY + barHeight / 2, displayValue, {
+        svg += svgText(margin.left + barW - 6, labelY, displayValue, {
           anchor: 'end',
           fontSize: 11,
           fontWeight: 'bold',
@@ -123,7 +263,7 @@ function generateBarSvg(
           dy: '0.35em',
         });
       } else {
-        svg += svgText(margin.left + barW + 6, barY + barHeight / 2, displayValue, {
+        svg += svgText(margin.left + barW + 6, labelY, displayValue, {
           anchor: 'start',
           fontSize: 11,
           fontWeight: 'bold',
@@ -134,11 +274,158 @@ function generateBarSvg(
     }
   });
 
-  if (chartSource) {
-    svg += svgSource(width, adjustedHeight, chartSource);
+  // Bottom area: axis title, then footnotes stacked at the bottom left, then the source line
+  let cursorY = axisY + 36;
+  if (axisTitle) {
+    svg += svgText(margin.left + plotWidth / 2, cursorY, axisTitle, { fontSize: 12, fill: '#444' });
+    cursorY += 4;
   }
 
-  return svgWrapper(width, adjustedHeight, svg);
+  for (const note of buildFootnotes(opts)) {
+    cursorY += 14;
+    svg += svgText(10, cursorY, note, { anchor: 'start', fontSize: 10, fill: '#999' });
+  }
+
+  const height = Math.max(cursorY + 18, baseHeight);
+
+  if (source) {
+    svg += svgSource(width, height, source);
+  }
+
+  return svgWrapper(width, height, svg);
+}
+
+/** Generate SVG for a vertical bar chart from sorted data. */
+function generateVerticalBarSvg(opts: BarSvgOptions): string {
+  const {
+    sortedData,
+    colorScheme,
+    showDataLabels,
+    title,
+    subtitle,
+    source,
+    axisTitle,
+    valueFormat,
+    highlightCat,
+    flagSmallCounts,
+    referenceValue,
+    referenceLabel,
+  } = opts;
+
+  const dims = getDefaultDimensions('bar');
+  const { width } = dims;
+
+  // Wrap category labels (max 2 lines) and deepen the bottom margin to fit them
+  const wrappedLabels = sortedData.map(d => wrapCategoryLabel(d.label));
+  const maxLines = wrappedLabels.reduce((m, lines) => Math.max(m, lines.length), 1);
+  const margin = { top: dims.margin.top, right: 40, bottom: maxLines > 1 ? 62 : 46, left: 56 };
+
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = dims.height - margin.top - margin.bottom;
+  const axisY = margin.top + plotHeight;
+
+  // Zero baseline; extend the nice max to cover the reference line
+  const maxValue = Math.max(...sortedData.map(d => d.value), 0);
+  const domainMax = Math.max(maxValue, referenceValue ?? 0);
+  const niceMax = domainMax === 0 ? 10 : getNiceMax(domainMax);
+
+  const yScale = (v: number) => axisY - (v / niceMax) * plotHeight;
+
+  // Fit bars within the default plot width (capped at 40px wide, floor 6px, gap proportional)
+  const barCount = sortedData.length;
+  const bandW = plotWidth / barCount;
+  const barWidth = Math.max(Math.min(bandW * 0.7, 40), 6);
+
+  const schemeColor = getChartColor(0, colorScheme);
+
+  let svg = '';
+
+  if (title) {
+    svg += svgTitle(width, title, subtitle || undefined);
+  }
+
+  // Horizontal gridlines and value tick labels on the left
+  const tickCount = 5;
+  for (let i = 0; i <= tickCount; i++) {
+    const tickValue = (niceMax * i) / tickCount;
+    const y = yScale(tickValue);
+    if (i > 0) {
+      svg += svgGridLine(margin.left, y, margin.left + plotWidth, y);
+    }
+    svg += svgText(margin.left - 6, y, formatValue(tickValue, valueFormat, true), {
+      anchor: 'end',
+      fontSize: 11,
+      fill: '#666',
+      dy: '0.35em',
+    });
+  }
+
+  // Reference line (horizontal across the plot in vertical mode)
+  if (referenceValue !== null) {
+    const refY = yScale(referenceValue);
+    svg += `<line x1="${margin.left}" y1="${refY}" x2="${margin.left + plotWidth}" y2="${refY}" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+    if (referenceLabel) {
+      svg += svgText(margin.left + 4, refY - 4, referenceLabel, { anchor: 'start', fontSize: 10, fill: '#777' });
+    }
+  }
+
+  sortedData.forEach((d, i) => {
+    const bandX = margin.left + i * bandW;
+    const barX = bandX + (bandW - barWidth) / 2;
+    const barTop = maxValue > 0 ? yScale(d.value) : axisY;
+    const barH = axisY - barTop;
+    const color = barColor(d.label, highlightCat, schemeColor);
+    // Small-count bars render muted (highlight wins, but still at reduced opacity)
+    const smallCount = flagSmallCounts && d.n < 20;
+    const opacity = smallCount ? smallCountAttrs(isMutedByHighlight(d.label, highlightCat)) : '';
+
+    svg += `<rect x="${barX}" y="${barTop}" width="${barWidth}" height="${Math.max(barH, 0)}" fill="${color}"${opacity} rx="2"/>`;
+
+    // Category label below the axis, centered under the bar (wrapped to at most 2 lines)
+    const cx = bandX + bandW / 2;
+    const lines = wrappedLabels[i];
+    if (lines.length === 1) {
+      svg += svgText(cx, axisY + 16, lines[0], { fontSize: 11, fill: '#333' });
+    } else {
+      svg += svgText(cx, axisY + 12, lines[0], { fontSize: 11, fill: '#333' });
+      svg += svgText(cx, axisY + 25, lines[1], { fontSize: 11, fill: '#333' });
+    }
+
+    // Value label centered above the bar
+    if (showDataLabels) {
+      svg += svgText(cx, barTop - 5, formatValue(d.value, valueFormat), {
+        fontSize: 11,
+        fontWeight: 'bold',
+        fill: '#333',
+      });
+    }
+  });
+
+  // Axis title rotated -90 degrees, centered along the y-axis
+  if (axisTitle) {
+    svg += svgText(16, margin.top + plotHeight / 2, axisTitle, { fontSize: 12, fill: '#444', rotate: -90 });
+  }
+
+  // Bottom area: footnotes stacked at the bottom left, then the source line
+  let cursorY = axisY + (maxLines > 1 ? 40 : 30);
+  for (const note of buildFootnotes(opts)) {
+    cursorY += 14;
+    svg += svgText(10, cursorY, note, { anchor: 'start', fontSize: 10, fill: '#999' });
+  }
+
+  const height = Math.max(cursorY + 18, dims.height);
+
+  if (source) {
+    svg += svgSource(width, height, source);
+  }
+
+  return svgWrapper(width, height, svg);
+}
+
+/** Generate SVG for bar chart from sorted data. */
+function generateBarSvg(opts: BarSvgOptions): string {
+  if (opts.sortedData.length === 0) return '';
+  return opts.orientation === 'vertical' ? generateVerticalBarSvg(opts) : generateHorizontalBarSvg(opts);
 }
 
 export function BarChart({ dataset }: BarChartProps) {
@@ -146,16 +433,71 @@ export function BarChart({ dataset }: BarChartProps) {
   const [categoryVar, setCategoryVar] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
   const [valueVar, setValueVar] = useState('');
-  const [lowerCICol, setLowerCICol] = useState('');
-  const [upperCICol, setUpperCICol] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('value');
+  const [orientation, setOrientation] = useState<Orientation>('horizontal');
+  const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
+  const [highlightCat, setHighlightCat] = useState('');
+  const [flagSmallCounts, setFlagSmallCounts] = useState(true);
+  const [referenceLine, setReferenceLine] = useState('');
+  const [referenceLabel, setReferenceLabel] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showDataLabels, setShowDataLabels] = useState(true);
   const [facetCol, setFacetCol] = useState('');
   const [chartTitle, setChartTitle] = useState('');
   const [chartSubtitle, setChartSubtitle] = useState('');
+  const [axisTitle, setAxisTitle] = useState('');
+  const [axisTitleEdited, setAxisTitleEdited] = useState(false);
   const [chartSource, setChartSource] = useState('');
-  const [showGuide, setShowGuide] = useState(false);
+
+  // Pre-select sensible defaults so a chart renders immediately on dataset load or change.
+  // Prefer a categorical column with 3-30 distinct values (a true grouping variable like
+  // Case Status) over ID-like text columns and two-value columns like Sex.
+  useEffect(() => {
+    const catValid = categoryVar !== '' && dataset.columns.some(c => c.key === categoryVar);
+    if (!catValid) {
+      const distinct = (key: string) =>
+        new Set(dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')).size;
+      const cats = dataset.columns.filter(c => c.type === 'categorical');
+      const ideal = cats.find(c => { const n = distinct(c.key); return n >= 3 && n <= 30; });
+      // The last-resort fallback must stay cardinality-bounded too. Columns often infer as
+      // 'text', and the first text column is typically a record ID: auto-selecting it builds
+      // one bar per record and produces an SVG tens of thousands of pixels tall.
+      const plottable = (c: DataColumn) => {
+        if (c.type !== 'text' && c.type !== 'categorical' && c.type !== 'boolean') return false;
+        const n = distinct(c.key);
+        return n >= 2 && n <= MAX_AUTO_CATEGORIES;
+      };
+      const fallback = cats.find(c => { const n = distinct(c.key); return n >= 2 && n <= MAX_AUTO_CATEGORIES; })
+        ?? dataset.columns.find(plottable);
+      const chosen = ideal ?? fallback;
+      // No suitable column: leave categoryVar empty so the picker prompt shows.
+      if (chosen) setCategoryVar(chosen.key);
+    }
+    const numValid = valueVar !== '' && dataset.columns.some(c => c.key === valueVar && c.type === 'number');
+    if (!numValid) {
+      const firstNum = dataset.columns.find(c => c.type === 'number');
+      if (firstNum) setValueVar(firstNum.key);
+    }
+  }, [dataset, categoryVar, valueVar]);
+
+  // Auto-fill the axis title from the numeric variable label and format (or count mode wording) until manually edited
+  useEffect(() => {
+    if (axisTitleEdited) return;
+    if (valueFormat === 'percent') {
+      setAxisTitle(valueMode === 'count' ? 'Percent of records' : 'Percent');
+    } else if (valueMode === 'count') {
+      setAxisTitle('Number of records');
+    } else {
+      const label = dataset.columns.find(c => c.key === valueVar)?.label;
+      setAxisTitle(label || '');
+    }
+  }, [valueMode, valueVar, valueFormat, axisTitleEdited, dataset]);
+
+  const referenceValue = useMemo(() => {
+    if (referenceLine.trim() === '') return null;
+    const v = Number(referenceLine);
+    return isNaN(v) ? null : v;
+  }, [referenceLine]);
 
   // Check if selected category column has valueOrder for custom sorting
   const selectedColumn = useMemo(
@@ -164,125 +506,139 @@ export function BarChart({ dataset }: BarChartProps) {
   );
   const hasCustomOrder = !!(selectedColumn?.valueOrder && selectedColumn.valueOrder.length > 0);
 
-  // Compute bar data
-  const barData: BarData[] = useMemo(() => {
-    if (!categoryVar) return [];
+  // Shared aggregation for the main chart and facets
+  const computeBarData = useCallback((records: Dataset['records']): BarDataResult => {
+    if (!categoryVar) return { data: [], excluded: 0 };
+
+    let excluded = 0;
 
     if (valueMode === 'count') {
-      const values = dataset.records.map(r => r[categoryVar]);
-      const freq = calculateFrequency(values);
-      return freq.map(f => ({ label: f.value, value: f.count }));
+      const counts = new Map<string, number>();
+      for (const record of records) {
+        const cat = record[categoryVar];
+        if (cat === null || cat === undefined || cat === '') {
+          excluded++;
+          continue;
+        }
+        const key = String(cat);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      const data = Array.from(counts.entries()).map(([label, count]) => ({ label, value: count, n: count }));
+
+      // In count mode with percent format, plot each category's share of the included records
+      if (valueFormat === 'percent') {
+        const total = data.reduce((s, d) => s + d.n, 0);
+        if (total > 0) {
+          for (const d of data) d.value = (d.n / total) * 100;
+        }
+      }
+      return { data, excluded };
     }
 
-    // Sum or mean of a numeric column grouped by category
-    if (!valueVar) return [];
+    // Sum, mean, or median of a numeric column grouped by category
+    if (!valueVar) return { data: [], excluded: 0 };
 
     const groups = new Map<string, number[]>();
-    const ciLowerGroups = new Map<string, number[]>();
-    const ciUpperGroups = new Map<string, number[]>();
-
-    for (const record of dataset.records) {
+    for (const record of records) {
       const cat = record[categoryVar];
-      if (cat === null || cat === undefined || cat === '') continue;
-      const key = String(cat);
       const rawVal = record[valueVar];
-      if (rawVal === null || rawVal === undefined || rawVal === '') continue;
-      const numVal = Number(rawVal);
-      if (isNaN(numVal)) continue;
+      const numVal = rawVal !== null && rawVal !== undefined && rawVal !== '' ? Number(rawVal) : NaN;
+      if (cat === null || cat === undefined || cat === '' || isNaN(numVal)) {
+        excluded++;
+        continue;
+      }
+      const key = String(cat);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(numVal);
+    }
 
-      if (lowerCICol) {
-        const rawCI = record[lowerCICol];
-        if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
-          const ciLower = Number(rawCI);
-          if (!isNaN(ciLower)) {
-            if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
-            ciLowerGroups.get(key)!.push(ciLower);
-          }
+    const aggregate = (values: number[]): number => {
+      switch (valueMode) {
+        case 'sum':
+          return values.reduce((a, b) => a + b, 0);
+        case 'median': {
+          const sorted = [...values].sort((a, b) => a - b);
+          const mid = Math.floor(sorted.length / 2);
+          return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
         }
+        default:
+          return values.reduce((a, b) => a + b, 0) / values.length;
       }
+    };
 
-      if (upperCICol) {
-        const rawCI = record[upperCICol];
-        if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
-          const ciUpper = Number(rawCI);
-          if (!isNaN(ciUpper)) {
-            if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
-            ciUpperGroups.get(key)!.push(ciUpper);
-          }
-        }
-      }
-    }
+    const data: BarData[] = Array.from(groups.entries()).map(([label, values]) => ({
+      label,
+      value: aggregate(values),
+      n: values.length,
+    }));
+    return { data, excluded };
+  }, [categoryVar, valueMode, valueVar, valueFormat]);
 
-    const result: BarData[] = [];
-    for (const [label, values] of groups) {
-      let barData: BarData;
-      if (valueMode === 'sum') {
-        barData = { label, value: values.reduce((a, b) => a + b, 0) };
-      } else {
-        // mean
-        barData = { label, value: values.reduce((a, b) => a + b, 0) / values.length };
-      }
+  // Compute and sort bar data
+  const { data: barData, excluded } = useMemo(
+    () => computeBarData(dataset.records),
+    [computeBarData, dataset.records]
+  );
 
-      if (lowerCICol && ciLowerGroups.has(label) && ciLowerGroups.get(label)!.length > 0) {
-        const ciLowerVals = ciLowerGroups.get(label)!;
-        barData.lower = ciLowerVals.reduce((a, b) => a + b, 0) / ciLowerVals.length;
-      }
+  const sortedData = useMemo(
+    () => sortBarData(barData, sortMode, selectedColumn?.valueOrder),
+    [barData, sortMode, selectedColumn]
+  );
 
-      if (upperCICol && ciUpperGroups.has(label) && ciUpperGroups.get(label)!.length > 0) {
-        const ciUpperVals = ciUpperGroups.get(label)!;
-        barData.upper = ciUpperVals.reduce((a, b) => a + b, 0) / ciUpperVals.length;
-      }
+  // Categories available for the highlight selector (alphabetical)
+  const categoryOptions = useMemo(
+    () => [...new Set(sortedData.map(d => d.label))].sort((a, b) => a.localeCompare(b)),
+    [sortedData]
+  );
 
-      result.push(barData);
-    }
-    return result;
-  }, [categoryVar, valueMode, valueVar, lowerCICol, upperCICol, dataset.records]);
+  // A highlight left over from a previous category variable or dataset matches no label, which
+  // makes barColor mute every bar while the selector reads blank. Derive the effective value
+  // rather than syncing state in an effect.
+  const activeHighlight = categoryOptions.includes(highlightCat) ? highlightCat : '';
 
-  // Sort bar data
-  const sortedData = useMemo(() => {
-    const data = [...barData];
-
-    if (sortMode === 'value') {
-      data.sort((a, b) => b.value - a.value);
-    } else if (sortMode === 'alpha') {
-      data.sort((a, b) => a.label.localeCompare(b.label));
-    } else if (sortMode === 'custom' && selectedColumn?.valueOrder) {
-      const order = selectedColumn.valueOrder;
-      data.sort((a, b) => {
-        const ia = order.indexOf(a.label);
-        const ib = order.indexOf(b.label);
-        // Items not in the order go to the end
-        const posA = ia === -1 ? order.length : ia;
-        const posB = ib === -1 ? order.length : ib;
-        return posA - posB;
-      });
-    }
-
-    return data;
-  }, [barData, sortMode, selectedColumn]);
+  const svgOptions = useMemo((): BarSvgOptions => ({
+    sortedData,
+    excluded,
+    colorScheme,
+    showDataLabels,
+    title: chartTitle,
+    subtitle: chartSubtitle,
+    source: chartSource,
+    axisTitle,
+    valueFormat,
+    valueMode,
+    categoryVar,
+    valueVar,
+    highlightCat: activeHighlight,
+    flagSmallCounts,
+    referenceValue,
+    referenceLabel,
+    orientation,
+    dataset,
+  }), [sortedData, excluded, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource, axisTitle, valueFormat, valueMode, categoryVar, valueVar, activeHighlight, flagSmallCounts, referenceValue, referenceLabel, orientation, dataset]);
 
   // Generate SVG string
-  const svgContent = useMemo(() => {
-    return generateBarSvg(sortedData, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource);
-  }, [sortedData, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource]);
+  const svgContent = useMemo(() => generateBarSvg(svgOptions), [svgOptions]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
-    const hasCI = sortedData.some(d => d.lower !== undefined && d.upper !== undefined);
+    const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
     const columns = [
-      { header: 'Category', key: 'label' },
-      { header: 'Value', key: 'value' },
+      { header: categoryVar ? colLabel(categoryVar) : 'Category', key: 'label' },
+      // In count+percent mode computeBarData overwrites value with a share, so the header
+      // must say so rather than claiming 'Count'.
+      {
+        header: valueMode !== 'count' && valueVar
+          ? colLabel(valueVar)
+          : (valueFormat === 'percent' ? 'Percent of records' : 'Count'),
+        key: 'value',
+      },
+      { header: 'Records', key: 'n' },
     ];
-    if (hasCI) {
-      columns.push({ header: 'Lower CI', key: 'lower' });
-      columns.push({ header: 'Upper CI', key: 'upper' });
-    }
     const rows = sortedData.map(d => ({
       label: d.label,
       value: d.value,
-      ...(hasCI ? { lower: d.lower ?? null, upper: d.upper ?? null } : {}),
+      n: d.n,
     }));
     return {
       title: chartTitle,
@@ -291,55 +647,21 @@ export function BarChart({ dataset }: BarChartProps) {
       columns,
       rows,
     };
-  }, [sortedData, chartTitle, chartSubtitle, chartSource]);
+  }, [sortedData, chartTitle, chartSubtitle, chartSource, dataset, categoryVar, valueMode, valueVar, valueFormat]);
 
   return (
-    <div className="h-full flex flex-col lg:flex-row">
-      {/* Left Panel - Config */}
-      <div className="w-full lg:w-72 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 lg:border-r border-gray-200 p-4 overflow-y-auto">
-        <div className="space-y-4">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Bar Chart</h3>
-            <p className="text-xs text-gray-500 mt-1">
-              Compare categories with horizontal bars and direct labels.
-            </p>
-          </div>
+    <div className="flex gap-6">
+      {/* Config panel */}
+      <div className="w-72 flex-shrink-0 space-y-4">
+        <h3 className="text-sm font-semibold text-gray-900">Bar Chart</h3>
 
-          <VisualizationTip
-            tip="Horizontal bars are easier to read than vertical bars because labels are left-aligned and the eye naturally compares lengths. Sort by value (descending) so the most important categories appear at the top."
-            context="Best practice from CDC: prefer horizontal bars for categorical data. Consider a lollipop chart if you have many categories and want less visual weight."
-          />
-
-          <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
-            <button
-              onClick={() => setShowGuide(!showGuide)}
-              className="w-full flex items-center justify-between px-3 py-2 bg-blue-50 text-sm font-medium text-blue-800 hover:bg-blue-100 transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                When to Use This Chart
-              </span>
-              <svg className={`w-4 h-4 transition-transform ${showGuide ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-            {showGuide && (
-              <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
-                <p>• Comparing frequency, counts, or values across categories</p>
-                <p>• Ranking items from highest to lowest (sort by value)</p>
-                <p>• Showing attack rates, case counts, or proportions by group</p>
-                <p>• When category labels are long (horizontal bars keep them readable)</p>
-                <p className="text-blue-500 italic mt-2">CDC recommends horizontal bars when category labels are long. Sort by value (descending) to emphasize the most important categories. — CDC COVE Best Practices</p>
-              </div>
-            )}
-          </div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Data Mapping</h4>
 
           {/* Category variable */}
           <VariableMapper
             label="Category Variable"
-            description="The categorical variable to display on the y-axis"
+            description="The categorical variable to display"
             columns={dataset.columns}
             value={categoryVar}
             onChange={setCategoryVar}
@@ -359,14 +681,15 @@ export function BarChart({ dataset }: BarChartProps) {
               <option value="count">Count (frequency)</option>
               <option value="sum">Sum of numeric variable</option>
               <option value="mean">Mean of numeric variable</option>
+              <option value="median">Median of numeric variable</option>
             </select>
           </div>
 
-          {/* Numeric variable (when sum or mean is selected) */}
+          {/* Numeric variable (when sum, mean, or median is selected) */}
           {valueMode !== 'count' && (
             <VariableMapper
               label="Numeric Variable"
-              description={`The numeric variable to ${valueMode} per category`}
+              description="The numeric variable to aggregate per category"
               columns={dataset.columns}
               value={valueVar}
               onChange={setValueVar}
@@ -375,31 +698,23 @@ export function BarChart({ dataset }: BarChartProps) {
               placeholder="Select numeric variable..."
             />
           )}
+        </div>
 
-          {/* Confidence interval columns */}
-          {valueMode !== 'count' && (
-            <div className="mt-2 pl-2 border-l-2 border-gray-200">
-              <p className="text-xs text-gray-500 mb-2">Optional: Confidence Intervals</p>
-              <VariableMapper
-                label="Lower CI"
-                description="Lower confidence limit"
-                columns={dataset.columns}
-                value={lowerCICol}
-                onChange={setLowerCICol}
-                filterTypes={['number']}
-                placeholder="None"
-              />
-              <VariableMapper
-                label="Upper CI"
-                description="Upper confidence limit"
-                columns={dataset.columns}
-                value={upperCICol}
-                onChange={setUpperCICol}
-                filterTypes={['number']}
-                placeholder="None"
-              />
-            </div>
-          )}
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Options</h4>
+
+          {/* Orientation */}
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Orientation</label>
+            <select
+              value={orientation}
+              onChange={(e) => setOrientation(e.target.value as Orientation)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </div>
 
           {/* Sort */}
           <div className="mb-3">
@@ -414,6 +729,32 @@ export function BarChart({ dataset }: BarChartProps) {
               {hasCustomOrder && (
                 <option value="custom">Custom order</option>
               )}
+            </select>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Value Format</label>
+            <select
+              value={valueFormat}
+              onChange={(e) => setValueFormat(e.target.value as ValueFormat)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="number">Number</option>
+              <option value="percent">Percent</option>
+            </select>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Highlight category</label>
+            <select
+              value={activeHighlight}
+              onChange={(e) => setHighlightCat(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">None</option>
+              {categoryOptions.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
 
@@ -433,161 +774,123 @@ export function BarChart({ dataset }: BarChartProps) {
             </select>
           </div>
 
-          {/* Display options */}
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Display Options</p>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showDataLabels}
-                onChange={(e) => setShowDataLabels(e.target.checked)}
-                className="rounded border-gray-300"
-              />
-              <span className="text-gray-700">Show data labels</span>
-            </label>
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reference line (optional)</label>
+            <input
+              type="number"
+              value={referenceLine}
+              onChange={(e) => setReferenceLine(e.target.value)}
+              placeholder="No reference line"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
 
-          {/* Small Multiples / Faceting */}
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Reference label</label>
+            <input
+              type="text"
+              value={referenceLabel}
+              onChange={(e) => setReferenceLabel(e.target.value)}
+              placeholder="e.g. National average"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mb-2">
+            <input
+              type="checkbox"
+              checked={showDataLabels}
+              onChange={(e) => setShowDataLabels(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Show data labels
+          </label>
+
+          <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={flagSmallCounts}
+              onChange={(e) => setFlagSmallCounts(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Flag small counts (n &lt; 20)
+          </label>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
           <FacetControl
             columns={dataset.columns}
             value={facetCol}
             onChange={setFacetCol}
           />
+        </div>
 
-          {/* Chart labels */}
-          <div className="space-y-3 pt-3 border-t border-gray-200">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Chart Labels</p>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Title</label>
-              <input
-                type="text"
-                value={chartTitle}
-                onChange={(e) => setChartTitle(e.target.value)}
-                placeholder="Chart title"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Subtitle</label>
-              <input
-                type="text"
-                value={chartSubtitle}
-                onChange={(e) => setChartSubtitle(e.target.value)}
-                placeholder="Optional subtitle"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Source</label>
-              <input
-                type="text"
-                value={chartSource}
-                onChange={(e) => setChartSource(e.target.value)}
-                placeholder="Data source"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-              />
-            </div>
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h4 className="text-sm font-semibold text-gray-700 mb-3">Annotations</h4>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+            <input
+              type="text"
+              value={chartTitle}
+              onChange={(e) => setChartTitle(e.target.value)}
+              placeholder="Chart title"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
+            <input
+              type="text"
+              value={chartSubtitle}
+              onChange={(e) => setChartSubtitle(e.target.value)}
+              placeholder="Optional subtitle"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Axis Title</label>
+            <input
+              type="text"
+              value={axisTitle}
+              onChange={(e) => {
+                setAxisTitle(e.target.value);
+                setAxisTitleEdited(true);
+              }}
+              placeholder="Defaults to the value being plotted"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
+            <input
+              type="text"
+              value={chartSource}
+              onChange={(e) => setChartSource(e.target.value)}
+              placeholder="Data source"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
           </div>
         </div>
       </div>
 
-      {/* Right Panel - Chart */}
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
+      {/* Chart area */}
+      <div className="flex-1 min-w-0">
         {sortedData.length > 0 ? (
           facetCol ? (
             <FacetWrapper
               dataset={dataset}
               facetCol={facetCol}
               renderChart={(fd) => {
-                // Compute sorted data for this facet
-                let facetBarData: BarData[] = [];
-                if (valueMode === 'count') {
-                  const values = fd.records.map(r => r[categoryVar]);
-                  const freq = calculateFrequency(values);
-                  facetBarData = freq.map(f => ({ label: f.value, value: f.count }));
-                } else if (valueVar) {
-                  const groups = new Map<string, number[]>();
-                  const ciLowerGroups = new Map<string, number[]>();
-                  const ciUpperGroups = new Map<string, number[]>();
-
-                  for (const record of fd.records) {
-                    const cat = record[categoryVar];
-                    if (cat === null || cat === undefined || cat === '') continue;
-                    const key = String(cat);
-                    const rawVal = record[valueVar];
-                    if (rawVal === null || rawVal === undefined || rawVal === '') continue;
-                    const numVal = Number(rawVal);
-                    if (isNaN(numVal)) continue;
-                    if (!groups.has(key)) groups.set(key, []);
-                    groups.get(key)!.push(numVal);
-
-                    if (lowerCICol) {
-                      const rawCI = record[lowerCICol];
-                      if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
-                        const ciLower = Number(rawCI);
-                        if (!isNaN(ciLower)) {
-                          if (!ciLowerGroups.has(key)) ciLowerGroups.set(key, []);
-                          ciLowerGroups.get(key)!.push(ciLower);
-                        }
-                      }
-                    }
-
-                    if (upperCICol) {
-                      const rawCI = record[upperCICol];
-                      if (rawCI !== null && rawCI !== undefined && rawCI !== '') {
-                        const ciUpper = Number(rawCI);
-                        if (!isNaN(ciUpper)) {
-                          if (!ciUpperGroups.has(key)) ciUpperGroups.set(key, []);
-                          ciUpperGroups.get(key)!.push(ciUpper);
-                        }
-                      }
-                    }
-                  }
-
-                  for (const [label, values] of groups) {
-                    let barData: BarData;
-                    if (valueMode === 'sum') {
-                      barData = { label, value: values.reduce((a, b) => a + b, 0) };
-                    } else {
-                      barData = { label, value: values.reduce((a, b) => a + b, 0) / values.length };
-                    }
-
-                    if (lowerCICol && ciLowerGroups.has(label) && ciLowerGroups.get(label)!.length > 0) {
-                      const ciLowerVals = ciLowerGroups.get(label)!;
-                      barData.lower = ciLowerVals.reduce((a, b) => a + b, 0) / ciLowerVals.length;
-                    }
-
-                    if (upperCICol && ciUpperGroups.has(label) && ciUpperGroups.get(label)!.length > 0) {
-                      const ciUpperVals = ciUpperGroups.get(label)!;
-                      barData.upper = ciUpperVals.reduce((a, b) => a + b, 0) / ciUpperVals.length;
-                    }
-
-                    facetBarData.push(barData);
-                  }
-                }
-
-                // Sort facet data
-                const sortedFacetData = [...facetBarData];
-                if (sortMode === 'value') {
-                  sortedFacetData.sort((a, b) => b.value - a.value);
-                } else if (sortMode === 'alpha') {
-                  sortedFacetData.sort((a, b) => a.label.localeCompare(b.label));
-                } else if (sortMode === 'custom' && selectedColumn?.valueOrder) {
-                  const order = selectedColumn.valueOrder;
-                  sortedFacetData.sort((a, b) => {
-                    const ia = order.indexOf(a.label);
-                    const ib = order.indexOf(b.label);
-                    const posA = ia === -1 ? order.length : ia;
-                    const posB = ib === -1 ? order.length : ib;
-                    return posA - posB;
-                  });
-                }
-
+                const facet = computeBarData(fd.records);
+                const sortedFacetData = sortBarData(facet.data, sortMode, selectedColumn?.valueOrder);
                 if (sortedFacetData.length === 0) {
                   return <div className="text-gray-400 text-xs p-2">No data</div>;
                 }
-
-                const facetSvg = generateBarSvg(sortedFacetData, colorScheme, showDataLabels, '', '', '');
+                const facetSvg = generateBarSvg({ ...svgOptions, sortedData: sortedFacetData, excluded: facet.excluded, title: '', subtitle: '', source: '' });
                 return <div dangerouslySetInnerHTML={{ __html: facetSvg }} />;
               }}
             />

@@ -18,9 +18,12 @@ interface LollipopChartProps {
   dataset: Dataset;
 }
 
+/** Floor for the fitted canvas so a one- or two-row chart is not absurdly short. */
+const MIN_CHART_HEIGHT = 240;
+
 type ValueMode = 'count' | 'numeric';
 type SortMode = 'value-desc' | 'value-asc' | 'alpha';
-type ValueFormat = 'number' | 'percent' | 'rate';
+type ValueFormat = 'number' | 'percent';
 type Aggregation = 'mean' | 'sum' | 'median';
 
 interface LollipopDataPoint {
@@ -36,7 +39,6 @@ interface LollipopData {
 
 /** Format a numeric value for tick and value labels. */
 function formatValue(val: number, format: ValueFormat, abbreviate = false): string {
-  if (format === 'rate') return val.toFixed(1);
   let base: string;
   if (abbreviate && Math.abs(val) >= 1000) base = `${(val / 1000).toFixed(1)}k`;
   else base = Number.isInteger(val) ? String(val) : val.toFixed(1);
@@ -102,16 +104,18 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     }
   }, [dataset, categoryCol, numericCol]);
 
-  // Auto-fill the axis title from the numeric column label (or count mode wording) until manually edited
+  // Auto-fill the axis title from the numeric column label and format (or count mode wording) until manually edited
   useEffect(() => {
     if (axisTitleEdited) return;
-    if (valueMode === 'count') {
+    if (valueFormat === 'percent') {
+      setAxisTitle(valueMode === 'count' ? 'Percent of records' : 'Percent');
+    } else if (valueMode === 'count') {
       setAxisTitle('Number of records');
     } else {
       const label = dataset.columns.find(c => c.key === numericCol)?.label;
       setAxisTitle(label || '');
     }
-  }, [valueMode, numericCol, axisTitleEdited, dataset]);
+  }, [valueMode, numericCol, valueFormat, axisTitleEdited, dataset]);
 
   const referenceValue = useMemo(() => {
     if (referenceLine.trim() === '') return null;
@@ -142,6 +146,14 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
         value: count,
         n: count,
       }));
+
+      // In count mode with percent format, plot each category's share of the included records
+      if (valueFormat === 'percent') {
+        const total = points.reduce((s, p) => s + p.n, 0);
+        if (total > 0) {
+          for (const p of points) p.value = (p.n / total) * 100;
+        }
+      }
     } else {
       if (!numericCol) return { points: [], excluded: 0 };
       const grouped = new Map<string, number[]>();
@@ -190,7 +202,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     }
 
     return { points, excluded };
-  }, [categoryCol, valueMode, numericCol, aggregation, sortMode, dataset.records]);
+  }, [categoryCol, valueMode, numericCol, aggregation, valueFormat, sortMode, dataset.records]);
 
   // Categories available for the highlight selector (alphabetical)
   const categoryOptions = useMemo(
@@ -203,7 +215,14 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
     const columns = [
       { header: categoryCol ? colLabel(categoryCol) : 'Category', key: 'category' },
-      { header: valueMode === 'numeric' && numericCol ? colLabel(numericCol) : 'Count', key: 'value' },
+      // In count+percent mode lollipopData overwrites value with a share of records,
+      // so the header must not claim 'Count'.
+      {
+        header: valueMode === 'numeric' && numericCol
+          ? colLabel(numericCol)
+          : (valueFormat === 'percent' ? 'Percent of records' : 'Count'),
+        key: 'value',
+      },
       { header: 'Records', key: 'n' },
     ];
     const rows = lollipopData.map(d => ({
@@ -218,7 +237,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       columns,
       rows,
     };
-  }, [lollipopData, title, subtitle, source, dataset, categoryCol, valueMode, numericCol]);
+  }, [lollipopData, title, subtitle, source, dataset, categoryCol, valueMode, numericCol, valueFormat]);
 
   // Generate SVG
   const svgContent = useMemo(() => {
@@ -232,20 +251,26 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     const maxLabelChars = wrappedLabels.reduce((m, lines) => Math.max(m, ...lines.map(l => l.length)), 0);
     const margin = { ...dims.margin, left: Math.min(260, Math.max(60, Math.ceil(maxLabelChars * 6.8) + 16)) };
 
-    // Adjust height if many categories
-    const rowHeight = 28;
-    const minPlotHeight = lollipopData.length * rowHeight;
-    const baseHeight = Math.max(dims.height, minPlotHeight + dims.margin.top + dims.margin.bottom);
+    // Fit rows within the default plot height (capped at 28px per row, floor 12px;
+    // the SVG grows only if rows would drop below the floor)
+    const defaultPlotH = dims.height - dims.margin.top - dims.margin.bottom;
+    const rowHeight = Math.max(Math.min(defaultPlotH / lollipopData.length, 28), 12);
+    const actualPlotH = rowHeight * lollipopData.length;
+    // Fit the canvas to the rows actually drawn. Flooring at dims.height stranded short
+    // charts in the top third of a 500px canvas with the source line orphaned at the bottom.
+    const baseHeight = Math.max(
+      MIN_CHART_HEIGHT,
+      actualPlotH + dims.margin.top + dims.margin.bottom
+    );
     const plotW = width - margin.left - margin.right;
-    const plotH = baseHeight - margin.top - margin.bottom;
-    const axisY = margin.top + plotH;
+    const axisY = margin.top + actualPlotH;
 
     // Value scale from a zero baseline; extend the nice max to cover the reference line
     const maxVal = Math.max(...lollipopData.map(d => d.value));
     const niceMax = getNiceMax(Math.max(maxVal, referenceValue ?? 0));
 
     const xScale = (v: number) => margin.left + (v / niceMax) * plotW;
-    const yScale = (i: number) => margin.top + (i + 0.5) * (plotH / lollipopData.length);
+    const yScale = (i: number) => margin.top + (i + 0.5) * rowHeight;
 
     const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
 
@@ -333,7 +358,9 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
 
     const footnotes: string[] = [];
     if (valueMode === 'count') {
-      footnotes.push(`Values show the number of records per ${colLabel(categoryCol)}.`);
+      footnotes.push(valueFormat === 'percent'
+        ? `Values show the percent of records per ${colLabel(categoryCol)}.`
+        : `Values show the number of records per ${colLabel(categoryCol)}.`);
     } else {
       footnotes.push(`Values show the ${aggregation} of ${colLabel(numericCol)} per ${colLabel(categoryCol)}.`);
     }
@@ -458,7 +485,6 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
             >
               <option value="number">Number</option>
               <option value="percent">Percent</option>
-              <option value="rate">Rate per 100,000</option>
             </select>
           </div>
 

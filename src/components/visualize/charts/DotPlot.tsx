@@ -20,7 +20,7 @@ interface DotPlotProps {
 }
 
 type SortMode = 'value' | 'alphabetical';
-type ValueFormat = 'number' | 'percent' | 'rate';
+type ValueFormat = 'number' | 'percent';
 type Aggregation = 'mean' | 'sum' | 'count' | 'median';
 
 interface DotPlotRow {
@@ -55,7 +55,6 @@ interface DotSvgOptions {
 
 /** Format a numeric value for tick and dot labels. */
 function formatValue(val: number, format: ValueFormat, abbreviate = false): string {
-  if (format === 'rate') return val.toFixed(1);
   let base: string;
   if (abbreviate && Math.abs(val) >= 1000) base = `${(val / 1000).toFixed(1)}k`;
   else base = Number.isInteger(val) ? String(val) : val.toFixed(1);
@@ -199,7 +198,9 @@ function generateDotSvg(opts: DotSvgOptions): string {
 
   const footnotes: string[] = [];
   if (aggregation === 'count') {
-    footnotes.push(`Values show the number of records per ${colLabel(categoryCol)}.`);
+    footnotes.push(valueFormat === 'percent'
+      ? `Values show the percent of records per ${colLabel(categoryCol)}.`
+      : `Values show the number of records per ${colLabel(categoryCol)}.`);
   } else {
     footnotes.push(`Values show the ${aggregation} of ${colLabel(valueCol)} per ${colLabel(categoryCol)}.`);
   }
@@ -263,12 +264,18 @@ export function DotPlot({ dataset }: DotPlotProps) {
     }
   }, [dataset, categoryCol, valueCol]);
 
-  // Auto-fill the axis title from the Value column label until the user edits it manually
+  // Auto-fill the axis title from the Value column label and format until the user edits it manually
   useEffect(() => {
     if (axisTitleEdited) return;
-    const label = dataset.columns.find(c => c.key === valueCol)?.label;
-    setAxisTitle(label || '');
-  }, [valueCol, axisTitleEdited, dataset]);
+    if (valueFormat === 'percent') {
+      setAxisTitle(aggregation === 'count' ? 'Percent of records' : 'Percent');
+    } else if (aggregation === 'count') {
+      setAxisTitle('Number of records');
+    } else {
+      const label = dataset.columns.find(c => c.key === valueCol)?.label;
+      setAxisTitle(label || '');
+    }
+  }, [valueCol, valueFormat, aggregation, axisTitleEdited, dataset]);
 
   const referenceValue = useMemo(() => {
     if (referenceLine.trim() === '') return null;
@@ -277,18 +284,30 @@ export function DotPlot({ dataset }: DotPlotProps) {
   }, [referenceLine]);
 
   const computeRows = useCallback((records: Dataset['records']): DotPlotRows => {
-    if (!categoryCol || !valueCol) return { rows: [], excluded: 0 };
+    // Count mode tallies records per category and never reads the value column. Requiring a
+    // numeric value there under-counted every category and made the percent denominator
+    // "records that happen to have a value" rather than all records.
+    const countMode = aggregation === 'count';
+    if (!categoryCol) return { rows: [], excluded: 0 };
+    if (!countMode && !valueCol) return { rows: [], excluded: 0 };
 
     const categoryMap = new Map<string, { values1: number[] }>();
     let excluded = 0;
 
     for (const rec of records) {
       const cat = rec[categoryCol];
-      const raw1 = rec[valueCol];
-      const v1 = raw1 !== null && raw1 !== undefined && raw1 !== '' ? Number(raw1) : NaN;
-      if (cat === null || cat === undefined || cat === '' || isNaN(v1)) {
+      if (cat === null || cat === undefined || cat === '') {
         excluded++;
         continue;
+      }
+      let v1 = 0;
+      if (!countMode) {
+        const raw1 = rec[valueCol];
+        v1 = raw1 !== null && raw1 !== undefined && raw1 !== '' ? Number(raw1) : NaN;
+        if (isNaN(v1)) {
+          excluded++;
+          continue;
+        }
       }
       const catStr = String(cat);
       if (!categoryMap.has(catStr)) {
@@ -320,6 +339,14 @@ export function DotPlot({ dataset }: DotPlotProps) {
       n: agg.values1.length,
     }));
 
+    // In count mode with percent format, plot each category's share of the included records
+    if (aggregation === 'count' && valueFormat === 'percent') {
+      const total = computedRows.reduce((s, r) => s + r.n, 0);
+      if (total > 0) {
+        for (const r of computedRows) r.val1 = (r.n / total) * 100;
+      }
+    }
+
     if (sortMode === 'value') {
       computedRows.sort((a, b) => b.val1 - a.val1);
     } else {
@@ -327,7 +354,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
     }
 
     return { rows: computedRows, excluded };
-  }, [categoryCol, valueCol, aggregation, sortMode]);
+  }, [categoryCol, valueCol, aggregation, valueFormat, sortMode]);
 
   const { rows, excluded } = useMemo(() => computeRows(dataset.records), [computeRows, dataset.records]);
 
@@ -357,7 +384,14 @@ export function DotPlot({ dataset }: DotPlotProps) {
     const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
     const columns = [
       { header: categoryCol ? colLabel(categoryCol) : 'Category', key: 'category' },
-      { header: valueCol ? colLabel(valueCol) : 'Value', key: 'val1' },
+      // In count mode val1 holds a record count (or a percent share when valueFormat is
+      // 'percent'), never the value column, so the header must not carry that column's name.
+      {
+        header: aggregation === 'count'
+          ? (valueFormat === 'percent' ? 'Percent of records' : 'Count')
+          : (valueCol ? colLabel(valueCol) : 'Value'),
+        key: 'val1',
+      },
       { header: 'Records', key: 'n' },
     ];
     const excelRows = rows.map(r => {
@@ -375,7 +409,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
       columns,
       rows: excelRows,
     };
-  }, [rows, title, subtitle, source, dataset, categoryCol, valueCol]);
+  }, [rows, title, subtitle, source, dataset, categoryCol, valueCol, aggregation, valueFormat]);
 
   return (
     <div className="flex gap-6">
@@ -443,7 +477,6 @@ export function DotPlot({ dataset }: DotPlotProps) {
             >
               <option value="number">Number</option>
               <option value="percent">Percent</option>
-              <option value="rate">Rate per 100,000</option>
             </select>
           </div>
 

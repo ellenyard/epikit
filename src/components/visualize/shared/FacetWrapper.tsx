@@ -33,7 +33,7 @@ export function FacetWrapper({ dataset, facetCol, renderChart }: FacetWrapperPro
     const facetDataset: Dataset = {
       ...dataset,
       id: `${dataset.id}-facet-${value}`,
-      name: `${dataset.name} — ${value}`,
+      name: `${dataset.name}, ${value}`,
       records: filteredRecords,
     };
     return { value, dataset: facetDataset };
@@ -43,10 +43,10 @@ export function FacetWrapper({ dataset, facetCol, renderChart }: FacetWrapperPro
     <div>
       <div className="mb-3 flex items-center gap-2">
         <span className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
-          Small Multiples
+          Stratify
         </span>
         <span className="text-xs text-gray-500">
-          Faceted by {dataset.columns.find(c => c.key === facetCol)?.label || facetCol} ({facetValues.length} panels)
+          Stratified by {dataset.columns.find(c => c.key === facetCol)?.label || facetCol} ({facetValues.length} panels)
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -79,10 +79,10 @@ export function FacetControl({ columns, value, onChange }: FacetControlProps) {
         <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
         </svg>
-        <p className="text-xs font-medium text-purple-700">Small Multiples</p>
+        <p className="text-xs font-medium text-purple-700">Stratify</p>
       </div>
       <VariableMapper
-        label="Facet By"
+        label="Stratify by"
         description="Split chart into panels by this variable"
         columns={columns}
         value={value}

@@ -455,7 +455,7 @@ export function LineChart({ dataset }: LineChartProps) {
             </label>
           </div>
 
-          {/* Small Multiples / Faceting */}
+          {/* Stratify */}
           <FacetControl
             columns={dataset.columns}
             value={facetCol}
