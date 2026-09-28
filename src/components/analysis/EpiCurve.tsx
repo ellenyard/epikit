@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import type { Dataset } from '../../types/analysis';
+import { assignLabelRows, estimateLabelWidth } from '../../utils/labelLayout';
 import {
   processEpiCurveData,
   getColorForStrata,
@@ -588,35 +589,52 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     };
   }, [curveData, useManualDateRange, manualStartDate, manualEndDate]);
 
-  // Calculate annotation offsets for labels that share the same bin
-  // This prevents labels from overlapping when multiple annotations fall on the same day
+  // Stack annotation labels that would physically overlap.
+  //
+  // This previously keyed on bin index, so it only stacked annotations landing
+  // in the same bin. Labels are far wider than a bar, so annotations in
+  // adjacent bins still collided: a 7-1-7 timeline with milestones a day apart
+  // drew "Detected", "Notified" and "Response" straight through each other.
+  // Offsets are now derived from the labels' actual x positions and widths.
   const annotationOffsets = useMemo(() => {
     const offsets = new Map<string, number>();
-    if (displayData.bins.length === 0) return offsets;
+    const bins = displayData.bins;
+    if (bins.length === 0) return offsets;
 
-    // Helper to find bin index for a date
-    const getBinIndexForDate = (date: Date): number => {
+    const barW = getOptimalBarWidth(bins.length);
+    const firstBinStart = bins[0].startDate.getTime();
+    const lastBinEnd = bins[bins.length - 1].endDate.getTime();
+
+    // Mirrors AnnotationMarker's placement, including the +4px label inset.
+    const labelXForDate = (date: Date): number | null => {
       const time = date.getTime();
-      const firstBinStart = displayData.bins[0].startDate.getTime();
-      const lastBinEnd = displayData.bins[displayData.bins.length - 1].endDate.getTime();
-
-      if (time < firstBinStart) return -1; // Before first bin
-      if (time >= lastBinEnd) return displayData.bins.length; // After last bin
-
-      return displayData.bins.findIndex(b =>
+      if (isNaN(time)) return null;
+      if (time < firstBinStart) return 4;
+      if (time >= lastBinEnd) return bins.length * barW + 4;
+      const binIndex = bins.findIndex(b =>
         time >= b.startDate.getTime() && time < b.endDate.getTime()
       );
+      if (binIndex === -1) return null;
+      const bin = bins[binIndex];
+      const binDuration = bin.endDate.getTime() - bin.startDate.getTime();
+      const fraction = binDuration > 0 ? (time - bin.startDate.getTime()) / binDuration : 0;
+      return binIndex * barW + Math.max(fraction * barW, barW / 2) + 4;
     };
 
-    // Group annotations by bin index
-    const binCounts = new Map<number, number>();
+    const boxes = [];
     for (const annotation of allAnnotations) {
-      const binIndex = getBinIndexForDate(annotation.date);
-      const count = binCounts.get(binIndex) || 0;
-      offsets.set(annotation.id, count * 20); // 20px per stacked label
-      binCounts.set(binIndex, count + 1);
+      const x = labelXForDate(annotation.date);
+      if (x === null) continue;
+      boxes.push({
+        id: annotation.id,
+        x,
+        // text-xs (12px), medium weight, with px-1 padding on each side
+        width: estimateLabelWidth(annotation.label, 12, 8),
+      });
     }
 
+    const rows = assignLabelRows(boxes);
+    for (const [id, row] of rows) offsets.set(id, row * 20); // 20px per stacked row
     return offsets;
   }, [allAnnotations, displayData.bins]);
 
@@ -803,18 +821,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   };
 
   // Calculate bar width based on optimal sizing, not container width
-  // Use 60px as the optimal width for bars, with a minimum of 25px and maximum of 80px
-  // This allows the chart to naturally size to its content
-  const getOptimalBarWidth = (binCount: number): number => {
-    if (binCount === 0) return 60;
-    // More bins = narrower bars, fewer bins = wider bars (up to max)
-    if (binCount > 50) return 25;
-    if (binCount > 30) return 35;
-    if (binCount > 15) return 50;
-    if (binCount > 7) return 60;
-    return Math.min(80, 60 + (7 - binCount) * 3); // Cap at 80px for very few bins
-  };
-
   const barWidth = getOptimalBarWidth(displayData.bins.length);
   const chartHeight = 300;
   // Y-axis max should be at least 1 above the highest bar, rounded up to a nice number
@@ -1791,6 +1797,19 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 }
 
 // Annotation marker component - professional dashed line style (per CDC guidelines)
+/**
+ * Bar width for a given bin count: more bins means narrower bars, so the chart
+ * sizes naturally to its content. Module scope so label-layout maths can use it.
+ */
+function getOptimalBarWidth(binCount: number): number {
+  if (binCount === 0) return 60;
+  if (binCount > 50) return 25;
+  if (binCount > 30) return 35;
+  if (binCount > 15) return 50;
+  if (binCount > 7) return 60;
+  return Math.min(80, 60 + (7 - binCount) * 3); // Cap at 80px for very few bins
+}
+
 function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset = 0 }: {
   annotation: Annotation;
   bins: EpiCurveData['bins'];
@@ -1886,7 +1905,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset
         />
         {/* Label inside chart at top */}
         <div
-          className="absolute text-xs font-medium whitespace-nowrap bg-white/80 px-1 rounded"
+          className="absolute z-10 text-xs font-medium whitespace-nowrap bg-white/95 px-1 rounded"
           style={{
             color: annotation.color,
             top: 4 + labelOffset,
@@ -1916,7 +1935,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset
       />
       {/* Label inside chart at top */}
       <div
-        className="absolute text-xs font-medium whitespace-nowrap bg-white/80 px-1 rounded"
+        className="absolute z-10 text-xs font-medium whitespace-nowrap bg-white/95 px-1 rounded"
         style={{
           color: annotation.color,
           top: 4 + labelOffset,
@@ -2134,6 +2153,35 @@ function generateSVG(
     return margin.left + binIndex * barWidth + within;
   };
 
+  // Work out where every top-of-plot label wants to sit, and stack the ones
+  // that would overlap. The export previously drew them all at margin.top + 12,
+  // so close-together milestones printed straight through each other.
+  const SVG_LABEL_FONT = 10;
+  const SVG_ROW_HEIGHT = 13;
+  const labelBoxes: { id: string; x: number; width: number }[] = [];
+
+  if (exposureWindow && data.bins.length > 0) {
+    const firstStart = data.bins[0].startDate.getTime();
+    const lastEnd = data.bins[data.bins.length - 1].endDate.getTime();
+    const totalDuration = lastEnd - firstStart;
+    const t = exposureWindow.start.getTime();
+    const ex = t <= firstStart
+      ? margin.left
+      : t >= lastEnd
+        ? width - margin.right
+        : margin.left + ((t - firstStart) / totalDuration) * chartWidth;
+    labelBoxes.push({ id: '__exposure__', x: ex + 4, width: estimateLabelWidth('Est. Exposure', SVG_LABEL_FONT) });
+  }
+  annotations.forEach(ann => {
+    if (isNaN(ann.date.getTime())) return;
+    const ax = xForTime(ann.date.getTime(), true);
+    if (ax === null) return;
+    labelBoxes.push({ id: ann.id, x: ax + 4, width: estimateLabelWidth(ann.label, SVG_LABEL_FONT) });
+  });
+  const labelRows = assignLabelRows(labelBoxes);
+  const labelY = (id: string): number =>
+    margin.top + 12 + (labelRows.get(id) ?? 0) * SVG_ROW_HEIGHT;
+
   // Exposure window shading (matches the on-screen translucent red band)
   if (exposureWindow && data.bins.length > 0) {
     const firstStart = data.bins[0].startDate.getTime();
@@ -2150,7 +2198,7 @@ function generateSVG(
     svg += `<rect x="${x1}" y="${margin.top}" width="${w}" height="${chartHeight}" fill="rgba(220, 38, 38, 0.15)"/>`;
     svg += `<line x1="${x1}" y1="${margin.top}" x2="${x1}" y2="${chartBottom}" stroke="#F87171" stroke-width="2"/>`;
     svg += `<line x1="${x1 + w}" y1="${margin.top}" x2="${x1 + w}" y2="${chartBottom}" stroke="#F87171" stroke-width="2"/>`;
-    svg += `<text x="${x1 + 4}" y="${margin.top + 12}" font-size="10" font-weight="500" fill="#B91C1C">Est. Exposure</text>`;
+    svg += `<text x="${x1 + 4}" y="${labelY('__exposure__')}" font-size="${SVG_LABEL_FONT}" font-weight="500" fill="#B91C1C">Est. Exposure</text>`;
   }
 
   // Annotations (dashed markers / shaded ranges, as on screen)
@@ -2165,10 +2213,10 @@ function generateSVG(
       svg += `<rect x="${x}" y="${margin.top}" width="${w}" height="${chartHeight}" fill="${ann.color}" opacity="0.1"/>`;
       svg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="4 3"/>`;
       svg += `<line x1="${x + w}" y1="${margin.top}" x2="${x + w}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="4 3"/>`;
-      svg += `<text x="${x + 4}" y="${margin.top + 12}" font-size="10" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
+      svg += `<text x="${x + 4}" y="${labelY(ann.id)}" font-size="${SVG_LABEL_FONT}" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
     } else {
       svg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
-      svg += `<text x="${x + 4}" y="${margin.top + 12}" font-size="10" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
+      svg += `<text x="${x + 4}" y="${labelY(ann.id)}" font-size="${SVG_LABEL_FONT}" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
     }
   });
 

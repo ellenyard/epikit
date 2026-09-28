@@ -10,7 +10,8 @@
     "test:area-map": "node scripts/areaMap.regression.mjs",
     "test:csv": "node scripts/csvParser.regression.mjs",
     "test:locale": "node scripts/localeNumbers.regression.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:labels": "node scripts/labelLayout.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
