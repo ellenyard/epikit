@@ -219,7 +219,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     const values = new Set<string>();
     dataset.records.forEach(r => {
       const v = r[expVar];
-      if (v !== null && v !== undefined && v !== '') {
+      if (v !== null && v !== undefined && String(v).trim() !== '') {
         values.add(String(v));
       }
     });
@@ -367,8 +367,11 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       filteredRecords.forEach((record: CaseRecord) => {
         const expValue = record[expVar];
 
-        // Skip records with missing exposure values
-        if (expValue === null || expValue === undefined || expValue === '') {
+        // Skip records with missing exposure values. Trimmed, to match the
+        // outcome check below: a whitespace-only cell is missing data, not a
+        // category. Untrimmed it became a phantom unexposed group, inflating
+        // the denominator and biasing the risk ratio toward the null.
+        if (expValue === null || expValue === undefined || String(expValue).trim() === '') {
           return;
         }
 
