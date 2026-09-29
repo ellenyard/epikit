@@ -54,6 +54,7 @@ try {
 
   const {
     buildAreaJoin,
+    SMALL_COUNT_THRESHOLD,
     buildJoinReport,
     classifyValues,
     normalizeAreaKey,
@@ -121,6 +122,90 @@ try {
     rateMultiplier: 100000,
   });
   assert.deepEqual(duplicateJoin.summary.duplicateDenominatorKeys, ['north']);
+
+  // Small-count disclosure. The Help Center tells users not to publish areas
+  // holding fewer than five cases; the map must at least tell them when it is
+  // showing some. Reported rather than suppressed, so mid-investigation signal
+  // is not hidden.
+  {
+    const boundaries = {
+      type: 'FeatureCollection',
+      features: ['North', 'South', 'East', 'West'].map(name => ({
+        type: 'Feature',
+        properties: { name },
+        geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
+      })),
+    };
+    // North 7 cases, South 3, East 1, West 0.
+    const records = [
+      ...Array.from({ length: 7 }, (_, i) => ({ id: `n${i}`, area: 'North' })),
+      ...Array.from({ length: 3 }, (_, i) => ({ id: `s${i}`, area: 'South' })),
+      { id: 'e0', area: 'East' },
+    ];
+    const result = buildAreaJoin({
+      records, areaField: 'area', boundaries, boundaryKey: 'name', metric: 'count',
+    });
+
+    assert.deepEqual(result.summary.smallCountKeys, ['East', 'South'],
+      'areas with 1 and 3 cases should be flagged');
+    assert.ok(!result.summary.smallCountKeys.includes('North'),
+      'an area at or above the threshold must not be flagged');
+    assert.ok(!result.summary.smallCountKeys.includes('West'),
+      'an empty area has nobody to identify and must not be flagged');
+
+    // The threshold is exclusive: exactly five cases is not flagged.
+    const atThreshold = buildAreaJoin({
+      records: Array.from({ length: SMALL_COUNT_THRESHOLD }, (_, i) => ({ id: `x${i}`, area: 'North' })),
+      areaField: 'area', boundaries, boundaryKey: 'name', metric: 'count',
+    });
+    assert.deepEqual(atThreshold.summary.smallCountKeys, [],
+      `exactly ${SMALL_COUNT_THRESHOLD} cases should not be flagged`);
+  }
+
+  // A zero or missing denominator must give no rate, not Infinity or NaN.
+  // count / 0 would otherwise be rendered as a real rate on the map.
+  {
+    const boundaries = {
+      type: 'FeatureCollection',
+      features: ['Alpha', 'Beta'].map(name => ({
+        type: 'Feature',
+        properties: { name },
+        geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
+      })),
+    };
+    const records = [
+      ...Array.from({ length: 6 }, (_, i) => ({ id: `a${i}`, area: 'Alpha' })),
+      ...Array.from({ length: 6 }, (_, i) => ({ id: `b${i}`, area: 'Beta' })),
+    ];
+    // Alpha has a real population, Beta's is zero.
+    const denominatorDataset = {
+      id: 'pop', name: 'pop', source: 'form',
+      columns: [
+        { key: 'area', label: 'Area', type: 'text' },
+        { key: 'pop', label: 'Population', type: 'number' },
+      ],
+      records: [
+        { id: '1', area: 'Alpha', pop: 1000 },
+        { id: '2', area: 'Beta', pop: 0 },
+      ],
+      createdAt: '', updatedAt: '',
+    };
+    const joined = buildAreaJoin({
+      records, areaField: 'area', boundaries, boundaryKey: 'name', metric: 'rate',
+      denominatorDataset, denominatorKey: 'area', denominatorValue: 'pop',
+      rateMultiplier: 100000,
+    });
+    const byLabel = Object.fromEntries(joined.areas.map(a => [a.label, a]));
+
+    assert.equal(byLabel.Alpha.rate, (6 / 1000) * 100000, 'a valid denominator gives a real rate');
+    assert.equal(byLabel.Beta.rate, null, 'a zero denominator must give no rate rather than Infinity');
+    for (const a of joined.areas) {
+      assert.ok(a.rate === null || Number.isFinite(a.rate),
+        `rate for ${a.label} was ${a.rate}, which is not finite`);
+    }
+    assert.ok(joined.summary.missingDenominatorKeys.includes('Beta'),
+      'an area with cases but no usable denominator should be reported');
+  }
 
   console.log('Area map regression checks passed.');
 } finally {

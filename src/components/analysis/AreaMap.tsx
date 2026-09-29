@@ -11,6 +11,7 @@ import { useLocale } from '../../contexts/LocaleContext';
 import {
   buildAreaJoin,
   buildJoinReport,
+  SMALL_COUNT_THRESHOLD,
   classifyValues,
   formatAreaValue,
   getClassIndex,
@@ -648,7 +649,21 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                     <span className="text-right font-medium">{joinResult.summary.unmatchedDenominatorKeys.length}</span>
                   </>
                 )}
+                {joinResult.summary.smallCountKeys.length > 0 && (
+                  <>
+                    <span className="text-gray-500">Areas with under {SMALL_COUNT_THRESHOLD} cases</span>
+                    <span className="text-right font-medium">{joinResult.summary.smallCountKeys.length}</span>
+                  </>
+                )}
               </div>
+              {joinResult.summary.smallCountKeys.length > 0 && (
+                <p className="text-xs text-amber-700 mt-2">
+                  {joinResult.summary.smallCountKeys.length} area
+                  {joinResult.summary.smallCountKeys.length === 1 ? ' holds' : 's hold'} fewer than{' '}
+                  {SMALL_COUNT_THRESHOLD} cases. Small counts combined with geography can identify
+                  individuals, so review these before publishing or sharing this map or its exports.
+                </p>
+              )}
               {(joinResult.summary.unmatchedDataKeys.length > 0 || joinResult.summary.missingDenominatorKeys.length > 0) && (
                 <p className="text-xs text-amber-700 mt-2">
                   Review the join report before using this map in teaching or reports.

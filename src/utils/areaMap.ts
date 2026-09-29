@@ -25,6 +25,16 @@ export interface JoinedArea {
   feature: GeoJsonFeature;
 }
 
+/**
+ * Case count at or below which an area risks identifying individuals.
+ *
+ * Matches the threshold the Help Center gives: "Do not display individual
+ * points if fewer than 5 cases exist in an area." The map reports areas under
+ * it rather than suppressing them, so the analyst can see the signal during an
+ * investigation and make an informed decision before publishing.
+ */
+export const SMALL_COUNT_THRESHOLD = 5;
+
 export interface AreaJoinSummary {
   boundaryCount: number;
   matchedBoundaryCount: number;
@@ -35,6 +45,8 @@ export interface AreaJoinSummary {
   duplicateDataKeys: string[];
   duplicateDenominatorKeys: string[];
   missingDenominatorKeys: string[];
+  /** Areas with at least one case but fewer than SMALL_COUNT_THRESHOLD. */
+  smallCountKeys: string[];
 }
 
 export interface AreaJoinResult {
@@ -226,6 +238,14 @@ export function buildAreaJoin(options: BuildAreaJoinOptions): AreaJoinResult {
         .sort((a, b) => a.localeCompare(b))
     : [];
 
+  // Areas holding a handful of cases can identify the people in them, which is
+  // exactly what the Help Center tells users not to publish. Reported, not
+  // suppressed: hiding them would also hide real signal mid-investigation.
+  const smallCountKeys = areas
+    .filter(area => area.count > 0 && area.count < SMALL_COUNT_THRESHOLD)
+    .map(area => area.label)
+    .sort((a, b) => a.localeCompare(b));
+
   return {
     areas,
     summary: {
@@ -238,6 +258,7 @@ export function buildAreaJoin(options: BuildAreaJoinOptions): AreaJoinResult {
       duplicateDataKeys: [],
       duplicateDenominatorKeys,
       missingDenominatorKeys,
+      smallCountKeys,
     },
   };
 }
