@@ -37,6 +37,8 @@ interface BarDataResult {
 }
 
 interface BarSvgOptions {
+  /** Facet panels share one set of footnotes above the grid, so they suppress their own. */
+  suppressFootnotes?: boolean;
   sortedData: BarData[];
   excluded: number;
   colorScheme: ChartColorScheme;
@@ -129,6 +131,7 @@ function smallCountAttrs(muted: boolean): string {
 
 /** Footnote lines stacked at the bottom left of the chart. */
 function buildFootnotes(opts: BarSvgOptions): string[] {
+  if (opts.suppressFootnotes) return [];
   const { sortedData, excluded, valueMode, valueFormat, categoryVar, valueVar, flagSmallCounts, dataset } = opts;
   const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
 
@@ -182,8 +185,13 @@ function generateHorizontalBarSvg(opts: BarSvgOptions): string {
 
   // Zero baseline; extend the nice max to cover the reference line
   const maxValue = Math.max(...sortedData.map(d => d.value), 0);
-  const domainMax = Math.max(maxValue, referenceValue ?? 0);
+  // Only a reference value inside the plotted domain widens it. A negative one
+  // would otherwise leave niceMax positive and place the line outside the axis,
+  // drawn across the category labels.
+  const domainMax = Math.max(maxValue, Math.max(referenceValue ?? 0, 0));
   const niceMax = domainMax === 0 ? 10 : getNiceMax(domainMax);
+  const referenceInDomain =
+    referenceValue !== null && referenceValue >= 0 && referenceValue <= niceMax;
 
   // Fit bars within the default plot height (capped at 40px, floor 6px;
   // the SVG grows only if bars would drop below the floor)
@@ -221,8 +229,8 @@ function generateHorizontalBarSvg(opts: BarSvgOptions): string {
   }
 
   // Reference line
-  if (referenceValue !== null) {
-    const refX = margin.left + (referenceValue / niceMax) * plotWidth;
+  if (referenceInDomain) {
+    const refX = margin.left + (referenceValue! / niceMax) * plotWidth;
     svg += `<line x1="${refX}" y1="${margin.top}" x2="${refX}" y2="${axisY}" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5,4"/>`;
     if (referenceLabel) {
       svg += svgText(refX + 4, margin.top + 4, referenceLabel, { anchor: 'start', fontSize: 10, fill: '#777', dy: '0.35em' });
@@ -311,21 +319,46 @@ function generateVerticalBarSvg(opts: BarSvgOptions): string {
   } = opts;
 
   const dims = getDefaultDimensions('bar');
-  const { width } = dims;
 
   // Wrap category labels (max 2 lines) and deepen the bottom margin to fit them
   const wrappedLabels = sortedData.map(d => wrapCategoryLabel(d.label));
   const maxLines = wrappedLabels.reduce((m, lines) => Math.max(m, lines.length), 1);
-  const margin = { top: dims.margin.top, right: 40, bottom: maxLines > 1 ? 62 : 46, left: 56 };
 
-  const plotWidth = width - margin.left - margin.right;
+  // Past roughly a dozen categories the default width gave bands narrower than
+  // the bars drawn in them, so adjacent bars physically overlapped and labels
+  // ran into each other. Grow the canvas instead, as horizontal mode grows its
+  // height, and rotate labels once they no longer fit their band.
+  const MIN_BAND_WIDTH = 18;
+  const marginLeft = 56;
+  const marginRight = 40;
+  const naturalPlotWidth = dims.width - marginLeft - marginRight;
+  const neededPlotWidth = Math.max(naturalPlotWidth, sortedData.length * MIN_BAND_WIDTH);
+
+  const longestLabel = sortedData.reduce((m, d) => Math.max(m, d.label.length), 0);
+  const bandForLabels = neededPlotWidth / Math.max(sortedData.length, 1);
+  const rotateLabels = longestLabel * 6.2 > bandForLabels;
+
+  const margin = {
+    top: dims.margin.top,
+    right: marginRight,
+    bottom: rotateLabels ? Math.min(30 + longestLabel * 4.4, 140) : (maxLines > 1 ? 62 : 46),
+    left: marginLeft,
+  };
+
+  const width = neededPlotWidth + margin.left + margin.right;
+  const plotWidth = neededPlotWidth;
   const plotHeight = dims.height - margin.top - margin.bottom;
   const axisY = margin.top + plotHeight;
 
   // Zero baseline; extend the nice max to cover the reference line
   const maxValue = Math.max(...sortedData.map(d => d.value), 0);
-  const domainMax = Math.max(maxValue, referenceValue ?? 0);
+  // Only a reference value inside the plotted domain widens it. A negative one
+  // would otherwise leave niceMax positive and place the line outside the axis,
+  // drawn across the category labels.
+  const domainMax = Math.max(maxValue, Math.max(referenceValue ?? 0, 0));
   const niceMax = domainMax === 0 ? 10 : getNiceMax(domainMax);
+  const referenceInDomain =
+    referenceValue !== null && referenceValue >= 0 && referenceValue <= niceMax;
 
   const yScale = (v: number) => axisY - (v / niceMax) * plotHeight;
 
@@ -359,8 +392,8 @@ function generateVerticalBarSvg(opts: BarSvgOptions): string {
   }
 
   // Reference line (horizontal across the plot in vertical mode)
-  if (referenceValue !== null) {
-    const refY = yScale(referenceValue);
+  if (referenceInDomain) {
+    const refY = yScale(referenceValue!);
     svg += `<line x1="${margin.left}" y1="${refY}" x2="${margin.left + plotWidth}" y2="${refY}" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5,4"/>`;
     if (referenceLabel) {
       svg += svgText(margin.left + 4, refY - 4, referenceLabel, { anchor: 'start', fontSize: 10, fill: '#777' });
@@ -382,7 +415,16 @@ function generateVerticalBarSvg(opts: BarSvgOptions): string {
     // Category label below the axis, centered under the bar (wrapped to at most 2 lines)
     const cx = bandX + bandW / 2;
     const lines = wrappedLabels[i];
-    if (lines.length === 1) {
+    if (rotateLabels) {
+      // One rotated line rather than two wrapped ones: wrapping does not help
+      // when the band is narrower than a single word.
+      svg += svgText(cx, axisY + 14, d.label, {
+        fontSize: 11,
+        fill: '#333',
+        anchor: 'end',
+        rotate: -45,
+      });
+    } else if (lines.length === 1) {
       svg += svgText(cx, axisY + 16, lines[0], { fontSize: 11, fill: '#333' });
     } else {
       svg += svgText(cx, axisY + 12, lines[0], { fontSize: 11, fill: '#333' });
@@ -457,9 +499,14 @@ export function BarChart({ dataset }: BarChartProps) {
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
-    if (valueFormat === 'percent') return valueMode === 'count' ? 'Percent of records' : 'Percent';
-    if (valueMode === 'count') return 'Number of records';
-    return dataset.columns.find(c => c.key === valueVar)?.label || '';
+    const columnLabel = dataset.columns.find(c => c.key === valueVar)?.label || '';
+    if (valueMode === 'count') {
+      return valueFormat === 'percent' ? 'Percent of records' : 'Number of records';
+    }
+    // Outside count mode a bare 'Percent' hid which variable was plotted, and
+    // the values are not converted to percentages anyway: the aggregate is only
+    // a percentage if the column already was one. Keep the name and mark the unit.
+    return valueFormat === 'percent' ? `${columnLabel} (%)` : columnLabel;
   }, [axisTitleOverride, valueMode, valueVar, valueFormat, dataset]);
 
   const referenceValue = useMemo(() => {
@@ -588,6 +635,10 @@ export function BarChart({ dataset }: BarChartProps) {
 
   // Generate SVG string
   const svgContent = useMemo(() => generateBarSvg(svgOptions), [svgOptions]);
+
+  // Footnotes for the facet grid, built once from the full dataset rather than
+  // repeated inside every panel.
+  const facetFootnotes = useMemo(() => buildFootnotes(svgOptions), [svgOptions]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -849,6 +900,18 @@ export function BarChart({ dataset }: BarChartProps) {
       <div className="flex-1 min-w-0">
         {sortedData.length > 0 ? (
           facetCol ? (
+            <>
+            {/* Shown once for the whole grid, since each panel suppresses its own. */}
+            {(axisTitle || facetFootnotes.length > 0) && (
+              <div className="mb-2">
+                {axisTitle && (
+                  <p className="text-sm text-gray-600">{axisTitle}</p>
+                )}
+                {facetFootnotes.map((note, i) => (
+                  <p key={i} className="text-xs text-gray-400">{note}</p>
+                ))}
+              </div>
+            )}
             <FacetWrapper
               dataset={dataset}
               facetCol={facetCol}
@@ -858,10 +921,23 @@ export function BarChart({ dataset }: BarChartProps) {
                 if (sortedFacetData.length === 0) {
                   return <div className="text-gray-400 text-xs p-2">No data</div>;
                 }
-                const facetSvg = generateBarSvg({ ...svgOptions, sortedData: sortedFacetData, excluded: facet.excluded, title: '', subtitle: '', source: '' });
+                // Facet panels share one axis title and one set of footnotes,
+                // printed once above the grid. Repeating them inside every panel
+                // stacked the same three lines up to N times.
+                const facetSvg = generateBarSvg({
+                  ...svgOptions,
+                  sortedData: sortedFacetData,
+                  excluded: facet.excluded,
+                  title: '',
+                  subtitle: '',
+                  source: '',
+                  axisTitle: '',
+                  suppressFootnotes: true,
+                });
                 return <div dangerouslySetInnerHTML={{ __html: facetSvg }} />;
               }}
             />
+            </>
           ) : (
             <ChartContainer
               title={chartTitle || 'Bar Chart'}

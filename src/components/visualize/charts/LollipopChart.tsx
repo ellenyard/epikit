@@ -93,9 +93,14 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
-    if (valueFormat === 'percent') return valueMode === 'count' ? 'Percent of records' : 'Percent';
-    if (valueMode === 'count') return 'Number of records';
-    return dataset.columns.find(c => c.key === numericCol)?.label || '';
+    const columnLabel = dataset.columns.find(c => c.key === numericCol)?.label || '';
+    if (valueMode === 'count') {
+      return valueFormat === 'percent' ? 'Percent of records' : 'Number of records';
+    }
+    // Outside count mode a bare 'Percent' hid which variable was plotted, and
+    // the values are not converted to percentages anyway: the aggregate is only
+    // a percentage if the column already was one. Keep the name and mark the unit.
+    return valueFormat === 'percent' ? `${columnLabel} (%)` : columnLabel;
   }, [axisTitleOverride, valueMode, numericCol, valueFormat, dataset]);
 
   const referenceValue = useMemo(() => {

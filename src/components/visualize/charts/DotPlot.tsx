@@ -253,9 +253,14 @@ export function DotPlot({ dataset }: DotPlotProps) {
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
-    if (valueFormat === 'percent') return aggregation === 'count' ? 'Percent of records' : 'Percent';
-    if (aggregation === 'count') return 'Number of records';
-    return dataset.columns.find(c => c.key === valueCol)?.label || '';
+    const columnLabel = dataset.columns.find(c => c.key === valueCol)?.label || '';
+    if (aggregation === 'count') {
+      return valueFormat === 'percent' ? 'Percent of records' : 'Number of records';
+    }
+    // Outside count mode a bare 'Percent' hid which variable was plotted, and
+    // the values are not converted to percentages anyway: the aggregate is only
+    // a percentage if the column already was one. Keep the name and mark the unit.
+    return valueFormat === 'percent' ? `${columnLabel} (%)` : columnLabel;
   }, [axisTitleOverride, aggregation, valueCol, valueFormat, dataset]);
 
   const referenceValue = useMemo(() => {
