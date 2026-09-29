@@ -1,6 +1,18 @@
 import type { CaseRecord } from '../types/analysis';
 
 export type BinSize = 'hourly' | '6hour' | '12hour' | 'daily' | 'weekly-cdc' | 'weekly-iso';
+
+export const BIN_SIZES: readonly BinSize[] = [
+  'hourly', '6hour', '12hour', 'daily', 'weekly-cdc', 'weekly-iso',
+] as const;
+
+/**
+ * Guard for values coming from storage or an imported project file, which are
+ * otherwise cast straight to BinSize without being checked.
+ */
+export function isBinSize(value: unknown): value is BinSize {
+  return typeof value === 'string' && (BIN_SIZES as readonly string[]).includes(value);
+}
 export type ColorScheme = 'default' | 'classification' | 'colorblind' | 'grayscale';
 
 // Helper to parse dates consistently as local time (exported for use in components)
@@ -286,13 +298,21 @@ export function processEpiCurveData(
     });
   }
 
-  // Adjust to bin boundaries
+  // Adjust to bin boundaries.
+  //
+  // Both ends are the START of the first and last bin to render. endDate used
+  // getBinEnd, which returns the exclusive bound one bin past the data; padding
+  // was then added on top of that, and the generation loop below is inclusive.
+  // The two compounded into one more empty bin after the outbreak than before
+  // it, which is what made short outbreaks look like they trailed off into
+  // nothing.
   let startDate = getBinStart(annotationMinDate, binSize);
-  let endDate = getBinEnd(annotationMaxDate, binSize);
+  let endDate = getBinStart(annotationMaxDate, binSize);
 
-  // Add padding bins - 2 on each side for data, but if we have annotations
-  // add 1 extra bin before/after the annotation for better visualization
-  const paddingBins = 2;
+  // One empty bin each side, so the curve visibly starts from and returns to
+  // zero without burying a short outbreak in blank space. Anyone wanting a
+  // wider window can set an explicit date range.
+  const paddingBins = 1;
   for (let i = 0; i < paddingBins; i++) {
     startDate = getPreviousBinStart(startDate, binSize);
   }
@@ -319,6 +339,8 @@ export function processEpiCurveData(
 
   while (currentStart <= endDate) {
     const currentEnd = getNextBinStart(currentStart, binSize);
+    // No forward progress would mean an unbounded loop; stop rather than hang.
+    if (currentEnd <= currentStart) break;
 
     const binCases = validRecords.filter(r => {
       const caseDate = timeColumn
@@ -428,6 +450,11 @@ function getNextBinStart(date: Date, binSize: BinSize): Date {
     case 'weekly-cdc':
     case 'weekly-iso':
       d.setDate(d.getDate() + 7);
+      break;
+    default:
+      // Must still advance. Returning the date unchanged makes the bin
+      // generation loop below spin forever and exhaust memory.
+      d.setDate(d.getDate() + 1);
       break;
   }
 

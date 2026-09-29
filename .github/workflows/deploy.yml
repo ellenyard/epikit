@@ -61,6 +61,7 @@ jobs:
           npm run test:labels
           npm run test:chart-defaults
           npm run test:statistics
+          npm run test:epicurve-bins
         timeout-minutes: 10
 
       - name: Build

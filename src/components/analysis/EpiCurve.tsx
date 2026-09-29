@@ -8,15 +8,7 @@ import {
   LABEL_FONT_WEIGHTS,
   DEFAULT_LABEL_FONT_SIZE,
 } from '../../utils/labelLayout';
-import {
-  processEpiCurveData,
-  getColorForStrata,
-  getAnnotationColor,
-  getAnnotationCategory,
-  ANNOTATION_CATEGORIES,
-  PATHOGEN_INCUBATION,
-  parseLocalDate,
-} from '../../utils/epiCurve';
+import { processEpiCurveData, getColorForStrata, getAnnotationColor, getAnnotationCategory, ANNOTATION_CATEGORIES, PATHOGEN_INCUBATION, parseLocalDate, isBinSize } from '../../utils/epiCurve';
 import type { BinSize, ColorScheme, Annotation, EpiCurveData, AnnotationType } from '../../utils/epiCurve';
 import { EpiCurveTutorial } from '../tutorials/EpiCurveTutorial';
 import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
@@ -104,7 +96,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   // Configuration state (initialized from localStorage)
   const [dateColumn, setDateColumn] = useState<string>(() => isSampleOutbreakPreset ? 'onset_date' : (saved.dateColumn as string) || '');
   const [timeColumn, setTimeColumn] = useState<string>(() => isSampleOutbreakPreset ? 'onset_time' : (saved.timeColumn as string) || '');
-  const [binSize, setBinSize] = useState<BinSize>(() => isSampleOutbreakPreset ? '12hour' : (saved.binSize as BinSize) || 'daily');
+  const [binSize, setBinSize] = useState<BinSize>(() => isSampleOutbreakPreset ? '12hour' : (isBinSize(saved.binSize) ? saved.binSize : 'daily'));
   const [stratifyBy, setStratifyBy] = useState<string>(() => isSampleOutbreakPreset ? 'case_status' : (saved.stratifyBy as string) ?? '');
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'default');
 
@@ -1391,7 +1383,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                 {/* Chart Body */}
                 <div
                   ref={chartBodyRef}
-                  className="flex-1 overflow-x-auto cursor-crosshair"
+                  // `safe center` centres a narrow chart in a wide panel but
+                  // falls back to flex-start when the chart overflows, so a
+                  // many-bin curve still scrolls from its left edge instead of
+                  // having the start clipped.
+                  className="flex-1 overflow-x-auto cursor-crosshair flex [justify-content:safe_center]"
                   onClick={handleChartClick}
                   title="Click to add an annotation at this date"
                 >
