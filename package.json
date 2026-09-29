@@ -16,7 +16,8 @@
     "test:statistics": "node scripts/statistics.regression.mjs",
     "test:epicurve-bins": "node scripts/epiCurveBins.regression.mjs",
     "test:geo-privacy": "node scripts/geoPrivacy.regression.mjs",
-    "test:import-types": "node scripts/importTypes.regression.mjs && TZ=UTC node scripts/importTypes.regression.mjs && TZ=Asia/Kolkata node scripts/importTypes.regression.mjs && TZ=Pacific/Auckland node scripts/importTypes.regression.mjs"
+    "test:import-types": "node scripts/importTypes.regression.mjs && TZ=UTC node scripts/importTypes.regression.mjs && TZ=Asia/Kolkata node scripts/importTypes.regression.mjs && TZ=Pacific/Auckland node scripts/importTypes.regression.mjs",
+    "test:persistence": "node scripts/persistence.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

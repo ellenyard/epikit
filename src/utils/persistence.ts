@@ -42,6 +42,65 @@ export interface ProjectData {
   activeDatasetId: string | null;
   editLog: EditLogEntry[];
   analysisState: Record<string, AnalysisState>; // keyed by dataset ID
+  /**
+   * Per-module, per-dataset analysis state, keyed by its storage key.
+   *
+   * Each module persists its own settings under `epikit_<module>_<datasetId>`:
+   * epi-curve annotations and binning, spot-map columns and jitter settings,
+   * area-map joins, table-builder layouts, 2x2 setups. None of it was
+   * exported, so a project file carried the data and none of the analysis.
+   * Optional, so files written before this still import.
+   */
+  moduleState?: Record<string, unknown>;
+}
+
+/**
+ * Prefixes of the per-module storage keys that make up a project's analysis.
+ *
+ * Deliberately a prefix list rather than every key: modules append a dataset
+ * id, and new modules should be added here when they start persisting.
+ */
+const MODULE_STATE_PREFIXES = [
+  'epikit_epicurve_',
+  'epikit_spotmap_',
+  'epikit_areamap_',
+  'epikit_tablebuilder_',
+  'epikit_twobytwo_',
+  'epikit_analysis_workflow_',
+] as const;
+
+/** Read every per-module analysis state currently in storage. */
+export function collectModuleState(): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !MODULE_STATE_PREFIXES.some(prefix => key.startsWith(prefix))) continue;
+      const raw = localStorage.getItem(key);
+      if (raw === null) continue;
+      try {
+        out[key] = JSON.parse(raw);
+      } catch {
+        // A corrupt entry should not abort the whole export.
+      }
+    }
+  } catch (e) {
+    console.error('Failed to collect module state:', e);
+  }
+  return out;
+}
+
+/** Write per-module analysis state back, as part of importing a project. */
+export function restoreModuleState(moduleState: Record<string, unknown> | undefined): void {
+  if (!moduleState) return;
+  try {
+    for (const [key, value] of Object.entries(moduleState)) {
+      if (!MODULE_STATE_PREFIXES.some(prefix => key.startsWith(prefix))) continue;
+      localStorage.setItem(key, JSON.stringify(value));
+    }
+  } catch (e) {
+    console.error('Failed to restore module state:', e);
+  }
 }
 
 // ============ localStorage Functions ============
@@ -163,6 +222,7 @@ export function exportProject(
     activeDatasetId,
     editLog,
     analysisState: analysisStates,
+    moduleState: collectModuleState(),
   };
 }
 
@@ -229,6 +289,11 @@ export function parseProjectFile(fileContent: string): ProjectData | null {
         ? project.analysisState
         : {};
 
+    const moduleState =
+      project.moduleState && typeof project.moduleState === 'object' && !Array.isArray(project.moduleState)
+        ? (project.moduleState as Record<string, unknown>)
+        : undefined;
+
     return {
       version: project.version as string,
       exportedAt: typeof project.exportedAt === 'string' ? project.exportedAt : new Date().toISOString(),
@@ -236,6 +301,7 @@ export function parseProjectFile(fileContent: string): ProjectData | null {
       activeDatasetId,
       editLog,
       analysisState,
+      moduleState,
     };
   } catch (e) {
     console.error('Failed to parse project file:', e);

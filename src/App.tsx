@@ -44,7 +44,7 @@ import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecord
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
-import { exportProject, downloadProject, parseProjectFile, saveDatasets, saveEditLog, saveActiveDatasetId } from './utils/persistence';
+import { exportProject, downloadProject, parseProjectFile, saveDatasets, saveEditLog, saveActiveDatasetId, restoreModuleState } from './utils/persistence';
 import type { VariableConfig } from './types/analysis';
 
 /** Available navigation modules in the app */
@@ -579,8 +579,16 @@ function App() {
       localStorage.setItem('epikit_analysis_state', JSON.stringify(project.analysisState));
     }
 
+    // Restore each module's own saved work: epi-curve annotations and binning,
+    // map configuration, table and 2x2 setups. Without this the import brought
+    // back the data and none of the analysis.
+    restoreModuleState(project.moduleState);
+
     setShowProjectLoadConfirm(null);
     setActiveModule('dashboard');
+    // Modules read their state on mount, so reload to pick up what was just
+    // written rather than leaving the already-mounted ones showing stale setup.
+    window.location.reload();
   }, [showProjectLoadConfirm]);
 
   // Check if current module needs dataset selector
