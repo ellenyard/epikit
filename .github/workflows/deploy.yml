@@ -47,6 +47,21 @@ jobs:
           done
         timeout-minutes: 10
 
+      # Gates run before the build so a failure stops the deploy rather than
+      # shipping and reporting afterwards.
+      - name: Lint
+        run: npm run lint
+        timeout-minutes: 5
+
+      - name: Tests
+        run: |
+          npm run test:csv
+          npm run test:locale
+          npm run test:area-map
+          npm run test:labels
+          npm run test:chart-defaults
+        timeout-minutes: 10
+
       - name: Build
         run: npm run build
         timeout-minutes: 15

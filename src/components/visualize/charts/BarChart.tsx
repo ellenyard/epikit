@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import type { Dataset, DataColumn } from '../../../types/analysis';
+import { useState, useMemo, useCallback } from 'react';
+import type { Dataset } from '../../../types/analysis';
+import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
@@ -18,9 +19,6 @@ import {
 interface BarChartProps {
   dataset: Dataset;
 }
-
-/** Upper bound on distinct values for a column to be auto-selected as the category axis. */
-const MAX_AUTO_CATEGORIES = 30;
 
 type SortMode = 'value' | 'alpha' | 'custom';
 type ValueMode = 'count' | 'sum' | 'mean' | 'median';
@@ -430,9 +428,9 @@ function generateBarSvg(opts: BarSvgOptions): string {
 
 export function BarChart({ dataset }: BarChartProps) {
   // Config state
-  const [categoryVar, setCategoryVar] = useState('');
+  const [categoryVarChoice, setCategoryVarChoice] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
-  const [valueVar, setValueVar] = useState('');
+  const [valueVarChoice, setValueVarChoice] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('value');
   const [orientation, setOrientation] = useState<Orientation>('horizontal');
   const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
@@ -445,53 +443,24 @@ export function BarChart({ dataset }: BarChartProps) {
   const [facetCol, setFacetCol] = useState('');
   const [chartTitle, setChartTitle] = useState('');
   const [chartSubtitle, setChartSubtitle] = useState('');
-  const [axisTitle, setAxisTitle] = useState('');
-  const [axisTitleEdited, setAxisTitleEdited] = useState(false);
+  // null means "follow the data"; a string is an explicit override typed by the
+  // user. Derived rather than synced in an effect, so the title cannot lag the
+  // controls it describes.
+  const [axisTitleOverride, setAxisTitleOverride] = useState<string | null>(null);
   const [chartSource, setChartSource] = useState('');
 
-  // Pre-select sensible defaults so a chart renders immediately on dataset load or change.
-  // Prefer a categorical column with 3-30 distinct values (a true grouping variable like
-  // Case Status) over ID-like text columns and two-value columns like Sex.
-  useEffect(() => {
-    const catValid = categoryVar !== '' && dataset.columns.some(c => c.key === categoryVar);
-    if (!catValid) {
-      const distinct = (key: string) =>
-        new Set(dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')).size;
-      const cats = dataset.columns.filter(c => c.type === 'categorical');
-      const ideal = cats.find(c => { const n = distinct(c.key); return n >= 3 && n <= 30; });
-      // The last-resort fallback must stay cardinality-bounded too. Columns often infer as
-      // 'text', and the first text column is typically a record ID: auto-selecting it builds
-      // one bar per record and produces an SVG tens of thousands of pixels tall.
-      const plottable = (c: DataColumn) => {
-        if (c.type !== 'text' && c.type !== 'categorical' && c.type !== 'boolean') return false;
-        const n = distinct(c.key);
-        return n >= 2 && n <= MAX_AUTO_CATEGORIES;
-      };
-      const fallback = cats.find(c => { const n = distinct(c.key); return n >= 2 && n <= MAX_AUTO_CATEGORIES; })
-        ?? dataset.columns.find(plottable);
-      const chosen = ideal ?? fallback;
-      // No suitable column: leave categoryVar empty so the picker prompt shows.
-      if (chosen) setCategoryVar(chosen.key);
-    }
-    const numValid = valueVar !== '' && dataset.columns.some(c => c.key === valueVar && c.type === 'number');
-    if (!numValid) {
-      const firstNum = dataset.columns.find(c => c.type === 'number');
-      if (firstNum) setValueVar(firstNum.key);
-    }
-  }, [dataset, categoryVar, valueVar]);
+  // Effective selections: the user's choice while it remains valid for the
+  // current dataset, otherwise an automatic pick. Derived rather than written
+  // back through an effect.
+  const categoryVar = resolveColumnChoice(dataset, categoryVarChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
+  const valueVar = resolveColumnChoice(dataset, valueVarChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
 
-  // Auto-fill the axis title from the numeric variable label and format (or count mode wording) until manually edited
-  useEffect(() => {
-    if (axisTitleEdited) return;
-    if (valueFormat === 'percent') {
-      setAxisTitle(valueMode === 'count' ? 'Percent of records' : 'Percent');
-    } else if (valueMode === 'count') {
-      setAxisTitle('Number of records');
-    } else {
-      const label = dataset.columns.find(c => c.key === valueVar)?.label;
-      setAxisTitle(label || '');
-    }
-  }, [valueMode, valueVar, valueFormat, axisTitleEdited, dataset]);
+  const axisTitle = useMemo(() => {
+    if (axisTitleOverride !== null) return axisTitleOverride;
+    if (valueFormat === 'percent') return valueMode === 'count' ? 'Percent of records' : 'Percent';
+    if (valueMode === 'count') return 'Number of records';
+    return dataset.columns.find(c => c.key === valueVar)?.label || '';
+  }, [axisTitleOverride, valueMode, valueVar, valueFormat, dataset]);
 
   const referenceValue = useMemo(() => {
     if (referenceLine.trim() === '') return null;
@@ -664,7 +633,7 @@ export function BarChart({ dataset }: BarChartProps) {
             description="The categorical variable to display"
             columns={dataset.columns}
             value={categoryVar}
-            onChange={setCategoryVar}
+            onChange={setCategoryVarChoice}
             filterTypes={['text', 'categorical', 'boolean']}
             required
             placeholder="Select category..."
@@ -692,7 +661,7 @@ export function BarChart({ dataset }: BarChartProps) {
               description="The numeric variable to aggregate per category"
               columns={dataset.columns}
               value={valueVar}
-              onChange={setValueVar}
+              onChange={setValueVarChoice}
               filterTypes={['number']}
               required
               placeholder="Select numeric variable..."
@@ -856,8 +825,7 @@ export function BarChart({ dataset }: BarChartProps) {
               type="text"
               value={axisTitle}
               onChange={(e) => {
-                setAxisTitle(e.target.value);
-                setAxisTitleEdited(true);
+                setAxisTitleOverride(e.target.value);
               }}
               placeholder="Defaults to the value being plotted"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

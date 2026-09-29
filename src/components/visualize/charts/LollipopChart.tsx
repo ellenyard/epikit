@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
+import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import {
@@ -64,9 +65,9 @@ function wrapCategoryLabel(label: string): string[] {
 }
 
 export function LollipopChart({ dataset }: LollipopChartProps) {
-  const [categoryCol, setCategoryCol] = useState('');
+  const [categoryColChoice, setCategoryColChoice] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
-  const [numericCol, setNumericCol] = useState('');
+  const [numericColChoice, setNumericColChoice] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('value-desc');
   const [aggregation, setAggregation] = useState<Aggregation>('mean');
   const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
@@ -78,44 +79,24 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
   const [showLabels, setShowLabels] = useState(true);
   const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
-  const [axisTitle, setAxisTitle] = useState('');
-  const [axisTitleEdited, setAxisTitleEdited] = useState(false);
+  // null means "follow the data"; a string is an explicit override typed by the
+  // user. Derived rather than synced in an effect, so the title cannot lag the
+  // controls it describes.
+  const [axisTitleOverride, setAxisTitleOverride] = useState<string | null>(null);
   const [source, setSource] = useState('');
 
-  // Pre-select sensible defaults so a chart renders immediately on dataset load or change.
-  // Prefer a categorical column with 3-30 distinct values (a true grouping variable like
-  // Case Status) over ID-like text columns and two-value columns like Sex.
-  useEffect(() => {
-    const catValid = categoryCol !== '' && dataset.columns.some(c => c.key === categoryCol);
-    if (!catValid) {
-      const distinct = (key: string) =>
-        new Set(dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')).size;
-      const cats = dataset.columns.filter(c => c.type === 'categorical');
-      const ideal = cats.find(c => { const n = distinct(c.key); return n >= 3 && n <= 30; });
-      const fallback = cats.find(c => { const n = distinct(c.key); return n >= 2 && n <= 30; })
-        ?? dataset.columns.find(c => c.type === 'text' || c.type === 'categorical');
-      const chosen = ideal ?? fallback;
-      if (chosen) setCategoryCol(chosen.key);
-    }
-    const numValid = numericCol !== '' && dataset.columns.some(c => c.key === numericCol && c.type === 'number');
-    if (!numValid) {
-      const firstNum = dataset.columns.find(c => c.type === 'number');
-      if (firstNum) setNumericCol(firstNum.key);
-    }
-  }, [dataset, categoryCol, numericCol]);
+  // Effective selections: the user's choice while it remains valid for the
+  // current dataset, otherwise an automatic pick. Derived rather than written
+  // back through an effect.
+  const categoryCol = resolveColumnChoice(dataset, categoryColChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
+  const numericCol = resolveColumnChoice(dataset, numericColChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
 
-  // Auto-fill the axis title from the numeric column label and format (or count mode wording) until manually edited
-  useEffect(() => {
-    if (axisTitleEdited) return;
-    if (valueFormat === 'percent') {
-      setAxisTitle(valueMode === 'count' ? 'Percent of records' : 'Percent');
-    } else if (valueMode === 'count') {
-      setAxisTitle('Number of records');
-    } else {
-      const label = dataset.columns.find(c => c.key === numericCol)?.label;
-      setAxisTitle(label || '');
-    }
-  }, [valueMode, numericCol, valueFormat, axisTitleEdited, dataset]);
+  const axisTitle = useMemo(() => {
+    if (axisTitleOverride !== null) return axisTitleOverride;
+    if (valueFormat === 'percent') return valueMode === 'count' ? 'Percent of records' : 'Percent';
+    if (valueMode === 'count') return 'Number of records';
+    return dataset.columns.find(c => c.key === numericCol)?.label || '';
+  }, [axisTitleOverride, valueMode, numericCol, valueFormat, dataset]);
 
   const referenceValue = useMemo(() => {
     if (referenceLine.trim() === '') return null;
@@ -399,7 +380,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
             description="Categorical variable for each row"
             columns={dataset.columns}
             value={categoryCol}
-            onChange={setCategoryCol}
+            onChange={setCategoryColChoice}
             filterTypes={['text', 'categorical']}
             required
           />
@@ -437,7 +418,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               description="Numeric column aggregated per category"
               columns={dataset.columns}
               value={numericCol}
-              onChange={setNumericCol}
+              onChange={setNumericColChoice}
               filterTypes={['number']}
               required
             />
@@ -592,8 +573,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               type="text"
               value={axisTitle}
               onChange={e => {
-                setAxisTitle(e.target.value);
-                setAxisTitleEdited(true);
+                setAxisTitleOverride(e.target.value);
               }}
               placeholder="Defaults to the value being plotted"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"

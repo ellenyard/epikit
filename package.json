@@ -11,7 +11,8 @@
     "test:csv": "node scripts/csvParser.regression.mjs",
     "test:locale": "node scripts/localeNumbers.regression.mjs",
     "preview": "vite preview",
-    "test:labels": "node scripts/labelLayout.regression.mjs"
+    "test:labels": "node scripts/labelLayout.regression.mjs",
+    "test:chart-defaults": "node scripts/chartDefaults.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

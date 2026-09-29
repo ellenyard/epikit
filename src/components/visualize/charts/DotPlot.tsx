@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
+import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
@@ -225,8 +226,8 @@ function generateDotSvg(opts: DotSvgOptions): string {
 }
 
 export function DotPlot({ dataset }: DotPlotProps) {
-  const [categoryCol, setCategoryCol] = useState('');
-  const [valueCol, setValueCol] = useState('');
+  const [categoryColChoice, setCategoryColChoice] = useState('');
+  const [valueColChoice, setValueColChoice] = useState('');
   const [facetCol, setFacetCol] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('value');
   const [aggregation, setAggregation] = useState<Aggregation>('mean');
@@ -238,44 +239,24 @@ export function DotPlot({ dataset }: DotPlotProps) {
   const [showLabels, setShowLabels] = useState(true);
   const [title, setTitle] = useState('Dot Plot');
   const [subtitle, setSubtitle] = useState('');
-  const [axisTitle, setAxisTitle] = useState('');
-  const [axisTitleEdited, setAxisTitleEdited] = useState(false);
+  // null means "follow the data"; a string is an explicit override typed by the
+  // user. Derived rather than synced in an effect, so the title cannot lag the
+  // controls it describes.
+  const [axisTitleOverride, setAxisTitleOverride] = useState<string | null>(null);
   const [source, setSource] = useState('');
 
-  // Pre-select sensible defaults so a chart renders immediately on dataset load or change.
-  // Prefer a categorical column with 3-30 distinct values (a true grouping variable like
-  // Case Status) over ID-like text columns and two-value columns like Sex.
-  useEffect(() => {
-    const catValid = categoryCol !== '' && dataset.columns.some(c => c.key === categoryCol);
-    if (!catValid) {
-      const distinct = (key: string) =>
-        new Set(dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')).size;
-      const cats = dataset.columns.filter(c => c.type === 'categorical');
-      const ideal = cats.find(c => { const n = distinct(c.key); return n >= 3 && n <= 30; });
-      const fallback = cats.find(c => { const n = distinct(c.key); return n >= 2 && n <= 30; })
-        ?? dataset.columns.find(c => c.type === 'text' || c.type === 'categorical');
-      const chosen = ideal ?? fallback;
-      if (chosen) setCategoryCol(chosen.key);
-    }
-    const valValid = valueCol !== '' && dataset.columns.some(c => c.key === valueCol && c.type === 'number');
-    if (!valValid) {
-      const firstNum = dataset.columns.find(c => c.type === 'number');
-      if (firstNum) setValueCol(firstNum.key);
-    }
-  }, [dataset, categoryCol, valueCol]);
+  // Effective selections: the user's choice while it remains valid for the
+  // current dataset, otherwise an automatic pick. Derived rather than written
+  // back through an effect.
+  const categoryCol = resolveColumnChoice(dataset, categoryColChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
+  const valueCol = resolveColumnChoice(dataset, valueColChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
 
-  // Auto-fill the axis title from the Value column label and format until the user edits it manually
-  useEffect(() => {
-    if (axisTitleEdited) return;
-    if (valueFormat === 'percent') {
-      setAxisTitle(aggregation === 'count' ? 'Percent of records' : 'Percent');
-    } else if (aggregation === 'count') {
-      setAxisTitle('Number of records');
-    } else {
-      const label = dataset.columns.find(c => c.key === valueCol)?.label;
-      setAxisTitle(label || '');
-    }
-  }, [valueCol, valueFormat, aggregation, axisTitleEdited, dataset]);
+  const axisTitle = useMemo(() => {
+    if (axisTitleOverride !== null) return axisTitleOverride;
+    if (valueFormat === 'percent') return aggregation === 'count' ? 'Percent of records' : 'Percent';
+    if (aggregation === 'count') return 'Number of records';
+    return dataset.columns.find(c => c.key === valueCol)?.label || '';
+  }, [axisTitleOverride, aggregation, valueCol, valueFormat, dataset]);
 
   const referenceValue = useMemo(() => {
     if (referenceLine.trim() === '') return null;
@@ -423,7 +404,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
             description="Groups shown on the y-axis"
             columns={dataset.columns}
             value={categoryCol}
-            onChange={setCategoryCol}
+            onChange={setCategoryColChoice}
             filterTypes={['text', 'categorical']}
             required
           />
@@ -433,7 +414,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
             description="Numeric column plotted as dots"
             columns={dataset.columns}
             value={valueCol}
-            onChange={setValueCol}
+            onChange={setValueColChoice}
             filterTypes={['number']}
             required
           />
@@ -575,8 +556,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
               type="text"
               value={axisTitle}
               onChange={(e) => {
-                setAxisTitle(e.target.value);
-                setAxisTitleEdited(true);
+                setAxisTitleOverride(e.target.value);
               }}
               placeholder="Defaults to the Value column label"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
