@@ -16,6 +16,12 @@ import { escapeXml } from '../../utils/chartExport';
 
 // Format a Date as YYYY-MM-DD using local date components.
 // (toISOString() is UTC and shifts the date back a day in UTC+ timezones.)
+/** Vertical pitch of stacked annotation label rows, in px. */
+const ANNOTATION_ROW_HEIGHT = 20;
+
+/** Space a bar's count label needs above the bar: a 2px gap plus the text. */
+const COUNT_LABEL_HEIGHT = 18;
+
 function formatLocalDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -493,7 +499,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     }
 
     const rows = assignLabelRows(boxes);
-    for (const [id, row] of rows) offsets.set(id, row * 20); // 20px per stacked row
+    for (const [id, row] of rows) offsets.set(id, row * ANNOTATION_ROW_HEIGHT);
     return offsets;
   }, [allAnnotations, displayData.bins]);
 
@@ -721,8 +727,33 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   // Calculate bar width based on optimal sizing, not container width
   const barWidth = getOptimalBarWidth(displayData.bins.length);
   const chartHeight = 300;
-  // Y-axis max should be at least 1 above the highest bar, rounded up to a nice number
-  const yAxisMax = Math.max(displayData.maxCount + 1, Math.ceil((displayData.maxCount + 1) / 5) * 5);
+
+  // Height of the automatically placed annotation labels at the top of the plot.
+  // Hand-positioned labels are excluded: the user put those where they wanted
+  // them, so the axis should not be rescaled around them.
+  const annotationBandHeight = useMemo(() => {
+    if (annotationOffsets.size === 0) return 0;
+    const lastRow = Math.max(...annotationOffsets.values()) / ANNOTATION_ROW_HEIGHT;
+    return 4 + (lastRow + 1) * ANNOTATION_ROW_HEIGHT;
+  }, [annotationOffsets]);
+
+  // Y-axis max: at least 1 above the highest bar and rounded to a nice number,
+  // then extended so the tallest bar plus its count label clears the annotation
+  // band. Without this a tall bar grows straight through the labels, which is
+  // most likely on exactly the charts that are annotated.
+  const yAxisMax = useMemo(() => {
+    const base = Math.max(
+      displayData.maxCount + 1,
+      Math.ceil((displayData.maxCount + 1) / 5) * 5
+    );
+    if (annotationBandHeight === 0 || displayData.maxCount === 0) return base;
+
+    const usable = chartHeight - COUNT_LABEL_HEIGHT - annotationBandHeight;
+    if (usable <= 0) return base;
+
+    const needed = (displayData.maxCount * chartHeight) / usable;
+    return Math.max(base, Math.ceil(needed / 5) * 5);
+  }, [displayData.maxCount, annotationBandHeight, chartHeight]);
 
   // Determine if x-axis labels should be rotated based on available space
   // Estimate label width: assume ~7px per character on average for the label text
