@@ -66,3 +66,33 @@ export function assignLabelRows(labels: LabelBox[], gap = 6): Map<string, number
 
   return rows;
 }
+
+/**
+ * Font stacks offered for annotation labels.
+ *
+ * Deliberately a short list of stacks rather than a free font picker: SVG
+ * export names a font family but does not embed it, and PNG export rasterises
+ * whatever the local browser resolved. A figure styled in an arbitrary font
+ * would re-render differently, with different text metrics, on a colleague's
+ * machine. These three resolve sensibly on every platform.
+ */
+export const LABEL_FONT_STACKS = {
+  sans: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  serif: "Georgia, 'Times New Roman', Times, serif",
+  mono: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+} as const;
+
+export type LabelFontFamily = keyof typeof LABEL_FONT_STACKS;
+
+export const LABEL_FONT_WEIGHTS = {
+  normal: 400,
+  medium: 500,
+  bold: 700,
+} as const;
+
+export type LabelFontWeight = keyof typeof LABEL_FONT_WEIGHTS;
+
+/** Container treatment drawn behind a label. */
+export type LabelShape = 'none' | 'box' | 'pill';
+
+export const DEFAULT_LABEL_FONT_SIZE = 12;

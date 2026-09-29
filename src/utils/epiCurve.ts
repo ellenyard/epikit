@@ -34,13 +34,13 @@ export interface EpiCurveData {
 
 // Annotation categories for timeline events (simplified for professional use)
 export type AnnotationCategory =
-  | '7-1-7'               // 7-1-7 response milestones
+  | '7-1-7'               // Response milestones (key kept for stored annotations)
   | 'exposure'            // Suspected exposure events
   | 'response'            // Interventions and control measures
   | 'data-note';          // Data quality notes (reporting lag, etc.)
 
 export type AnnotationType =
-  // 7-1-7 milestones
+  // Response milestones
   | 'detection'           // Outbreak detected
   | 'notification'        // Health authority notified
   | 'response-complete'   // Early response actions completed
@@ -62,6 +62,24 @@ export interface Annotation {
   color: string;
   source: 'auto' | 'manual';  // Whether auto-calculated or user-entered
   linkedRecordIds?: string[]; // Link to specific case records
+  /**
+   * Label position, as a pixel offset from the annotation's anchor on the chart.
+   *
+   * Deliberately relative rather than absolute: bar width varies with bin count
+   * (25-80px), the plot resizes with the window, and export renders at its own
+   * width. An absolute coordinate would put the label somewhere meaningless the
+   * next time any of those changed.
+   *
+   * Undefined means "not positioned by the user", which is what lets automatic
+   * collision stacking apply to it.
+   */
+  labelOffsetX?: number;
+  labelOffsetY?: number;
+  /** Label styling. All optional; unset means the chart default. */
+  labelFontSize?: number;
+  labelFontWeight?: 'normal' | 'medium' | 'bold';
+  labelFontFamily?: 'sans' | 'serif' | 'mono';
+  labelShape?: 'none' | 'box' | 'pill';
 }
 
 // Annotation category metadata for UI (simplified - professional epi curve style)
@@ -71,8 +89,10 @@ export const ANNOTATION_CATEGORIES: Record<AnnotationCategory, {
   color: string;
   types: { value: AnnotationType; label: string; description?: string }[];
 }> = {
+  // Key retained so existing annotations keep resolving; the label no longer
+  // names 7-1-7 now that the scorecard has been removed.
   '7-1-7': {
-    label: '7-1-7 Milestones',
+    label: 'Response Milestones',
     color: '#6B7280',  // Muted gray - annotations should recede visually
     types: [
       { value: 'detection', label: 'Outbreak Detected', description: 'Date outbreak was identified' },

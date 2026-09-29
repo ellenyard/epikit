@@ -1,7 +1,13 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import html2canvas from 'html2canvas';
 import type { Dataset } from '../../types/analysis';
-import { assignLabelRows, estimateLabelWidth } from '../../utils/labelLayout';
+import {
+  assignLabelRows,
+  estimateLabelWidth,
+  LABEL_FONT_STACKS,
+  LABEL_FONT_WEIGHTS,
+  DEFAULT_LABEL_FONT_SIZE,
+} from '../../utils/labelLayout';
 import {
   processEpiCurveData,
   getColorForStrata,
@@ -139,6 +145,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     endDate: '',
     label: '',
     description: '',
+    color: '',
+    labelFontSize: DEFAULT_LABEL_FONT_SIZE,
+    labelFontWeight: 'medium' as 'normal' | 'medium' | 'bold',
+    labelFontFamily: 'sans' as 'sans' | 'serif' | 'mono',
+    labelShape: 'none' as 'none' | 'box' | 'pill',
   });
   const [annotationError, setAnnotationError] = useState('');
 
@@ -155,14 +166,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   const [showExposureWindow, setShowExposureWindow] = useState(() => isSampleOutbreakPreset ? false : saved.showExposureWindow !== undefined ? saved.showExposureWindow as boolean : false);
   const [showExposurePanel, setShowExposurePanel] = useState(false);
 
-  // 7-1-7 Response Timeline
-  const [show717Panel, setShow717Panel] = useState(false);
-  const [outbreakStartDate, setOutbreakStartDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-10' : (saved.outbreakStartDate as string) ?? '');
-  const [detectionDate, setDetectionDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-11' : (saved.detectionDate as string) ?? '');
-  const [notificationDate, setNotificationDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-12' : (saved.notificationDate as string) ?? '');
-  const [responseCompleteDate, setResponseCompleteDate] = useState<string>(() => isSampleOutbreakPreset ? '2026-01-13' : (saved.responseCompleteDate as string) ?? '');
-  const [show717OnChart, setShow717OnChart] = useState(() => isSampleOutbreakPreset || (saved.show717OnChart !== undefined ? saved.show717OnChart as boolean : true));
-  const [show717Metrics, setShow717Metrics] = useState(() => isSampleOutbreakPreset || (saved.show717Metrics !== undefined ? saved.show717Metrics as boolean : true));
 
   // Save all state to localStorage when it changes
   useEffect(() => {
@@ -188,12 +191,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
         yAxisLabel,
         selectedPathogen,
         showExposureWindow,
-        outbreakStartDate,
-        detectionDate,
-        notificationDate,
-        responseCompleteDate,
-        show717OnChart,
-        show717Metrics,
         filterBy,
         selectedFilterValues: Array.from(selectedFilterValues),
       };
@@ -204,8 +201,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   }, [persistenceKey, annotations, manualStartDate, manualEndDate, useManualDateRange,
     dateColumn, timeColumn, binSize, stratifyBy, colorScheme, showGridLines, showCaseCounts,
     chartTitle, xAxisLabel, yAxisLabel, selectedPathogen, showExposureWindow,
-    outbreakStartDate, detectionDate, notificationDate, responseCompleteDate,
-    show717OnChart, show717Metrics, filterBy, selectedFilterValues]);
+    filterBy, selectedFilterValues]);
 
   // Find date columns (memoized to prevent unnecessary re-renders)
   const dateColumns = useMemo(
@@ -384,7 +380,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
     }
 
-    // Include exposure window and 7-1-7 dates in annotations for date range calculation
+    // Include the exposure window in annotations for date range calculation
     const dateRangeAnnotations: Annotation[] = [...annotations];
 
     if (exposureWindowDates) {
@@ -400,55 +396,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       });
     }
 
-    // Include 7-1-7 dates for date range calculation
-    const gray = '#6B7280';
-    if (outbreakStartDate) {
-      dateRangeAnnotations.push({
-        id: '__717_start_range__',
-        type: 'detection',
-        category: '7-1-7',
-        date: parseLocalDate(outbreakStartDate),
-        label: 'Start',
-        color: gray,
-        source: 'auto',
-      });
-    }
-    if (detectionDate) {
-      dateRangeAnnotations.push({
-        id: '__717_detection_range__',
-        type: 'detection',
-        category: '7-1-7',
-        date: parseLocalDate(detectionDate),
-        label: 'Detected',
-        color: gray,
-        source: 'auto',
-      });
-    }
-    if (notificationDate) {
-      dateRangeAnnotations.push({
-        id: '__717_notification_range__',
-        type: 'notification',
-        category: '7-1-7',
-        date: parseLocalDate(notificationDate),
-        label: 'Notified',
-        color: gray,
-        source: 'auto',
-      });
-    }
-    if (responseCompleteDate) {
-      dateRangeAnnotations.push({
-        id: '__717_response_range__',
-        type: 'response-complete',
-        category: '7-1-7',
-        date: parseLocalDate(responseCompleteDate),
-        label: 'Response',
-        color: gray,
-        source: 'auto',
-      });
-    }
-
     return processEpiCurveData(filteredRecords, dateColumn, binSize, stratifyBy || undefined, dateRangeAnnotations, isSubDailyBin ? timeColumn || undefined : undefined);
-  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, outbreakStartDate, detectionDate, notificationDate, responseCompleteDate, isSubDailyBin, timeColumn]);
+  }, [filteredRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, isSubDailyBin, timeColumn]);
 
   // Calculate exposure window for display (after curveData is available)
   // Uses epidemiological method: earliest case - max incubation to earliest case - min incubation
@@ -457,94 +406,9 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     return exposureWindowDates;
   }, [exposureWindowDates, curveData.bins]);
 
-  // Calculate 7-1-7 metrics
-  const metrics717 = useMemo(() => {
-    if (!outbreakStartDate) return null;
-
-    const start = parseLocalDate(outbreakStartDate);
-    const detection = detectionDate ? parseLocalDate(detectionDate) : null;
-    const notification = notificationDate ? parseLocalDate(notificationDate) : null;
-    const response = responseCompleteDate ? parseLocalDate(responseCompleteDate) : null;
-
-    const daysBetween = (d1: Date, d2: Date) => {
-      return Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
-    };
-
-    return {
-      detectionDays: detection ? daysBetween(start, detection) : null,
-      notificationDays: detection && notification ? daysBetween(detection, notification) : null,
-      responseDays: notification && response ? daysBetween(notification, response) : null,
-      detectionMet: detection ? daysBetween(start, detection) <= 7 : null,
-      notificationMet: detection && notification ? daysBetween(detection, notification) <= 1 : null,
-      responseMet: notification && response ? daysBetween(notification, response) <= 7 : null,
-    };
-  }, [outbreakStartDate, detectionDate, notificationDate, responseCompleteDate]);
-
-  // Generate 7-1-7 annotations for the chart
-  const annotations717 = useMemo(() => {
-    if (!show717OnChart) return [];
-
-    const anns: Annotation[] = [];
-    const gray = '#6B7280';
-
-    if (outbreakStartDate) {
-      anns.push({
-        id: '__717_start__',
-        type: 'detection',
-        category: '7-1-7',
-        date: parseLocalDate(outbreakStartDate),
-        label: 'Start',
-        color: gray,
-        source: 'auto',
-      });
-    }
-
-    if (detectionDate) {
-      const dayLabel = metrics717 && metrics717.detectionDays !== null ? ` (Day ${metrics717.detectionDays})` : '';
-      anns.push({
-        id: '__717_detection__',
-        type: 'detection',
-        category: '7-1-7',
-        date: parseLocalDate(detectionDate),
-        label: `Detected${dayLabel}`,
-        color: gray,
-        source: 'auto',
-      });
-    }
-
-    if (notificationDate) {
-      const dayLabel = metrics717 && metrics717.notificationDays !== null ? ` (+${metrics717.notificationDays}d)` : '';
-      anns.push({
-        id: '__717_notification__',
-        type: 'notification',
-        category: '7-1-7',
-        date: parseLocalDate(notificationDate),
-        label: `Notified${dayLabel}`,
-        color: gray,
-        source: 'auto',
-      });
-    }
-
-    if (responseCompleteDate) {
-      const dayLabel = metrics717 && metrics717.responseDays !== null ? ` (+${metrics717.responseDays}d)` : '';
-      anns.push({
-        id: '__717_response__',
-        type: 'response-complete',
-        category: '7-1-7',
-        date: parseLocalDate(responseCompleteDate),
-        label: `Response${dayLabel}`,
-        color: gray,
-        source: 'auto',
-      });
-    }
-
-    return anns;
-  }, [show717OnChart, outbreakStartDate, detectionDate, notificationDate, responseCompleteDate, metrics717]);
-
-  // Combine manual annotations with 7-1-7 annotations
-  const allAnnotations = useMemo(() => {
-    return [...annotations, ...annotations717];
-  }, [annotations, annotations717]);
+  // Every annotation is user-placed now; kept as a named value because the
+  // layout and render paths below all read from it.
+  const allAnnotations = annotations;
 
   // Apply manual date range filter to curve data
   const displayData: EpiCurveData = useMemo(() => {
@@ -593,7 +457,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   //
   // This previously keyed on bin index, so it only stacked annotations landing
   // in the same bin. Labels are far wider than a bar, so annotations in
-  // adjacent bins still collided: a 7-1-7 timeline with milestones a day apart
+  // adjacent bins still collided: milestones a day apart
   // drew "Detected", "Notified" and "Response" straight through each other.
   // Offsets are now derived from the labels' actual x positions and widths.
   const annotationOffsets = useMemo(() => {
@@ -623,6 +487,9 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
     const boxes = [];
     for (const annotation of allAnnotations) {
+      // A label the user has dragged is where they want it. Auto-stacking only
+      // applies to labels that have not been positioned by hand.
+      if (annotation.labelOffsetX !== undefined || annotation.labelOffsetY !== undefined) continue;
       const x = labelXForDate(annotation.date);
       if (x === null) continue;
       boxes.push({
@@ -661,6 +528,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       endDate: '',
       label: '',
       description: '',
+      color: '',
+      labelFontSize: DEFAULT_LABEL_FONT_SIZE,
+      labelFontWeight: 'medium',
+      labelFontFamily: 'sans',
+      labelShape: 'none',
     });
     setShowAnnotationForm(true);
   };
@@ -674,6 +546,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       endDate: annotation.endDate ? formatLocalDate(annotation.endDate) : '',
       label: annotation.label,
       description: annotation.description || '',
+      color: annotation.color,
+      labelFontSize: annotation.labelFontSize ?? DEFAULT_LABEL_FONT_SIZE,
+      labelFontWeight: annotation.labelFontWeight ?? 'medium',
+      labelFontFamily: annotation.labelFontFamily ?? 'sans',
+      labelShape: annotation.labelShape ?? 'none',
     });
     setShowAnnotationForm(true);
   };
@@ -686,15 +563,22 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       return;
     }
 
+    const existing = editingAnnotationId ? annotations.find(a => a.id === editingAnnotationId) : undefined;
     const annotation: Annotation = {
       id: editingAnnotationId || crypto.randomUUID(),
+      labelOffsetX: existing?.labelOffsetX,
+      labelOffsetY: existing?.labelOffsetY,
       type: newAnnotation.type,
       category: getAnnotationCategory(newAnnotation.type),
       date: parseLocalDate(newAnnotation.date),
       label: newAnnotation.label || getDefaultLabelForType(newAnnotation.type),
       description: newAnnotation.description || undefined,
-      color: getAnnotationColor(newAnnotation.type),
+      color: newAnnotation.color || getAnnotationColor(newAnnotation.type),
       source: 'manual',
+      labelFontSize: newAnnotation.labelFontSize,
+      labelFontWeight: newAnnotation.labelFontWeight,
+      labelFontFamily: newAnnotation.labelFontFamily,
+      labelShape: newAnnotation.labelShape,
     };
 
     if (newAnnotation.endDate) {
@@ -713,13 +597,13 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     }
 
     setAnnotationError('');
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '', color: '', labelFontSize: DEFAULT_LABEL_FONT_SIZE, labelFontWeight: 'medium', labelFontFamily: 'sans', labelShape: 'none' });
     setEditingAnnotationId(null);
     setShowAnnotationForm(false);
   };
 
   const cancelAnnotationEdit = () => {
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '', color: '', labelFontSize: DEFAULT_LABEL_FONT_SIZE, labelFontWeight: 'medium', labelFontFamily: 'sans', labelShape: 'none' });
     setAnnotationError('');
     setEditingAnnotationId(null);
     setShowAnnotationForm(false);
@@ -762,8 +646,12 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       date: parseLocalDate(clickAddPosition.date),
       label: newAnnotation.label || getDefaultLabelForType(newAnnotation.type),
       description: newAnnotation.description || undefined,
-      color: getAnnotationColor(newAnnotation.type),
+      color: newAnnotation.color || getAnnotationColor(newAnnotation.type),
       source: 'manual',
+      labelFontSize: newAnnotation.labelFontSize,
+      labelFontWeight: newAnnotation.labelFontWeight,
+      labelFontFamily: newAnnotation.labelFontFamily,
+      labelShape: newAnnotation.labelShape,
     };
 
     if (newAnnotation.endDate) {
@@ -775,13 +663,13 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
 
     setAnnotations([...annotations, annotation]);
     setClickAddPosition(null);
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '', color: '', labelFontSize: DEFAULT_LABEL_FONT_SIZE, labelFontWeight: 'medium', labelFontFamily: 'sans', labelShape: 'none' });
   };
 
   // Cancel click-to-add
   const cancelClickAdd = () => {
     setClickAddPosition(null);
-    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '' });
+    setNewAnnotation({ type: 'exposure', date: '', endDate: '', label: '', description: '', color: '', labelFontSize: DEFAULT_LABEL_FONT_SIZE, labelFontWeight: 'medium', labelFontFamily: 'sans', labelShape: 'none' });
   };
 
   // Helper to get default label for annotation type
@@ -796,6 +684,24 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   const removeAnnotation = (id: string) => {
     setAnnotations(annotations.filter(a => a.id !== id));
   };
+
+  /** Move a label relative to its anchor. Called while dragging and from the offset fields. */
+  const moveAnnotationLabel = useCallback((id: string, offsetX: number, offsetY: number) => {
+    setAnnotations(prev => prev.map(a =>
+      a.id === id ? { ...a, labelOffsetX: Math.round(offsetX), labelOffsetY: Math.round(offsetY) } : a
+    ));
+  }, []);
+
+  /** Drop a hand-set position so the label returns to its anchor and rejoins auto-stacking. */
+  const resetAnnotationLabelPosition = useCallback((id: string) => {
+    setAnnotations(prev => prev.map(a => {
+      if (a.id !== id) return a;
+      const next = { ...a };
+      delete next.labelOffsetX;
+      delete next.labelOffsetY;
+      return next;
+    }));
+  }, []);
 
   const exportChart = async (format: 'png' | 'svg') => {
     if (!chartRef.current) return;
@@ -1025,6 +931,10 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                 {showAnnotationForm ? 'Cancel' : '+ Add Event'}
               </button>
             </div>
+            <p className="text-xs text-gray-500 mt-1 mb-2">
+              Click anywhere on the chart to add one at that date, then drag its
+              label to position it.
+            </p>
 
             {/* Annotation Form */}
             {showAnnotationForm && (
@@ -1060,9 +970,72 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                     type="text"
                     value={newAnnotation.label}
                     onChange={(e) => setNewAnnotation({ ...newAnnotation, label: e.target.value })}
-                    placeholder="Label for chart"
+                    placeholder="Type anything"
                     className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
                   />
+                </div>
+                {/* Appearance */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Shape</label>
+                    <select
+                      value={newAnnotation.labelShape}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelShape: e.target.value as 'none' | 'box' | 'pill' })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+                    >
+                      <option value="none">Plain text</option>
+                      <option value="box">Box</option>
+                      <option value="pill">Pill</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Colour</label>
+                    <input
+                      type="color"
+                      value={newAnnotation.color || '#6B7280'}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, color: e.target.value })}
+                      className="w-full h-[30px] px-1 py-0.5 border border-gray-300 rounded bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Font size</label>
+                    <input
+                      type="number"
+                      min={8}
+                      max={28}
+                      step={1}
+                      value={newAnnotation.labelFontSize}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelFontSize: Number(e.target.value) })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Weight</label>
+                    <select
+                      value={newAnnotation.labelFontWeight}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelFontWeight: e.target.value as 'normal' | 'medium' | 'bold' })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+                    >
+                      <option value="normal">Normal</option>
+                      <option value="medium">Medium</option>
+                      <option value="bold">Bold</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-500 mb-1">Typeface</label>
+                    <select
+                      value={newAnnotation.labelFontFamily}
+                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelFontFamily: e.target.value as 'sans' | 'serif' | 'mono' })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white"
+                    >
+                      <option value="sans">Sans serif</option>
+                      <option value="serif">Serif</option>
+                      <option value="mono">Monospace</option>
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Limited to these three so exported figures render the same on any machine.
+                    </p>
+                  </div>
                 </div>
                 {newAnnotation.type === 'exposure' && (
                   <div>
@@ -1101,9 +1074,10 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                 {annotations.map(ann => (
                   <div
                     key={ann.id}
-                    className="flex items-center justify-between px-2 py-1 text-xs rounded"
+                    className="px-2 py-1 text-xs rounded"
                     style={{ backgroundColor: `${ann.color}15` }}
                   >
+                    <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <span className="font-medium truncate block" style={{ color: ann.color }}>{ann.label}</span>
                       <span className="text-gray-400 text-xs">
@@ -1114,7 +1088,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                       <button
                         onClick={() => startEditingAnnotation(ann)}
                         className="text-gray-500 hover:text-gray-700 px-1"
-                        title="Edit annotation"
+                        title="Edit annotation, including the date it points at"
                       >
                         ✎
                       </button>
@@ -1126,114 +1100,45 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                         ×
                       </button>
                     </div>
+                    </div>
+                    {/* Label position. Dragging is the fast path; these fields are
+                        the keyboard-accessible equivalent. */}
+                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                      <span className="flex-shrink-0">Label</span>
+                      <label className="flex items-center gap-1">
+                        <span className="sr-only">{`Horizontal offset for ${ann.label}`}</span>
+                        <span aria-hidden="true">x</span>
+                        <input
+                          type="number"
+                          step={4}
+                          value={ann.labelOffsetX ?? 0}
+                          onChange={(e) => moveAnnotationLabel(ann.id, Number(e.target.value), ann.labelOffsetY ?? 0)}
+                          className="w-14 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                        />
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <span className="sr-only">{`Vertical offset for ${ann.label}`}</span>
+                        <span aria-hidden="true">y</span>
+                        <input
+                          type="number"
+                          step={4}
+                          value={ann.labelOffsetY ?? 0}
+                          onChange={(e) => moveAnnotationLabel(ann.id, ann.labelOffsetX ?? 0, Number(e.target.value))}
+                          className="w-14 px-1 py-0.5 border border-gray-300 rounded text-xs"
+                        />
+                      </label>
+                      {(ann.labelOffsetX !== undefined || ann.labelOffsetY !== undefined) && (
+                        <button
+                          onClick={() => resetAnnotationLabelPosition(ann.id)}
+                          className="text-gray-400 hover:text-gray-600 underline"
+                          title="Return the label to its anchor and let it auto-position"
+                        >
+                          reset
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
-              </div>
-            )}
-          </div>
-
-          {/* 7-1-7 Response Timeline */}
-          <div className="border-t border-gray-200 pt-4">
-            <button
-              onClick={() => setShow717Panel(!show717Panel)}
-              className="flex items-center justify-between w-full text-left"
-            >
-              <span className="text-sm font-medium text-gray-700">7-1-7 Response Timeline</span>
-              <span className="text-gray-400">{show717Panel ? '−' : '+'}</span>
-            </button>
-
-            {show717Panel && (
-              <div className="mt-3 space-y-3">
-                <p className="text-xs text-gray-500">
-                  Track outbreak response against the 7-1-7 targets: 7 days to detection, 1 day to notification, 7 days to response.
-                </p>
-
-                {/* Outbreak Start */}
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">
-                    Outbreak Start
-                    <span className="text-gray-400 ml-1">(first case or estimated emergence)</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={outbreakStartDate}
-                    onChange={(e) => setOutbreakStartDate(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                  />
-                </div>
-
-                {/* Detection Date */}
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Detection Date</label>
-                  <input
-                    type="date"
-                    value={detectionDate}
-                    onChange={(e) => setDetectionDate(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                  />
-                  {metrics717 && metrics717.detectionDays !== null && (
-                    <div className={`text-xs mt-1 flex items-center gap-1 ${metrics717.detectionMet ? 'text-green-600' : 'text-amber-600'}`}>
-                      <span>{metrics717.detectionMet ? '✓' : '⚠'}</span>
-                      <span>{metrics717.detectionDays} days from start (target: ≤7)</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Notification Date */}
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Notification Date</label>
-                  <input
-                    type="date"
-                    value={notificationDate}
-                    onChange={(e) => setNotificationDate(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                  />
-                  {metrics717 && metrics717.notificationDays !== null && (
-                    <div className={`text-xs mt-1 flex items-center gap-1 ${metrics717.notificationMet ? 'text-green-600' : 'text-amber-600'}`}>
-                      <span>{metrics717.notificationMet ? '✓' : '⚠'}</span>
-                      <span>{metrics717.notificationDays} day{metrics717.notificationDays !== 1 ? 's' : ''} from detection (target: ≤1)</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Response Complete Date */}
-                <div>
-                  <label className="block text-xs text-gray-600 mb-1">Response Complete Date</label>
-                  <input
-                    type="date"
-                    value={responseCompleteDate}
-                    onChange={(e) => setResponseCompleteDate(e.target.value)}
-                    className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                  />
-                  {metrics717 && metrics717.responseDays !== null && (
-                    <div className={`text-xs mt-1 flex items-center gap-1 ${metrics717.responseMet ? 'text-green-600' : 'text-amber-600'}`}>
-                      <span>{metrics717.responseMet ? '✓' : '⚠'}</span>
-                      <span>{metrics717.responseDays} days from notification (target: ≤7)</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Display toggles */}
-                <div className="pt-2 border-t border-gray-200 space-y-2">
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={show717OnChart}
-                      onChange={(e) => setShow717OnChart(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-gray-700">Show milestones on chart</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={show717Metrics}
-                      onChange={(e) => setShow717Metrics(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-gray-700">Show metrics summary</span>
-                  </label>
-                </div>
               </div>
             )}
           </div>
@@ -1488,7 +1393,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                   ref={chartBodyRef}
                   className="flex-1 overflow-x-auto cursor-crosshair"
                   onClick={handleChartClick}
-                  title="Click to add annotation"
+                  title="Click to add an annotation at this date"
                 >
                   <div
                     className="relative"
@@ -1525,6 +1430,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                         barWidth={barWidth}
                         chartHeight={chartHeight}
                         labelOffset={annotationOffsets.get(ann.id) || 0}
+                        onMoveLabel={moveAnnotationLabel}
                       />
                     ))}
 
@@ -1686,36 +1592,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
               </div>
             </div>
 
-            {/* 7-1-7 Metrics Summary */}
-            {show717Metrics && metrics717 && (metrics717.detectionDays !== null || metrics717.notificationDays !== null || metrics717.responseDays !== null) && (
-              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                <h5 className="text-sm font-semibold text-gray-700 mb-2">7-1-7 Response Performance</h5>
-                <div className="flex flex-wrap gap-4 text-sm">
-                  {metrics717.detectionDays !== null && (
-                    <div className={`flex items-center gap-1.5 ${metrics717.detectionMet ? 'text-green-700' : 'text-amber-700'}`}>
-                      <span className="font-medium">{metrics717.detectionMet ? '✓' : '⚠'}</span>
-                      <span>Detection: {metrics717.detectionDays} day{metrics717.detectionDays !== 1 ? 's' : ''}</span>
-                      <span className="text-gray-400">(target ≤7)</span>
-                    </div>
-                  )}
-                  {metrics717.notificationDays !== null && (
-                    <div className={`flex items-center gap-1.5 ${metrics717.notificationMet ? 'text-green-700' : 'text-amber-700'}`}>
-                      <span className="font-medium">{metrics717.notificationMet ? '✓' : '⚠'}</span>
-                      <span>Notification: {metrics717.notificationDays} day{metrics717.notificationDays !== 1 ? 's' : ''}</span>
-                      <span className="text-gray-400">(target ≤1)</span>
-                    </div>
-                  )}
-                  {metrics717.responseDays !== null && (
-                    <div className={`flex items-center gap-1.5 ${metrics717.responseMet ? 'text-green-700' : 'text-amber-700'}`}>
-                      <span className="font-medium">{metrics717.responseMet ? '✓' : '⚠'}</span>
-                      <span>Response: {metrics717.responseDays} day{metrics717.responseDays !== 1 ? 's' : ''}</span>
-                      <span className="text-gray-400">(target ≤7)</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {/* Exposure Window Explanation */}
             {exposureWindow && (
               <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -1810,12 +1686,13 @@ function getOptimalBarWidth(binCount: number): number {
   return Math.min(80, 60 + (7 - binCount) * 3); // Cap at 80px for very few bins
 }
 
-function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset = 0 }: {
+function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset = 0, onMoveLabel }: {
   annotation: Annotation;
   bins: EpiCurveData['bins'];
   barWidth: number;
   chartHeight: number;
   labelOffset?: number;
+  onMoveLabel?: (id: string, offsetX: number, offsetY: number) => void;
 }) {
   if (bins.length === 0) return null;
 
@@ -1847,6 +1724,85 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset
       x = binIndex * barWidth + Math.max(fraction * barWidth, barWidth / 2);
     }
   }
+
+  // Hand-positioned offset, if any. Undefined means the label sits at its
+  // default spot and is subject to automatic collision stacking.
+  const offsetX = annotation.labelOffsetX ?? 0;
+  const offsetY = annotation.labelOffsetY ?? 0;
+  const labelLeft = 4 + offsetX;
+  const labelTop = 4 + labelOffset + offsetY;
+
+  // Once a label is dragged clear of its anchor line, a leader keeps it obvious
+  // which date it belongs to.
+  const fontSize = annotation.labelFontSize ?? DEFAULT_LABEL_FONT_SIZE;
+  const shape = annotation.labelShape ?? 'none';
+
+  const LEADER_THRESHOLD = 8;
+  const showLeader = Math.abs(offsetX) > LEADER_THRESHOLD || offsetY > LEADER_THRESHOLD;
+
+  const renderLabel = () => (
+    <>
+      {showLeader && (
+        <svg
+          className="absolute overflow-visible pointer-events-none"
+          style={{ left: 0, top: 0, width: 1, height: 1 }}
+          aria-hidden="true"
+        >
+          <line
+            x1={0}
+            y1={labelTop + fontSize * 0.75}
+            x2={labelLeft + (offsetX < 0 ? 0 : 0)}
+            y2={labelTop + fontSize * 0.75}
+            stroke={annotation.color}
+            strokeWidth={1}
+            strokeDasharray="2 2"
+          />
+        </svg>
+      )}
+      <div
+        className="absolute z-10 whitespace-nowrap px-1 pointer-events-auto cursor-move select-none"
+        style={{
+          color: annotation.color,
+          top: labelTop,
+          left: labelLeft,
+          fontSize: fontSize,
+          fontWeight: LABEL_FONT_WEIGHTS[annotation.labelFontWeight ?? 'medium'],
+          fontFamily: LABEL_FONT_STACKS[annotation.labelFontFamily ?? 'sans'],
+          backgroundColor: shape === 'none' ? 'rgba(255,255,255,0.95)' : '#ffffff',
+          border: shape === 'none' ? undefined : `1px solid ${annotation.color}`,
+          borderRadius: shape === 'pill' ? 999 : 4,
+          paddingLeft: shape === 'pill' ? 8 : 4,
+          paddingRight: shape === 'pill' ? 8 : 4,
+        }}
+        // Stop the chart's click-to-add from firing when a label is grabbed.
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => {
+          if (!onMoveLabel) return;
+          e.stopPropagation();
+          e.preventDefault();
+          const el = e.currentTarget;
+          el.setPointerCapture(e.pointerId);
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const baseX = offsetX;
+          const baseY = offsetY;
+          const move = (ev: PointerEvent) => {
+            onMoveLabel(annotation.id, baseX + (ev.clientX - startX), baseY + (ev.clientY - startY));
+          };
+          const up = (ev: PointerEvent) => {
+            el.releasePointerCapture(ev.pointerId);
+            el.removeEventListener('pointermove', move);
+            el.removeEventListener('pointerup', up);
+          };
+          el.addEventListener('pointermove', move);
+          el.addEventListener('pointerup', up);
+        }}
+        title={`${annotation.label} (drag to reposition)`}
+      >
+        {annotation.label}
+      </div>
+    </>
+  );
 
   // For range annotations (exposure periods), show light shaded area
   if (annotation.endDate) {
@@ -1903,17 +1859,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset
             borderRight: `1px dashed ${annotation.color}`,
           }}
         />
-        {/* Label inside chart at top */}
-        <div
-          className="absolute z-10 text-xs font-medium whitespace-nowrap bg-white/95 px-1 rounded"
-          style={{
-            color: annotation.color,
-            top: 4 + labelOffset,
-            left: 4,
-          }}
-        >
-          {annotation.label}
-        </div>
+        {renderLabel()}
       </div>
     );
   }
@@ -1933,17 +1879,7 @@ function AnnotationMarker({ annotation, bins, barWidth, chartHeight, labelOffset
           transform: 'translateX(-50%)',
         }}
       />
-      {/* Label inside chart at top */}
-      <div
-        className="absolute z-10 text-xs font-medium whitespace-nowrap bg-white/95 px-1 rounded"
-        style={{
-          color: annotation.color,
-          top: 4 + labelOffset,
-          left: 4,
-        }}
-      >
-        {annotation.label}
-      </div>
+      {renderLabel()}
     </div>
   );
 }
@@ -2174,13 +2110,56 @@ function generateSVG(
   }
   annotations.forEach(ann => {
     if (isNaN(ann.date.getTime())) return;
+    // Hand-positioned labels are excluded: they sit where the user put them and
+    // must not push automatically placed labels around.
+    if (ann.labelOffsetX !== undefined || ann.labelOffsetY !== undefined) return;
     const ax = xForTime(ann.date.getTime(), true);
     if (ax === null) return;
-    labelBoxes.push({ id: ann.id, x: ax + 4, width: estimateLabelWidth(ann.label, SVG_LABEL_FONT) });
+    labelBoxes.push({
+      id: ann.id,
+      x: ax + 4,
+      width: estimateLabelWidth(ann.label, ann.labelFontSize ?? SVG_LABEL_FONT),
+    });
   });
   const labelRows = assignLabelRows(labelBoxes);
   const labelY = (id: string): number =>
     margin.top + 12 + (labelRows.get(id) ?? 0) * SVG_ROW_HEIGHT;
+
+  /**
+   * Where an annotation's label is drawn, matching the on-screen marker: a
+   * hand-set offset wins, otherwise the automatic row. Returns the text anchor
+   * plus a leader line back to the anchor when the label has been moved clear.
+   */
+  const labelPlacement = (ann: Annotation, anchorX: number) => {
+    const hasOffset = ann.labelOffsetX !== undefined || ann.labelOffsetY !== undefined;
+    const dx = ann.labelOffsetX ?? 0;
+    const dy = ann.labelOffsetY ?? 0;
+    const x = anchorX + 4 + dx;
+    const y = hasOffset ? margin.top + 12 + dy : labelY(ann.id);
+    const needsLeader = hasOffset && (Math.abs(dx) > 8 || dy > 8);
+    const leader = needsLeader
+      ? `<line x1="${anchorX}" y1="${y - 3}" x2="${x}" y2="${y - 3}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="2 2"/>`
+      : '';
+
+    const size = ann.labelFontSize ?? SVG_LABEL_FONT;
+    const shape = ann.labelShape ?? 'none';
+    const attrs =
+      `font-size="${size}" ` +
+      `font-weight="${LABEL_FONT_WEIGHTS[ann.labelFontWeight ?? 'medium']}" ` +
+      `font-family="${escapeXml(LABEL_FONT_STACKS[ann.labelFontFamily ?? 'sans'])}" ` +
+      `fill="${ann.color}"`;
+
+    // Box and pill need a drawn container; SVG text has no background.
+    let container = '';
+    if (shape !== 'none') {
+      const w = estimateLabelWidth(ann.label, size) + (shape === 'pill' ? 16 : 8);
+      const h = size + 6;
+      container =
+        `<rect x="${x - (shape === 'pill' ? 8 : 4)}" y="${y - size + 1}" width="${w}" height="${h}" ` +
+        `rx="${shape === 'pill' ? h / 2 : 3}" fill="#ffffff" stroke="${ann.color}" stroke-width="1"/>`;
+    }
+    return { x, y, leader, attrs, container };
+  };
 
   // Exposure window shading (matches the on-screen translucent red band)
   if (exposureWindow && data.bins.length > 0) {
@@ -2213,10 +2192,14 @@ function generateSVG(
       svg += `<rect x="${x}" y="${margin.top}" width="${w}" height="${chartHeight}" fill="${ann.color}" opacity="0.1"/>`;
       svg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="4 3"/>`;
       svg += `<line x1="${x + w}" y1="${margin.top}" x2="${x + w}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1" stroke-dasharray="4 3"/>`;
-      svg += `<text x="${x + 4}" y="${labelY(ann.id)}" font-size="${SVG_LABEL_FONT}" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
+      const p = labelPlacement(ann, x);
+      svg += p.leader + p.container;
+      svg += `<text x="${p.x}" y="${p.y}" ${p.attrs}>${escapeXml(ann.label)}</text>`;
     } else {
       svg += `<line x1="${x}" y1="${margin.top}" x2="${x}" y2="${chartBottom}" stroke="${ann.color}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
-      svg += `<text x="${x + 4}" y="${labelY(ann.id)}" font-size="${SVG_LABEL_FONT}" font-weight="500" fill="${ann.color}">${escapeXml(ann.label)}</text>`;
+      const p = labelPlacement(ann, x);
+      svg += p.leader + p.container;
+      svg += `<text x="${p.x}" y="${p.y}" ${p.attrs}>${escapeXml(ann.label)}</text>`;
     }
   });
 
