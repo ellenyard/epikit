@@ -181,9 +181,10 @@ function evaluateArithmeticExpression(expression: string): number | null {
       return value;
     }
 
+    // A null token means a missing operand, which cannot yield a number.
+    // Returning 0 here silently substituted zero for missing data.
     if (expression.slice(index, index + 4) === 'null') {
-      index += 4;
-      return 0;
+      return null;
     }
 
     const match = /(?:\d+\.?\d*|\.\d+)/.exec(expression.slice(index));
@@ -215,13 +216,19 @@ export function evaluateFormula(
     let expression = formula;
     const variablePattern = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
 
+    // Arithmetic over a missing operand is missing, not zero. A blank weight is
+    // not a weight of nought: treating it as one produced a BMI of 0 that then
+    // entered every mean, median and distribution as a real observation.
+    let hasMissingOperand = false;
     expression = expression.replace(variablePattern, (_, varName) => {
       const value = record[varName];
       if (value === null || value === undefined || value === '') {
+        hasMissingOperand = true;
         return 'null';
       }
       return String(value);
     });
+    if (hasMissingOperand) return '';
 
     // Normalize locale decimal separators to periods for JavaScript evaluation
     if (localeConfig && localeConfig.decimalSeparator !== '.') {
@@ -247,7 +254,11 @@ export function evaluateFormula(
       return '';
     }
 
-    return Number(result.toFixed(2));
+    // Significant digits rather than two decimal places. toFixed(2) flattened
+    // anything small: a rate of 3/12000 became 0.00, so a derived rate column
+    // read as zero for every sparse area. Ten significant digits still removes
+    // binary floating-point noise such as 0.1 + 0.2.
+    return Number(result.toPrecision(10));
   } catch {
     return '';
   }
@@ -376,6 +387,31 @@ export function validateVariableConfig(
     for (const category of config.categories) {
       if (!category.label.trim()) {
         return 'All categories must have a label';
+      }
+      if (
+        category.min !== undefined && category.min !== null &&
+        category.max !== undefined && category.max !== null &&
+        category.min > category.max
+      ) {
+        return `Category "${category.label}" has a minimum above its maximum, so it will never match`;
+      }
+    }
+
+    // Ranges are inclusive at both ends and the first match wins, so an overlap
+    // is resolved silently: with "0-18" and "18-65", every 18-year-old lands in
+    // the first group and the distribution looks plausible either way.
+    const numeric = config.categories.filter(
+      c => (c.min !== undefined && c.min !== null) || (c.max !== undefined && c.max !== null)
+    );
+    for (let i = 0; i < numeric.length; i++) {
+      for (let j = i + 1; j < numeric.length; j++) {
+        const a = numeric[i];
+        const b = numeric[j];
+        const aMin = a.min ?? -Infinity, aMax = a.max ?? Infinity;
+        const bMin = b.min ?? -Infinity, bMax = b.max ?? Infinity;
+        if (aMin <= bMax && bMin <= aMax) {
+          return `Categories "${a.label}" and "${b.label}" overlap. Ranges include both endpoints, so a value in the overlap is assigned to "${a.label}".`;
+        }
       }
     }
   }
