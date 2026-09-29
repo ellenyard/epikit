@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup, useMap, ScaleControl } fr
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import html2canvas from 'html2canvas';
 import type { Dataset, CaseRecord, DataColumn } from '../../types/analysis';
+import { jitterCoordinates } from '../../utils/geoPrivacy';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -462,48 +463,6 @@ function analyzeCoordinateQuality(
   return result;
 }
 
-// Deterministic jitter function for privacy
-function jitterCoordinates(
-  lat: number,
-  lng: number,
-  distanceMeters: number,
-  seed: string
-): { lat: number; lng: number } {
-  if (distanceMeters === 0) return { lat, lng };
-
-  // Simple deterministic hash, so a given record always lands in the same
-  // place. Re-randomising per render would let repeated exports be averaged
-  // to recover the true position.
-  const hashString = (value: string): number => {
-    let h = 0;
-    for (let i = 0; i < value.length; i++) {
-      h = ((h << 5) - h) + value.charCodeAt(i);
-      h = h & h; // Convert to 32-bit integer
-    }
-    return h;
-  };
-
-  // Angle and radius come from separate streams. Deriving both from one hash
-  // tied them together, so the offsets were drawn from a one-dimensional
-  // family rather than spread over the disc.
-  const angle = ((Math.abs(hashString(seed)) % 3600) / 3600) * 2 * Math.PI;
-
-  // sqrt gives a uniform distribution over the disc. A uniform radius packs
-  // points toward the centre, leaving the true location closer to the
-  // published one than the stated distance implies: a median offset of R/2
-  // rather than R/sqrt(2).
-  const u = (Math.abs(hashString(`${seed}#radius`)) % 10000) / 10000;
-  const radius = distanceMeters * Math.sqrt(u);
-
-  // Convert meters to degrees
-  const dLat = radius * Math.cos(angle) / 111320;
-  const dLng = radius * Math.sin(angle) / (111320 * Math.cos(lat * Math.PI / 180));
-
-  return {
-    lat: lat + dLat,
-    lng: lng + dLng,
-  };
-}
 
 // Component to fit map bounds
 function FitBounds({ cases }: { cases: MapCase[] }) {

@@ -14,7 +14,8 @@
     "test:labels": "node scripts/labelLayout.regression.mjs",
     "test:chart-defaults": "node scripts/chartDefaults.regression.mjs",
     "test:statistics": "node scripts/statistics.regression.mjs",
-    "test:epicurve-bins": "node scripts/epiCurveBins.regression.mjs"
+    "test:epicurve-bins": "node scripts/epiCurveBins.regression.mjs",
+    "test:geo-privacy": "node scripts/geoPrivacy.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

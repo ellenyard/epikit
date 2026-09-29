@@ -62,6 +62,7 @@ jobs:
           npm run test:chart-defaults
           npm run test:statistics
           npm run test:epicurve-bins
+          npm run test:geo-privacy
         timeout-minutes: 10
 
       - name: Build
