@@ -60,6 +60,7 @@ jobs:
           npm run test:area-map
           npm run test:labels
           npm run test:chart-defaults
+          npm run test:statistics
         timeout-minutes: 10
 
       - name: Build
