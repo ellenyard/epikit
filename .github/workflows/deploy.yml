@@ -66,6 +66,7 @@ jobs:
           npm run test:import-types
           npm run test:persistence
           npm run test:variables
+          npm run test:data-quality
         timeout-minutes: 10
 
       - name: Build

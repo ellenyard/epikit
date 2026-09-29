@@ -85,7 +85,11 @@ export function getDefaultConfig(): DataQualityConfig {
       dateTolerance: 0, // Exact date match by default
     },
     dateOrderRules: [],
-    checkFutureDates: false,
+    // On by default. Unlike date-order and range rules, this needs no
+    // knowledge of the dataset: an onset in the future is an error in any
+    // line list, and a mistyped year is the commonest date error in field
+    // data. It was declared here but never implemented or read.
+    checkFutureDates: true,
     numericRangeRules: [],
     missingValueFields: [],
     enabledChecks: ['duplicate', 'date_order', 'numeric_range', 'missing_values'],
@@ -282,6 +286,45 @@ function checkDateOrder(
   return issues;
 }
 
+/**
+ * Flag dates after today. A mistyped year such as 2062 for 2026, or a date
+ * parsed under the wrong format, lands in the future and is always wrong in a
+ * record of something that has already happened.
+ */
+function checkFutureDatesInRecords(
+  records: CaseRecord[],
+  columns: DataColumn[]
+): DataQualityIssue[] {
+  const issues: DataQualityIssue[] = [];
+
+  // End of today, so a timestamp later today is not treated as future.
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+
+  for (const column of columns.filter(c => c.type === 'date')) {
+    const recordIds: string[] = [];
+    for (const record of records) {
+      const value = parseDate(record[column.key]);
+      if (value && value > endOfToday) recordIds.push(record.id);
+    }
+
+    if (recordIds.length > 0) {
+      issues.push({
+        id: generateId(),
+        checkType: 'future_date',
+        category: 'temporal',
+        severity: 'error',
+        recordIds,
+        field: column.key,
+        message: `${recordIds.length} record${recordIds.length !== 1 ? 's' : ''} with ${column.label} in the future`,
+        details: 'A date after today usually means a mistyped year or a misread date format.',
+      });
+    }
+  }
+
+  return issues;
+}
+
 // =============================================================================
 // NUMERIC RANGE VALIDATION
 // Flags values outside expected bounds (e.g., age 0-120)
@@ -401,6 +444,11 @@ export function runDataQualityChecks(
   // Date order checks
   if (enabledChecks.includes('date_order') && config.dateOrderRules.length > 0) {
     issues.push(...checkDateOrder(records, config.dateOrderRules));
+  }
+
+  // Future dates: no rules needed, so this catches something out of the box.
+  if (enabledChecks.includes('date_order') && config.checkFutureDates) {
+    issues.push(...checkFutureDatesInRecords(records, columns));
   }
 
   // Numeric range checks
