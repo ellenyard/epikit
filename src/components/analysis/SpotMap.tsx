@@ -471,16 +471,29 @@ function jitterCoordinates(
 ): { lat: number; lng: number } {
   if (distanceMeters === 0) return { lat, lng };
 
-  // Simple hash function to generate deterministic random values from seed
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-    hash = hash & hash; // Convert to 32-bit integer
-  }
+  // Simple deterministic hash, so a given record always lands in the same
+  // place. Re-randomising per render would let repeated exports be averaged
+  // to recover the true position.
+  const hashString = (value: string): number => {
+    let h = 0;
+    for (let i = 0; i < value.length; i++) {
+      h = ((h << 5) - h) + value.charCodeAt(i);
+      h = h & h; // Convert to 32-bit integer
+    }
+    return h;
+  };
 
-  // Generate deterministic "random" angle and radius
-  const angle = ((hash % 360) / 360) * 2 * Math.PI;
-  const radius = ((Math.abs(hash) % 1000) / 1000) * distanceMeters;
+  // Angle and radius come from separate streams. Deriving both from one hash
+  // tied them together, so the offsets were drawn from a one-dimensional
+  // family rather than spread over the disc.
+  const angle = ((Math.abs(hashString(seed)) % 3600) / 3600) * 2 * Math.PI;
+
+  // sqrt gives a uniform distribution over the disc. A uniform radius packs
+  // points toward the centre, leaving the true location closer to the
+  // published one than the stated distance implies: a median offset of R/2
+  // rather than R/sqrt(2).
+  const u = (Math.abs(hashString(`${seed}#radius`)) % 10000) / 10000;
+  const radius = distanceMeters * Math.sqrt(u);
 
   // Convert meters to degrees
   const dLat = radius * Math.cos(angle) / 111320;
@@ -710,7 +723,14 @@ export function SpotMap({ dataset }: SpotMapProps) {
   const exportDatasetCSV = () => {
     if (filteredCases.length === 0) return;
 
-    const filteredRecords = filteredCases.map(c => c.record);
+    // When locations are obfuscated the exported rows must carry the jittered
+    // coordinates, not the originals. This is the data behind a map the user
+    // has chosen to publish with locations protected.
+    const filteredRecords = filteredCases.map(c =>
+      obfuscateLocations
+        ? { ...c.record, [latColumn]: c.displayLat, [lngColumn]: c.displayLng }
+        : c.record
+    );
     const csv = exportToCSV(dataset.columns, filteredRecords, { localeConfig });
 
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -754,10 +774,16 @@ export function SpotMap({ dataset }: SpotMapProps) {
           type: 'Point',
           coordinates: [caseData.displayLng, caseData.displayLat],
         },
+        // The geometry was already jittered, but the true position was also
+        // written into the properties twice: explicitly as _original_*, and
+        // again via the spread record's own latitude/longitude columns. The
+        // file was labelled jittered while carrying exact coordinates, so a
+        // map shared in good faith leaked the locations it claimed to protect.
         properties: {
           ...caseData.record,
-          _original_latitude: caseData.lat,
-          _original_longitude: caseData.lng,
+          ...(obfuscateLocations
+            ? { [latColumn]: caseData.displayLat, [lngColumn]: caseData.displayLng }
+            : { _original_latitude: caseData.lat, _original_longitude: caseData.lng }),
           _display_latitude: caseData.displayLat,
           _display_longitude: caseData.displayLng,
           _location_privacy: obfuscateLocations ? `jittered_${jitterDistance}m` : 'exact',
