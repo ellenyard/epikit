@@ -2,6 +2,7 @@ import type { DataColumn, CaseRecord } from '../types/analysis';
 import { parseFlexibleNumber, formatCsvNumber } from './localeNumbers';
 import type { LocaleConfig } from '../contexts/LocaleContext';
 import { matchingDateFormats, resolveUnambiguousFormat, parseDateWithFormat } from './dateDetection';
+import { isNumericColumn } from './typeInference';
 import type { DateFormat } from './dateDetection';
 
 export interface ParseResult {
@@ -267,18 +268,13 @@ function buildColumnKeys(headers: string[]): string[] {
 function inferColumnType(values: string[], localeConfig?: LocaleConfig): DataColumn['type'] {
   if (values.length === 0) return 'text';
 
-  // Try locale-aware number parsing if config is provided
-  if (localeConfig) {
-    const isNumber = values.every(v => {
-      const parsed = parseFlexibleNumber(v, localeConfig);
-      return !isNaN(parsed) && v !== '';
-    });
-    if (isNumber) return 'number';
-  } else {
-    // Fallback to standard parsing
-    const isNumber = values.every(v => !isNaN(Number(v)) && v !== '');
-    if (isNumber) return 'number';
-  }
+  // Zero-padded values are identifiers, not quantities: treating "007" as 7
+  // destroys participant IDs and codes on import. Locale-aware parsing is used
+  // when a config is supplied so grouped and decimal separators still work.
+  const toNumber = localeConfig
+    ? (v: unknown) => parseFlexibleNumber(String(v), localeConfig)
+    : (v: unknown) => Number(v);
+  if (isNumericColumn(values, toNumber)) return 'number';
 
   // Check for date patterns using the shared date format validators.
   // This avoids Date.parse's US bias (DD/MM/YYYY with day > 12 used to be

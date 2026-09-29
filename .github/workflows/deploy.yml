@@ -63,6 +63,7 @@ jobs:
           npm run test:statistics
           npm run test:epicurve-bins
           npm run test:geo-privacy
+          npm run test:import-types
         timeout-minutes: 10
 
       - name: Build

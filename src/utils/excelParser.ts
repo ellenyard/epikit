@@ -5,6 +5,7 @@ import type { DataColumn, CaseRecord } from '../types/analysis';
 import type { ParseResult } from './csvParser';
 import { matchingDateFormats, resolveUnambiguousFormat, parseDateWithFormat } from './dateDetection';
 import type { DateFormat } from './dateDetection';
+import { isNumericColumn } from './typeInference';
 
 export interface ExcelParseOptions {
   sheetIndex?: number; // Default: 0 (first sheet)
@@ -192,16 +193,9 @@ function buildColumnKeys(headers: string[]): string[] {
 function inferColumnType(values: unknown[]): DataColumn['type'] {
   if (values.length === 0) return 'text';
 
-  // Check for numbers
-  const isNumber = values.every(v => {
-    if (typeof v === 'number') return true;
-    if (typeof v === 'string') {
-      const num = Number(v);
-      return !isNaN(num) && v.trim() !== '';
-    }
-    return false;
-  });
-  if (isNumber) return 'number';
+  // Check for numbers. Zero-padded values are identifiers, not quantities:
+  // treating "007" as 7 destroys participant IDs and codes on import.
+  if (isNumericColumn(values)) return 'number';
 
   // Check for dates (Excel date cells arrive as Date objects with cellDates;
   // string dates use the shared format validators to avoid Date.parse's US bias)
