@@ -3,6 +3,8 @@ import type { Dataset, VariableConfig } from '../../types/analysis';
 import { calculateDescriptiveStats, calculateFrequency } from '../../utils/statistics';
 import type { DescriptiveStats, FrequencyItem } from '../../utils/statistics';
 import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
+import { MAX_HISTOGRAM_BINS, computeHistogram } from '../../utils/histogramBins';
+import type { HistogramBin } from '../../utils/histogramBins';
 import { CreateVariableModal } from '../review/CreateVariableModal';
 import { StatTooltip, statDefinitions } from '../shared';
 
@@ -18,12 +20,6 @@ interface VariableExplorerProps {
   onUpdateRecords?: (updates: Array<{ recordId: string; field: string; value: unknown }>) => void;
 }
 
-interface HistogramBin {
-  binStart: number;
-  binEnd: number;
-  count: number;
-  label: string;
-}
 
 interface ValueMapping {
   originalValue: string;
@@ -121,40 +117,13 @@ export function VariableExplorer({
   const effectiveBinWidth = binWidth !== null ? binWidth : defaultBinWidth;
 
   // Calculate histogram bins
-  const histogramBins: HistogramBin[] = useMemo(() => {
-    if (!numericStats || numericValues.length === 0 || effectiveBinWidth <= 0) return [];
+  const histogram = useMemo(
+    () => computeHistogram(numericValues, effectiveBinWidth),
+    [numericValues, effectiveBinWidth]
+  );
+  const histogramBins: HistogramBin[] = histogram.bins;
 
-    const min = numericStats.min;
-    const max = numericStats.max;
-    const bins: HistogramBin[] = [];
-
-    // Calculate bin start (round down to bin width)
-    const binStart = Math.floor(min / effectiveBinWidth) * effectiveBinWidth;
-    const binEnd = Math.ceil(max / effectiveBinWidth) * effectiveBinWidth;
-    // Derive the bin count arithmetically instead of accumulating float additions,
-    // so drift cannot create a spurious extra bin or drop the last one.
-    const binCount = Math.max(1, Math.round((binEnd - binStart) / effectiveBinWidth));
-
-    for (let i = 0; i < binCount; i++) {
-      const start = binStart + i * effectiveBinWidth;
-      const end = start + effectiveBinWidth;
-      // Last bin always includes every remaining value >= start, so float drift
-      // in `end` can never drop the maximum value from the histogram.
-      const count = i === binCount - 1
-        ? numericValues.filter(v => v >= start).length
-        : numericValues.filter(v => v >= start && v < end).length;
-      bins.push({
-        binStart: start,
-        binEnd: end,
-        count,
-        label: `${start.toFixed(1)} - ${end.toFixed(1)}`,
-      });
-    }
-
-    return bins;
-  }, [numericStats, numericValues, effectiveBinWidth]);
-
-  const maxBinCount = Math.max(...histogramBins.map(b => b.count), 1);
+  const maxBinCount = histogramBins.reduce((max, b) => (b.count > max ? b.count : max), 1);
 
   // Calculate frequency distribution
   const frequency: FrequencyItem[] = useMemo(() => {
@@ -397,6 +366,17 @@ export function VariableExplorer({
                       )}
                     </div>
                   </div>
+
+                  {/* A widened width must be stated: otherwise the box shows one
+                      number and the chart is drawn with another. */}
+                  {histogram.widened && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
+                      Bin width widened to {formatSigFigs(histogram.binWidth, 3)} so the
+                      histogram stays readable. A width of{' '}
+                      {formatSigFigs(histogram.requestedBinWidth, 3)} would need more than{' '}
+                      {MAX_HISTOGRAM_BINS} bars.
+                    </p>
+                  )}
 
                   {/* Histogram Chart - Vertical */}
                   {histogramBins.length > 0 && (

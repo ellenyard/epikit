@@ -71,6 +71,7 @@ jobs:
           npm run test:chunk-recovery
           npm run test:sketch
           npm run test:sketch-export
+          npm run test:histogram
         timeout-minutes: 10
 
       - name: Build
