@@ -182,8 +182,13 @@ export function DataQualityPanel({
 
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+      {/* Header.
+          Sticky because the panel sits in a scrolling container: opening the
+          configuration made the content tall enough that the header scrolled
+          away under the container's top edge, taking the error and warning
+          counts with it. Those counts are the result of running the checks, so
+          losing them is losing the answer. */}
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 sticky top-0 z-20">
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-gray-900">Data Quality</h3>
           <button
