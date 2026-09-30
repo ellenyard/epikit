@@ -6,6 +6,7 @@ import { VisualizationTip } from '../shared/VisualizationTip';
 import { calculateTwoByTwo } from '../../../utils/statistics';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
+import { isMissingValue } from '../../../utils/recordFilter';
   getDefaultDimensions,
   svgWrapper,
   svgTitle,
@@ -214,7 +215,10 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
 
       dataset.records.forEach((record: CaseRecord) => {
         const expValue = record[expVar];
-        if (expValue === null || expValue === undefined || expValue === '') return;
+        // Trimmed, so a whitespace-only cell is missing rather than its own
+        // exposure group. The same fault was fixed in the 2x2 panel and the
+        // record filter; this copy computes its own table and still had it.
+        if (isMissingValue(expValue)) return;
 
         const exposed = String(expValue) === exposedValue;
         const diseased = isCase(record);
