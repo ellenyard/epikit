@@ -10,3 +10,4 @@ export { ExportIcons } from './ExportIcons';
 export { StatTooltip } from './StatTooltip';
 export { statDefinitions } from './statDefinitions';
 export { LoadingSpinner } from './LoadingSpinner';
+export { Dialog } from './Dialog';

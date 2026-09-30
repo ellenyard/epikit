@@ -5,6 +5,7 @@ import { detectDateFormats, applyDateFormats, DATE_FORMATS } from '../../utils/d
 import type { DateFormat, DateColumnAnalysis } from '../../utils/dateDetection';
 import type { DataColumn, CaseRecord } from '../../types/analysis';
 import { useLocale } from '../../contexts/LocaleContext';
+import { useDialog } from '../../hooks/useDialog';
 
 interface DataImportProps {
   onImport: (name: string, columns: DataColumn[], records: CaseRecord[]) => void;
@@ -180,12 +181,15 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  const { panelRef, dialogProps } = useDialog({ onClose: onCancel, labelledBy: 'import-data-title' });
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
+      <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Import Data</h2>
+          <h2 id="import-data-title" className="text-lg font-semibold text-gray-900">Import Data</h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
+            aria-label="Close import"
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>

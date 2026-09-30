@@ -531,6 +531,7 @@ export function DataQualityPanel({
       {/* Run Checks Button */}
       <div className="px-4 py-3 border-b border-gray-200">
         <button
+          aria-label="Run data quality checks"
           onClick={handleRunChecks}
           disabled={isRunning}
           className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"

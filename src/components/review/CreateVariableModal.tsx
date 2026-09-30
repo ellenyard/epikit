@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { DataColumn, VariableConfig, CategoryRule, CaseRecord } from '../../types/analysis';
 import { toVariableName, validateVariableConfig, generateVariableValues } from '../../utils/variableCreation';
 import { useLocale } from '../../contexts/LocaleContext';
+import { useDialog } from '../../hooks/useDialog';
 
 interface CreateVariableModalProps {
   isOpen: boolean;
@@ -242,23 +243,26 @@ export function CreateVariableModal({
     },
   ];
 
+  const { panelRef, dialogProps } = useDialog({ onClose, labelledBy: 'create-variable-title', isOpen });
+
   if (!isOpen) {
     return null;
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
+      <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">Create New Variable</h3>
+              <h3 id="create-variable-title" className="text-lg font-semibold text-gray-900">Create New Variable</h3>
               <p className="text-sm text-gray-500 mt-1">
                 Create a derived variable from existing data
               </p>
             </div>
             <button
+              aria-label="Close create variable"
               onClick={onClose}
               className="p-1 text-gray-400 hover:text-gray-600 rounded"
             >

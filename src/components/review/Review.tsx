@@ -37,6 +37,7 @@ import type { Dataset, DataColumn, CaseRecord, EditLogEntry, DataQualityIssue, D
 import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality';
 import { addVariableToDataset } from '../../utils/variableCreation';
 import { ReviewCleanTutorial } from '../tutorials/ReviewCleanTutorial';
+import { Dialog } from '../shared';
 
 interface ReviewProps {
   datasets: Dataset[];
@@ -310,9 +311,12 @@ export function Review({
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Dataset?</h3>
+        <Dialog
+          onClose={() => setShowDeleteConfirm(false)}
+          labelledBy="review-delete-dataset-title"
+          className="max-w-md p-6"
+        >
+            <h3 id="review-delete-dataset-title" className="text-lg font-semibold text-gray-900 mb-2">Delete Dataset?</h3>
             <p className="text-gray-600 mb-4">
               Are you sure you want to delete "<span className="font-medium">{activeDataset.name}</span>"?
               This action cannot be undone.
@@ -334,8 +338,7 @@ export function Review({
                 Delete
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
 
       {/* Mobile Toolbar - visible only on small screens */}

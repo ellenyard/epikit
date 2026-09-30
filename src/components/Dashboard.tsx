@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { Dataset } from '../types/analysis';
 import { isSampleDataset } from '../data/demoData';
+import { Dialog } from './shared';
 
 interface DashboardProps {
   datasets: Dataset[];
@@ -181,9 +182,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Delete Confirmation Modal */}
       {deleteConfirmDataset && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Dataset?</h3>
+        <Dialog
+          onClose={() => setDeleteConfirmDataset(null)}
+          labelledBy="delete-dataset-title"
+          className="max-w-md p-6"
+        >
+            <h3 id="delete-dataset-title" className="text-lg font-semibold text-gray-900 mb-2">Delete Dataset?</h3>
             <p className="text-gray-600 mb-4">
               Are you sure you want to delete "<span className="font-medium">{deleteConfirmDataset.name}</span>"?
               This will permanently remove {deleteConfirmDataset.records.length} record{deleteConfirmDataset.records.length !== 1 ? 's' : ''} and all associated edit history. This action cannot be undone.
@@ -205,8 +209,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 Delete
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

@@ -437,6 +437,7 @@ export function LineListing({
                 <td className="px-3 py-2">
                   <div className="flex gap-1">
                     <button
+                      aria-label="Add a record"
                       onClick={handleAddRow}
                       className="p-1 text-green-600 hover:text-green-700"
                     >

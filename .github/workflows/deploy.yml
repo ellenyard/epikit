@@ -73,6 +73,7 @@ jobs:
           npm run test:sketch-export
           npm run test:histogram
           npm run test:record-filter
+          npm run test:focus-trap
         timeout-minutes: 10
 
       - name: Build

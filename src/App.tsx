@@ -46,6 +46,7 @@ import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
 import { exportProject, downloadProject, parseProjectFile, saveDatasets, saveEditLog, saveActiveDatasetId, restoreModuleState } from './utils/persistence';
 import type { VariableConfig } from './types/analysis';
+import { Dialog } from './components/shared';
 
 /** Available navigation modules in the app */
 type Module = 'dashboard' | 'review' | 'epicurve' | 'maps' | 'analysis' | 'visualize';
@@ -1054,9 +1055,12 @@ function App() {
 
       {/* Project Load Confirmation Modal */}
       {showProjectLoadConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Load Project?</h3>
+        <Dialog
+          onClose={() => setShowProjectLoadConfirm(null)}
+          labelledBy="load-project-title"
+          className="max-w-md p-6 rounded-xl"
+        >
+            <h3 id="load-project-title" className="text-lg font-semibold text-gray-900 mb-2">Load Project?</h3>
             <p className="text-sm text-gray-600 mb-4">
               Loading <span className="font-medium">{showProjectLoadConfirm.filename}</span> will replace all current data including:
             </p>
@@ -1082,8 +1086,7 @@ function App() {
                 Load Project
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

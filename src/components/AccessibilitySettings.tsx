@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useDialog } from '../hooks/useDialog';
 
 interface AccessibilitySettingsProps {
   isOpen: boolean;
@@ -100,15 +101,17 @@ export function AccessibilitySettings({ isOpen, onClose }: AccessibilitySettings
     applySettings(false, false, false, 'normal');
   };
 
+  const { panelRef, dialogProps } = useDialog({ onClose, labelledBy: 'accessibility-settings-title', isOpen });
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 max-h-[90vh] flex flex-col">
+      <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Accessibility Settings</h2>
+            <h2 id="accessibility-settings-title" className="text-xl font-bold text-gray-900">Accessibility Settings</h2>
             <p className="text-sm text-gray-600 mt-1">Customize the interface for your needs</p>
           </div>
           <button

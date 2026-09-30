@@ -7,6 +7,7 @@
  */
 import { useLocale } from '../contexts/LocaleContext';
 import type { NumberFormat, DateFormat } from '../contexts/LocaleContext';
+import { useDialog } from '../hooks/useDialog';
 
 interface LocaleSettingsProps {
   isOpen: boolean;
@@ -74,14 +75,17 @@ const DATE_FORMAT_OPTIONS: DateFormatOption[] = [
 export function LocaleSettings({ isOpen, onClose }: LocaleSettingsProps) {
   const { config, setNumberFormat, setDateFormat } = useLocale();
 
+  const { panelRef, dialogProps } = useDialog({ onClose, labelledBy: 'locale-settings-title', isOpen });
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+      <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Number & Date Format</h2>
+          <h2 id="locale-settings-title" className="text-lg font-semibold text-gray-900">Number &amp; Date Format</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            aria-label="Close number and date format settings"
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
