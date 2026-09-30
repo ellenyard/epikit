@@ -26,7 +26,8 @@
     "test:sketch-export": "node scripts/sketchExport.regression.mjs",
     "test:histogram": "node scripts/histogramBins.regression.mjs",
     "test:record-filter": "node scripts/recordFilter.regression.mjs && TZ=Asia/Kolkata node scripts/recordFilter.regression.mjs && TZ=Pacific/Auckland node scripts/recordFilter.regression.mjs && TZ=America/New_York node scripts/recordFilter.regression.mjs",
-    "test:focus-trap": "node scripts/focusTrap.regression.mjs"
+    "test:focus-trap": "node scripts/focusTrap.regression.mjs",
+    "test:case-definition": "node scripts/caseDefinition.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

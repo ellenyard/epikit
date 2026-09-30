@@ -1,3 +1,4 @@
+import { detectCaseValues } from '../../utils/caseDefinition';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
@@ -194,16 +195,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
       if (found) {
         setOutcomeVar(found.key);
         // Auto-select likely case values
-        const values = new Set(dataset.records.map(r => String(r[found.key] ?? '')));
-        const caseKeywords = ['yes', 'confirmed', 'probable', 'suspected', 'positive', 'case'];
-        const autoSelected = new Set<string>();
-        values.forEach(v => {
-          if (caseKeywords.some(kw => v.toLowerCase().includes(kw))) {
-            autoSelected.add(v);
-          }
-        });
-        if (autoSelected.size > 0) {
-          setCaseValues(autoSelected);
+        const values = Array.from(new Set(dataset.records.map(r => String(r[found.key] ?? ''))));
+        const autoSelected = detectCaseValues(values);
+        if (autoSelected.length > 0) {
+          setCaseValues(new Set(autoSelected));
         }
       }
     }

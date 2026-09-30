@@ -74,6 +74,7 @@ jobs:
           npm run test:histogram
           npm run test:record-filter
           npm run test:focus-trap
+          npm run test:case-definition
         timeout-minutes: 10
 
       - name: Build
