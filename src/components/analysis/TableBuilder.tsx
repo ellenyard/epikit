@@ -817,24 +817,33 @@ export function TableBuilder({
                   </div>
                 </div>
               )}
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={tableOptions.showCumPercent}
-                  onChange={(e) => setTableOptions(prev => ({ ...prev, showCumPercent: e.target.checked }))}
-                  className="rounded border-gray-300"
-                />
-                Show Cumulative %
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={tableOptions.includeMissing}
-                  onChange={(e) => setTableOptions(prev => ({ ...prev, includeMissing: e.target.checked }))}
-                  className="rounded border-gray-300"
-                />
-                Include missing as row
-              </label>
+              {/* Cumulative percent and the missing row apply to frequency
+                  tables only. Cross-tabs always exclude records missing either
+                  variable and report the count below the table, so leaving these
+                  on screen invited unticking "Include missing as row" and
+                  concluding from no visible change that nothing was missing. */}
+              {!colVar && (
+                <>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={tableOptions.showCumPercent}
+                      onChange={(e) => setTableOptions(prev => ({ ...prev, showCumPercent: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    Show Cumulative %
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={tableOptions.includeMissing}
+                      onChange={(e) => setTableOptions(prev => ({ ...prev, includeMissing: e.target.checked }))}
+                      className="rounded border-gray-300"
+                    />
+                    Include missing as row
+                  </label>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -913,38 +922,71 @@ export function TableBuilder({
                       )}
 
                       {/* Chi-Square Results */}
-                      {chiSquareResults?.get(ct.rowVar) && (
-                        <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                          <h5 className="text-sm font-semibold text-gray-900 mb-3">Chi-Square Test</h5>
-                          <div className="grid grid-cols-3 gap-4 text-center">
-                            <div>
-                              <p className="text-xl font-bold text-gray-900">
-                                {formatSigFigs(chiSquareResults.get(ct.rowVar)!.chiSquare.chiSquare, 3)}
-                              </p>
-                              <p className="text-xs text-gray-500">χ² Statistic</p>
+                      {(() => {
+                        const result = chiSquareResults?.get(ct.rowVar);
+                        if (!result) return null;
+
+                        const { chiSquare: cs, rows: csRows, columnValues: csCols } = result;
+                        const computable = cs.degreesOfFreedom > 0;
+                        // Chi-square assumes expected counts of at least 5. Below
+                        // that the p-value is still a number and still looks
+                        // authoritative, so it has to be labelled rather than left
+                        // for the reader to infer.
+                        const assumptionMet = cs.cellsBelowFive === 0;
+                        const totalCells = csRows.length * csCols.length;
+                        const trustworthy = computable && assumptionMet;
+
+                        return (
+                          <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                            <h5 className="text-sm font-semibold text-gray-900 mb-3">Chi-Square Test</h5>
+                            <div className="grid grid-cols-3 gap-4 text-center">
+                              <div>
+                                <p className="text-xl font-bold text-gray-900">
+                                  {formatSigFigs(cs.chiSquare, 3)}
+                                </p>
+                                <p className="text-xs text-gray-500">χ² Statistic</p>
+                              </div>
+                              <div>
+                                <p className="text-xl font-bold text-gray-900">{cs.degreesOfFreedom}</p>
+                                <p className="text-xs text-gray-500">df</p>
+                              </div>
+                              <div>
+                                <p className={`text-xl font-bold ${trustworthy && cs.pValue < 0.05 ? 'text-green-600' : 'text-gray-900'}`}>
+                                  {cs.pValue < 0.001 ? '< 0.001' : formatNumber(cs.pValue, 3)}
+                                </p>
+                                <p className="text-xs text-gray-500">p-value</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-xl font-bold text-gray-900">
-                                {chiSquareResults.get(ct.rowVar)!.chiSquare.degreesOfFreedom}
-                              </p>
-                              <p className="text-xs text-gray-500">df</p>
-                            </div>
-                            <div>
-                              <p className={`text-xl font-bold ${chiSquareResults.get(ct.rowVar)!.chiSquare.pValue < 0.05 ? 'text-green-600' : 'text-gray-900'}`}>
-                                {chiSquareResults.get(ct.rowVar)!.chiSquare.pValue < 0.001
-                                  ? '< 0.001'
-                                  : formatNumber(chiSquareResults.get(ct.rowVar)!.chiSquare.pValue, 3)}
-                              </p>
-                              <p className="text-xs text-gray-500">p-value</p>
-                            </div>
+
+                            {!assumptionMet && computable && (
+                              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900">
+                                <p className="font-semibold mb-1">This p-value is unreliable</p>
+                                <p>
+                                  {cs.cellsBelowFive} of {totalCells} cells have an expected count below 5
+                                  {isFinite(cs.minExpectedCount) && ` (smallest ${formatNumber(cs.minExpectedCount, 1)})`}.
+                                  Chi-square assumes expected counts of at least 5, so it should not be
+                                  quoted for this table.
+                                </p>
+                                <p className="mt-1">
+                                  {csRows.length === 2 && csCols.length === 2
+                                    ? 'Use Fisher\u2019s exact test instead, available in the 2×2 analysis.'
+                                    : 'Combine sparse categories until every expected count reaches 5, or use an exact test.'}
+                                </p>
+                              </div>
+                            )}
+
+                            <p className="mt-3 text-xs text-gray-600">
+                              {!computable
+                                ? 'Not computable: the test needs at least two row and two column values.'
+                                : !assumptionMet
+                                ? 'Interpretation is withheld because the test assumptions are not met.'
+                                : cs.pValue < 0.05
+                                ? 'The association between these variables is statistically significant (p < 0.05).'
+                                : 'No statistically significant association detected (p ≥ 0.05).'}
+                            </p>
                           </div>
-                          <p className="mt-3 text-xs text-gray-600">
-                            {chiSquareResults.get(ct.rowVar)!.chiSquare.pValue < 0.05
-                              ? 'The association between these variables is statistically significant (p < 0.05).'
-                              : 'No statistically significant association detected (p ≥ 0.05).'}
-                          </p>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   ))}
                 </div>

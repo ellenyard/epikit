@@ -273,6 +273,105 @@ try {
     assert.equal(ct.grandTotal, 90, 'every record is counted');
   }
 
+  // ---------------------------------------------------------------------------
+  // 9. Expected cell counts, which decide whether the p-value means anything.
+  //
+  //    Both chi-square functions computed expected counts and discarded them,
+  //    so no caller could tell a sound table from a sparse one. A sparse table
+  //    does not produce NaN: it produces a confident, wrong p-value, which is
+  //    the failure mode that gets quoted in a report.
+  // ---------------------------------------------------------------------------
+  {
+    // The 3x3 table above is balanced: every row and column total is 30 of 90,
+    // so every expected count is 30 * 30 / 90 = 10.
+    const balanced = [];
+    for (let i = 0; i < 90; i++) {
+      balanced.push({ rowValue: ['x', 'y', 'z'][i % 3], colValue: ['p', 'q', 'r'][i % 3] });
+    }
+    const okTable = calculateCrossTabulation(balanced);
+    close(okTable.chiSquare.minExpectedCount, 10, 1e-9, 'balanced 3x3 expects 10 per cell');
+    assert.equal(okTable.chiSquare.cellsBelowFive, 0, 'a balanced table has no sparse cells');
+
+    // A deliberately sparse 2x2. Row totals 2 and 10, column totals 2 and 10,
+    // n = 12, so the expected counts are 0.333, 1.667, 1.667 and 8.333.
+    const sparse = [
+      { rowValue: 'a', colValue: 'p' },
+      { rowValue: 'a', colValue: 'q' },
+      { rowValue: 'b', colValue: 'p' },
+      ...Array.from({ length: 9 }, () => ({ rowValue: 'b', colValue: 'q' })),
+    ];
+    const sparseTable = calculateCrossTabulation(sparse);
+    assert.equal(sparseTable.grandTotal, 12);
+    close(sparseTable.chiSquare.minExpectedCount, 2 * 2 / 12, 1e-9,
+      'the smallest expected count must be reported, not the smallest observed');
+    assert.equal(sparseTable.chiSquare.cellsBelowFive, 3,
+      'three of the four expected counts are below 5');
+    // The p-value is still produced. That is the point: nothing here signals a
+    // problem on its own, which is why the count has to be surfaced.
+    assert.ok(Number.isFinite(sparseTable.chiSquare.pValue),
+      'a sparse table still yields a finite p-value, hence the warning');
+
+    // The boundary: an expected count of exactly 5 satisfies the convention and
+    // must not be counted as sparse. Row and column totals of 10 with n = 20
+    // give exactly 5 in every cell.
+    const boundary = [];
+    for (let i = 0; i < 20; i++) {
+      boundary.push({ rowValue: i % 2 ? 'a' : 'b', colValue: i % 4 < 2 ? 'p' : 'q' });
+    }
+    const boundaryTable = calculateCrossTabulation(boundary);
+    close(boundaryTable.chiSquare.minExpectedCount, 5, 1e-9, 'every expected count is exactly 5');
+    assert.equal(boundaryTable.chiSquare.cellsBelowFive, 0,
+      'an expected count of exactly 5 meets the convention and is not sparse');
+
+    // A table that cannot be tested reports zero degrees of freedom and still
+    // carries the fields, since the interface gates its warning on df.
+    const oneColumn = [
+      { rowValue: 'a', colValue: 'p' },
+      { rowValue: 'b', colValue: 'p' },
+    ];
+    const degenerate = calculateCrossTabulation(oneColumn);
+    assert.equal(degenerate.chiSquare.degreesOfFreedom, 0, 'one column cannot be tested');
+    assert.equal(typeof degenerate.chiSquare.minExpectedCount, 'number',
+      'the field must exist even when the test is not computable');
+    assert.equal(typeof degenerate.chiSquare.cellsBelowFive, 'number');
+
+    // The R x 2 path reports the same way. Group A has 2 records, B has 10,
+    // with 10 outcomes overall: expected 1.667, 0.333, 8.333, 1.667.
+    const sparseGroups = [
+      { group: 'A', hasOutcome: true },
+      { group: 'A', hasOutcome: false },
+      ...Array.from({ length: 9 }, () => ({ group: 'B', hasOutcome: true })),
+      { group: 'B', hasOutcome: false },
+    ];
+    const gSparse = calculateGroupComparison(sparseGroups);
+    assert.equal(gSparse.grandTotal, 12);
+    close(gSparse.chiSquare.minExpectedCount, 2 * 2 / 12, 1e-9,
+      'the group comparison must report its smallest expected count too');
+    assert.equal(gSparse.chiSquare.cellsBelowFive, 3,
+      'three expected counts below 5 in the R x 2 table');
+
+    // The same boundary in the R x 2 path, which is a separate function and was
+    // initially left untested: two groups of 10 with 10 outcomes overall gives
+    // an expected count of exactly 5 in all four cells.
+    const gBoundary = [];
+    for (let i = 0; i < 20; i++) {
+      gBoundary.push({ group: i % 2 ? 'A' : 'B', hasOutcome: i % 4 < 2 });
+    }
+    const gb = calculateGroupComparison(gBoundary);
+    close(gb.chiSquare.minExpectedCount, 5, 1e-9, 'R x 2 expected counts are exactly 5');
+    assert.equal(gb.chiSquare.cellsBelowFive, 0,
+      'exactly 5 is not below 5 in the R x 2 path either');
+
+    // And a well-powered group comparison is not flagged.
+    const ample = [];
+    for (let i = 0; i < 200; i++) {
+      ample.push({ group: i % 2 ? 'A' : 'B', hasOutcome: i % 3 === 0 });
+    }
+    const gAmple = calculateGroupComparison(ample);
+    assert.equal(gAmple.chiSquare.cellsBelowFive, 0, 'an ample table is not flagged');
+    assert.ok(gAmple.chiSquare.minExpectedCount >= 5);
+  }
+
   console.log('statistics regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

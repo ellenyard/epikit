@@ -565,6 +565,19 @@ export interface ChiSquareResult {
   chiSquare: number;
   degreesOfFreedom: number;
   pValue: number;
+  /**
+   * Smallest expected cell count in the table.
+   *
+   * Chi-square is an approximation that relies on expected counts being large
+   * enough; the usual convention is that every expected count should be at
+   * least 5. Below that the p-value does not become NaN or Infinity, it simply
+   * becomes wrong while still looking authoritative, so callers have to check
+   * this and say so. Both chi-square functions already computed expected
+   * counts internally and discarded them, which left no caller able to tell.
+   */
+  minExpectedCount: number;
+  /** How many cells have an expected count below 5. */
+  cellsBelowFive: number;
 }
 
 export interface GroupComparisonRow {
@@ -651,15 +664,22 @@ function calculateChiSquareRC(
   grandTotal: number
 ): ChiSquareResult {
   if (grandTotal === 0 || rows.length < 2) {
-    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1 };
+    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1, minExpectedCount: 0, cellsBelowFive: 0 };
   }
 
   let chiSquare = 0;
+  let minExpectedCount = Infinity;
+  let cellsBelowFive = 0;
 
   for (const row of rows) {
     // Expected values under null hypothesis (no association)
     const expectedYes = (row.total * totalYes) / grandTotal;
     const expectedNo = (row.total * totalNo) / grandTotal;
+
+    for (const expected of [expectedYes, expectedNo]) {
+      if (expected < minExpectedCount) minExpectedCount = expected;
+      if (expected < 5) cellsBelowFive++;
+    }
 
     // Add to chi-square (skip if expected is 0)
     if (expectedYes > 0) {
@@ -676,7 +696,13 @@ function calculateChiSquareRC(
   // Calculate p-value
   const pValue = 1 - chiSquareCDF(chiSquare, df);
 
-  return { chiSquare, degreesOfFreedom: df, pValue };
+  return {
+    chiSquare,
+    degreesOfFreedom: df,
+    pValue,
+    minExpectedCount: Number.isFinite(minExpectedCount) ? minExpectedCount : 0,
+    cellsBelowFive,
+  };
 }
 
 /**
@@ -761,15 +787,20 @@ function calculateChiSquareRxC(
   grandTotal: number
 ): ChiSquareResult {
   if (grandTotal === 0 || rows.length < 2 || columnValues.length < 2) {
-    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1 };
+    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1, minExpectedCount: 0, cellsBelowFive: 0 };
   }
 
   let chiSquare = 0;
+  let minExpectedCount = Infinity;
+  let cellsBelowFive = 0;
 
   for (const row of rows) {
     for (const colValue of columnValues) {
       const observed = row.counts[colValue];
       const expected = (row.total * columnTotals[colValue]) / grandTotal;
+
+      if (expected < minExpectedCount) minExpectedCount = expected;
+      if (expected < 5) cellsBelowFive++;
 
       if (expected > 0) {
         chiSquare += Math.pow(observed - expected, 2) / expected;
@@ -783,5 +814,11 @@ function calculateChiSquareRxC(
   // Calculate p-value
   const pValue = 1 - chiSquareCDF(chiSquare, df);
 
-  return { chiSquare, degreesOfFreedom: df, pValue };
+  return {
+    chiSquare,
+    degreesOfFreedom: df,
+    pValue,
+    minExpectedCount: Number.isFinite(minExpectedCount) ? minExpectedCount : 0,
+    cellsBelowFive,
+  };
 }
