@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { isStaleChunkError, reloadForStaleChunk, RELOAD_GUARD_KEY } from '../utils/chunkRecovery';
 
 interface Props {
   children: ReactNode;
@@ -10,6 +11,7 @@ interface State {
   hasError: boolean;
   error: Error | null;
 }
+
 
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -23,6 +25,19 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error(`[LineList] Error in ${this.props.moduleName || 'component'}:`, error, errorInfo);
+
+    // Reload once to pick up the current index.html. Guarded so that a chunk
+    // failing for any other reason cannot put the app in a reload loop.
+    if (isStaleChunkError(error)) {
+      reloadForStaleChunk(
+        typeof sessionStorage !== 'undefined' ? sessionStorage : undefined,
+        () => window.location.reload()
+      );
+    } else {
+      try {
+        sessionStorage.removeItem(RELOAD_GUARD_KEY);
+      } catch { /* nothing to clear */ }
+    }
   }
 
   handleReset = () => {
@@ -41,19 +56,25 @@ export class ErrorBoundary extends Component<Props, State> {
               </svg>
             </div>
             <h2 className="text-lg font-semibold text-gray-900 mb-2">
-              Something went wrong{this.props.moduleName ? ` in ${this.props.moduleName}` : ''}
+              {isStaleChunkError(this.state.error)
+                ? 'This page needs reloading'
+                : `Something went wrong${this.props.moduleName ? ` in ${this.props.moduleName}` : ''}`}
             </h2>
             <p className="text-sm text-gray-600 mb-1">
-              An unexpected error occurred. Your data is safe — it's saved automatically in your browser.
+              {isStaleChunkError(this.state.error)
+                ? "LineList was updated while this tab was open, so part of it could not be loaded. Reloading picks up the new version. Your data is safe — it's saved in this browser."
+                : "An unexpected error occurred. Your data is safe — it's saved automatically in your browser."}
             </p>
             <p className="text-xs text-gray-400 mb-4 font-mono">
               {this.state.error?.message}
             </p>
             <button
-              onClick={this.handleReset}
+              onClick={isStaleChunkError(this.state.error)
+                ? () => window.location.reload()
+                : this.handleReset}
               className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              Try Again
+              {isStaleChunkError(this.state.error) ? 'Reload' : 'Try Again'}
             </button>
           </div>
         </div>

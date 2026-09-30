@@ -68,6 +68,7 @@ jobs:
           npm run test:variables
           npm run test:data-quality
           npm run test:chart-aggregation
+          npm run test:chunk-recovery
         timeout-minutes: 10
 
       - name: Build
