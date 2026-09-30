@@ -76,6 +76,77 @@ function isEmpty(value: unknown): boolean {
 // =============================================================================
 
 /** Returns the default configuration with all check types enabled but empty rules */
+/**
+ * Suggest date-order and numeric-range rules from column names.
+ *
+ * Those two checks need per-dataset rules and ship with none, so a fresh
+ * import is unchecked on both until someone configures them by hand. These are
+ * suggestions to review and edit, not assumptions: only orderings that hold in
+ * essentially any line list are proposed.
+ *
+ * Deliberately conservative. Onset before hospitalisation is omitted, for
+ * instance, because a hospital-acquired infection legitimately reverses it,
+ * and a check that cries wolf trains people to ignore the panel.
+ */
+export function suggestQualityRules(columns: DataColumn[]): {
+  dateOrderRules: DateOrderRule[];
+  numericRangeRules: NumericRangeRule[];
+} {
+  const dateColumns = columns.filter(c => c.type === 'date');
+  const find = (pattern: RegExp) =>
+    dateColumns.find(c => pattern.test(c.key) || pattern.test(c.label.toLowerCase()));
+
+  // Events that can only follow the illness they describe.
+  const exposure = find(/exposure/);
+  const onset = find(/onset|symptom/);
+  const afterOnset = [
+    find(/interview/),
+    find(/report|notif/),
+    find(/outcome|death|discharge|recover/),
+  ];
+
+  const dateOrderRules: DateOrderRule[] = [];
+  const addRule = (first?: DataColumn, second?: DataColumn) => {
+    if (!first || !second || first.key === second.key) return;
+    if (dateOrderRules.some(r => r.firstDateField === first.key && r.secondDateField === second.key)) return;
+    dateOrderRules.push({
+      id: `suggested_${first.key}_${second.key}`,
+      firstDateField: first.key,
+      secondDateField: second.key,
+      firstDateLabel: first.label,
+      secondDateLabel: second.label,
+    });
+  };
+
+  addRule(exposure, onset);
+  for (const later of afterOnset) addRule(onset ?? exposure, later);
+
+  // Only ranges that hold regardless of setting or population.
+  const numericRangeRules: NumericRangeRule[] = [];
+  for (const column of columns.filter(c => c.type === 'number')) {
+    const name = `${column.key} ${column.label}`.toLowerCase();
+    if (/\bage\b/.test(name) && !/month|week|day/.test(name)) {
+      numericRangeRules.push({
+        id: `suggested_${column.key}`,
+        field: column.key,
+        fieldLabel: column.label,
+        min: 0,
+        max: 120,
+      });
+    } else if (/age/.test(name) && /month/.test(name)) {
+      numericRangeRules.push({
+        id: `suggested_${column.key}`,
+        field: column.key,
+        fieldLabel: column.label,
+        min: 0,
+        max: 1440, // 120 years expressed in months
+      });
+    }
+  }
+
+  return { dateOrderRules, numericRangeRules };
+}
+
 export function getDefaultConfig(): DataQualityConfig {
   return {
     duplicateFields: [],

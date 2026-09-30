@@ -16,6 +16,8 @@ export interface GeoJsonFeatureCollection {
 }
 
 export interface JoinedArea {
+  /** True when this area's values were withheld for disclosure control. */
+  suppressed?: boolean;
   key: string;
   label: string;
   count: number;
@@ -260,6 +262,25 @@ export function buildAreaJoin(options: BuildAreaJoinOptions): AreaJoinResult {
       missingDenominatorKeys,
       smallCountKeys,
     },
+  };
+}
+
+/**
+ * Blank the values of areas holding fewer than SMALL_COUNT_THRESHOLD cases.
+ *
+ * Applied at the point of publication rather than during analysis: the counts
+ * stay visible while someone is working, and are withheld once they choose to
+ * suppress for sharing. Blanking rather than zeroing matters, because a zero
+ * would be read as "no cases here" rather than "not disclosed".
+ */
+export function suppressSmallCounts(result: AreaJoinResult): AreaJoinResult {
+  return {
+    ...result,
+    areas: result.areas.map(area =>
+      area.count > 0 && area.count < SMALL_COUNT_THRESHOLD
+        ? { ...area, count: null as unknown as number, denominator: area.denominator, rate: null, value: null, suppressed: true }
+        : { ...area, suppressed: false }
+    ),
   };
 }
 

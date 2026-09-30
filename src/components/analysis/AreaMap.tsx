@@ -12,6 +12,7 @@ import {
   buildAreaJoin,
   buildJoinReport,
   SMALL_COUNT_THRESHOLD,
+  suppressSmallCounts,
   classifyValues,
   formatAreaValue,
   getClassIndex,
@@ -106,6 +107,9 @@ function makeAreaProperties(area: JoinedArea, metric: AreaMetric, rateMultiplier
     linelist_metric: metric,
     linelist_rate_multiplier: metric === 'rate' ? rateMultiplier : null,
     linelist_mapped_value: area.value,
+    linelist_disclosure: area.suppressed
+      ? `suppressed_under_${SMALL_COUNT_THRESHOLD}`
+      : 'as_observed',
   };
 }
 
@@ -172,6 +176,9 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const [denominatorKey, setDenominatorKey] = useState<string>(() => validSavedColumn(saved.denominatorKey, initialDenominatorColumns));
   const [denominatorValue, setDenominatorValue] = useState<string>(() => validSavedColumn(saved.denominatorValue, initialDenominatorColumns));
   const [rateMultiplier, setRateMultiplier] = useState<number>(() => (saved.rateMultiplier as number) || 100000);
+  // Off by default: hiding small counts mid-investigation would hide real
+  // signal. Turned on when a map is being prepared to share.
+  const [suppressSmall, setSuppressSmall] = useState<boolean>(() => saved.suppressSmall === true);
   const [classificationMethod, setClassificationMethod] = useState<ClassificationMethod>(() => (saved.classificationMethod as ClassificationMethod) || 'quantile');
   const [classCount, setClassCount] = useState<number>(() => (saved.classCount as number) || 5);
   const [manualBreaks, setManualBreaks] = useState<string>(() => (saved.manualBreaks as string) || '');
@@ -200,6 +207,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
         denominatorKey,
         denominatorValue,
         rateMultiplier,
+        suppressSmall,
         classificationMethod,
         classCount,
         manualBreaks,
@@ -221,6 +229,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     denominatorKey,
     denominatorValue,
     rateMultiplier,
+    suppressSmall,
     classificationMethod,
     classCount,
     manualBreaks,
@@ -283,40 +292,48 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     rateMultiplier,
   ]);
 
+  // Applied once, here, so the map, legend, classification breaks and every
+  // export all read the same withheld values. Suppressing only at export would
+  // leave the on-screen map disclosing what the file withholds.
+  const displayResult = useMemo(
+    () => (joinResult && suppressSmall ? suppressSmallCounts(joinResult) : joinResult),
+    [joinResult, suppressSmall]
+  );
+
   const areaByKey = useMemo(() => {
     const lookup = new Map<string, JoinedArea>();
-    joinResult?.areas.forEach(area => lookup.set(area.key, area));
+    displayResult?.areas.forEach(area => lookup.set(area.key, area));
     return lookup;
-  }, [joinResult]);
+  }, [displayResult]);
 
   const mappedValues = useMemo(() => (
-    joinResult?.areas
+    displayResult?.areas
       .map(area => area.value)
       .filter((value): value is number => value !== null && Number.isFinite(value)) ?? []
-  ), [joinResult]);
+  ), [displayResult]);
 
   const breaks = useMemo(() => (
     classifyValues(mappedValues, classificationMethod, classCount, manualBreaks)
   ), [mappedValues, classificationMethod, classCount, manualBreaks]);
 
   const joinedFeatureCollection = useMemo(() => {
-    if (!joinResult) return null;
+    if (!displayResult) return null;
     return {
       type: 'FeatureCollection',
-      features: joinResult.areas.map(area => ({
+      features: displayResult.areas.map(area => ({
         ...area.feature,
         properties: makeAreaProperties(area, metric, rateMultiplier),
       })),
     };
-  }, [joinResult, metric, rateMultiplier]);
+  }, [displayResult, metric, rateMultiplier]);
 
   // Covers every joined value so the GeoJSON layer (and its popup contents)
   // remounts whenever counts, denominators, or rates change
   const joinVersion = useMemo(() => (
-    joinResult?.areas
+    displayResult?.areas
       .map(area => `${area.key}:${area.count}:${area.denominator ?? ''}:${area.rate ?? ''}`)
       .join('|') ?? ''
-  ), [joinResult]);
+  ), [displayResult]);
   const activeBaseMap: BaseMap = isExporting && exportBaseMap !== 'current' ? exportBaseMap : baseMap;
 
   const handleBoundaryFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -442,8 +459,8 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   };
 
   const exportJoinReport = () => {
-    if (!joinResult) return;
-    const csv = exportToCSV(joinReportColumns, buildJoinReport(joinResult), { localeConfig });
+    if (!displayResult) return;
+    const csv = exportToCSV(joinReportColumns, buildJoinReport(displayResult), { localeConfig });
     downloadText(csv, `area_map_join_report_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
   };
 
@@ -657,6 +674,21 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 )}
               </div>
               {joinResult.summary.smallCountKeys.length > 0 && (
+                <label className="flex items-start gap-2 mt-2 text-xs text-gray-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={suppressSmall}
+                    onChange={e => setSuppressSmall(e.target.checked)}
+                    className="mt-0.5 rounded border-gray-300"
+                  />
+                  <span>
+                    Withhold areas under {SMALL_COUNT_THRESHOLD} cases when sharing this map.
+                    Their values are blanked on the map, in the legend and in every export,
+                    and marked as withheld rather than shown as zero.
+                  </span>
+                </label>
+              )}
+              {joinResult.summary.smallCountKeys.length > 0 && !suppressSmall && (
                 <p className="text-xs text-amber-700 mt-2">
                   {joinResult.summary.smallCountKeys.length} area
                   {joinResult.summary.smallCountKeys.length === 1 ? ' holds' : 's hold'} fewer than{' '}

@@ -33,7 +33,7 @@ try {
     outfile: bundled, logLevel: 'silent',
   });
 
-  const { runDataQualityChecks, getDefaultConfig, getCheckName } =
+  const { runDataQualityChecks, getDefaultConfig, getCheckName, suggestQualityRules } =
     await import(pathToFileURL(bundled).href);
 
   const base = getDefaultConfig();
@@ -172,6 +172,66 @@ try {
       assert.ok(typeof i.message === 'string' && i.message.length > 0 && !/undefined/.test(i.message),
         `issue messages must be readable, got "${i.message}"`);
     }
+  }
+
+  // 10. Suggested rules turn the two configurable checks on for a fresh
+  //     import, using column names. They must be conservative: a rule that
+  //     cries wolf trains people to ignore the panel.
+  {
+    const realWorld = [
+      { key: 'exposure_date', label: 'Exposure Date', type: 'date' },
+      { key: 'onset_date', label: 'Onset Date', type: 'date' },
+      { key: 'hospitalization_date', label: 'Hospitalization Date', type: 'date' },
+      { key: 'interview_date', label: 'Interview Date', type: 'date' },
+      { key: 'report_date', label: 'Report Date', type: 'date' },
+      { key: 'age', label: 'Age', type: 'number' },
+      { key: 'dietary_diversity_score', label: 'Dietary Diversity Score', type: 'number' },
+    ];
+    const s = suggestQualityRules(realWorld);
+
+    const pairs = s.dateOrderRules.map(r => `${r.firstDateField}->${r.secondDateField}`);
+    assert.ok(pairs.includes('exposure_date->onset_date'),
+      'onset follows exposure, which is true of any transmitted illness');
+    assert.ok(pairs.includes('onset_date->interview_date'), 'an interview follows onset');
+    assert.ok(pairs.includes('onset_date->report_date'), 'a report follows onset');
+    assert.ok(!pairs.some(p => p.includes('hospitalization')),
+      'onset before hospitalisation must not be suggested: a hospital-acquired infection reverses it');
+
+    assert.deepEqual(s.numericRangeRules.map(r => r.field), ['age'],
+      'only ranges that hold regardless of setting should be suggested');
+    const age = s.numericRangeRules[0];
+    assert.equal(age.min, 0); assert.equal(age.max, 120);
+    assert.ok(age.fieldLabel, 'a suggested range must carry a label so its message reads properly');
+  }
+
+  // 11. Suggested rules actually work when applied, and find real problems.
+  {
+    const cols = [
+      { key: 'id', label: 'ID', type: 'text' },
+      { key: 'onset_date', label: 'Onset', type: 'date' },
+      { key: 'interview_date', label: 'Interview', type: 'date' },
+      { key: 'age', label: 'Age', type: 'number' },
+    ];
+    const records = [
+      { id: '1', onset_date: '2026-01-10', interview_date: '2026-01-05', age: 34 },
+      { id: '2', onset_date: '2026-01-10', interview_date: '2026-01-12', age: 999 },
+    ];
+    const suggested = suggestQualityRules(cols);
+    const before = runDataQualityChecks(records, cols, base);
+    const after = runDataQualityChecks(records, cols, { ...base, ...suggested });
+
+    assert.equal(of(before, 'date_order').length + of(before, 'numeric_range').length, 0,
+      'without rules these checks find nothing, which is the gap');
+    assert.equal(of(after, 'date_order').length, 1, 'the interview before onset is found');
+    assert.equal(of(after, 'numeric_range').length, 1, 'the impossible age is found');
+  }
+
+  // 12. Age in months is not held to the same bounds as age in years.
+  {
+    const s = suggestQualityRules([{ key: 'age_months', label: 'Age (months)', type: 'number' }]);
+    assert.equal(s.numericRangeRules.length, 1);
+    assert.ok(s.numericRangeRules[0].max > 120,
+      'age in months must not be capped at 120, which would flag every child over ten');
   }
 
   console.log('dataQuality regression: all checks passed');

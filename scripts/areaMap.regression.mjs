@@ -55,6 +55,7 @@ try {
   const {
     buildAreaJoin,
     SMALL_COUNT_THRESHOLD,
+    suppressSmallCounts,
     buildJoinReport,
     classifyValues,
     normalizeAreaKey,
@@ -205,6 +206,46 @@ try {
     }
     assert.ok(joined.summary.missingDenominatorKeys.includes('Beta'),
       'an area with cases but no usable denominator should be reported');
+  }
+
+  // Optional suppression, for when a map is being prepared to share. Values are
+  // withheld rather than zeroed: a zero reads as "no cases here" rather than
+  // "not disclosed", which is a different and wrong claim.
+  {
+    const boundaries = {
+      type: 'FeatureCollection',
+      features: ['North', 'South', 'East', 'West'].map(name => ({
+        type: 'Feature',
+        properties: { name },
+        geometry: { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] },
+      })),
+    };
+    const records = [
+      ...Array.from({ length: 7 }, (_, i) => ({ id: `n${i}`, area: 'North' })),
+      ...Array.from({ length: 3 }, (_, i) => ({ id: `s${i}`, area: 'South' })),
+      { id: 'e0', area: 'East' },
+    ];
+    const joined = buildAreaJoin({
+      records, areaField: 'area', boundaries, boundaryKey: 'name', metric: 'count',
+    });
+    const withheld = suppressSmallCounts(joined);
+    const byLabel = Object.fromEntries(withheld.areas.map(a => [a.label, a]));
+
+    assert.equal(byLabel.North.count, 7, 'an area at or above the threshold is untouched');
+    assert.equal(byLabel.North.suppressed, false);
+
+    for (const small of ['South', 'East']) {
+      assert.equal(byLabel[small].value, null, `${small} must not carry a mappable value`);
+      assert.notEqual(byLabel[small].value, 0, `${small} must not read as zero cases`);
+      assert.equal(byLabel[small].suppressed, true, `${small} must be marked as withheld`);
+    }
+
+    // An area with no cases has nobody to identify, so it is left alone and can
+    // still legitimately show zero.
+    assert.equal(byLabel.West.suppressed, false, 'an empty area is not suppressed');
+
+    // The summary still reports what was withheld, so the count is not lost.
+    assert.deepEqual(withheld.summary.smallCountKeys, ['East', 'South']);
   }
 
   console.log('Area map regression checks passed.');

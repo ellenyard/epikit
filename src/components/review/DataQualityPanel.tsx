@@ -9,6 +9,7 @@ import type {
 import {
   getCategoryName,
   groupIssuesByCategory,
+  suggestQualityRules,
 } from '../../utils/dataQuality';
 import { LoadingSpinner } from '../shared/LoadingSpinner';
 
@@ -40,6 +41,28 @@ export function DataQualityPanel({
   );
   const [showConfig, setShowConfig] = useState(false);
   const [hasRunChecks, setHasRunChecks] = useState(false);
+
+  // Suggestions are only offered for rules that are not already configured, so
+  // the button disappears once the user has set things up themselves.
+  const suggestions = useMemo(() => suggestQualityRules(columns), [columns]);
+  const newSuggestions = useMemo(() => ({
+    dateOrderRules: suggestions.dateOrderRules.filter(
+      r => !config.dateOrderRules.some(e => e.firstDateField === r.firstDateField && e.secondDateField === r.secondDateField)
+    ),
+    numericRangeRules: suggestions.numericRangeRules.filter(
+      r => !config.numericRangeRules.some(e => e.field === r.field)
+    ),
+  }), [suggestions, config.dateOrderRules, config.numericRangeRules]);
+  const suggestedRuleCount =
+    newSuggestions.dateOrderRules.length + newSuggestions.numericRangeRules.length;
+
+  const applySuggestedRules = () => {
+    onConfigChange({
+      ...config,
+      dateOrderRules: [...config.dateOrderRules, ...newSuggestions.dateOrderRules],
+      numericRangeRules: [...config.numericRangeRules, ...newSuggestions.numericRangeRules],
+    });
+  };
 
   // Reset the "checks run" indicator when the dataset changes (columns identity)
   useEffect(() => {
@@ -318,6 +341,18 @@ export function DataQualityPanel({
               <p className="text-xs text-gray-500 mb-3">
                 Specify which dates should come before others (e.g., symptom onset before hospitalization):
               </p>
+
+              {/* Date-order and range checks do nothing until rules exist, so a
+                  fresh import is unchecked on both. Offer a starting point
+                  drawn from the column names, to review rather than trust. */}
+              {suggestedRuleCount > 0 && (
+                <button
+                  onClick={applySuggestedRules}
+                  className="mb-3 text-xs px-2 py-1 border border-gray-300 rounded bg-white hover:bg-gray-50 text-gray-700"
+                >
+                  Suggest {suggestedRuleCount} rule{suggestedRuleCount === 1 ? '' : 's'} from column names
+                </button>
+              )}
 
               {/* Existing rules */}
               {config.dateOrderRules.length > 0 && (
