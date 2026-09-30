@@ -5,8 +5,8 @@ import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { calculateTwoByTwo } from '../../../utils/statistics';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
-import {
 import { isMissingValue } from '../../../utils/recordFilter';
+import {
   getDefaultDimensions,
   svgWrapper,
   svgTitle,
