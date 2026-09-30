@@ -4,9 +4,12 @@ export type AggregationMode = 'mean' | 'sum' | 'count' | 'min' | 'max';
 
 interface AggBucket {
   sum: number;
+  /** Values seen, which drives mean, min and max. */
   count: number;
   min: number;
   max: number;
+  /** Records in the category, whether or not they carried a value. */
+  records?: number;
 }
 
 /**
@@ -25,14 +28,20 @@ export function aggregateByCategory(
     const cat = rec[categoryKey];
     if (cat === null || cat === undefined || cat === '') continue;
     const catStr = String(cat);
+
+    if (!buckets.has(catStr)) {
+      buckets.set(catStr, { sum: 0, count: 0, min: Infinity, max: -Infinity, records: 0 });
+    }
+    const b = buckets.get(catStr)!;
+    b.records = (b.records ?? 0) + 1;
+
+    // Counting records does not read the value column, so a record missing it
+    // still belongs to its category. Requiring a value here undercounted every
+    // category by however many blanks it held.
     const raw = rec[valueKey];
     const num = Number(raw);
     if (raw === null || raw === undefined || raw === '' || isNaN(num)) continue;
 
-    if (!buckets.has(catStr)) {
-      buckets.set(catStr, { sum: 0, count: 0, min: Infinity, max: -Infinity });
-    }
-    const b = buckets.get(catStr)!;
     b.sum += num;
     b.count++;
     if (num < b.min) b.min = num;
@@ -136,7 +145,8 @@ function resolveAgg(b: AggBucket, mode: AggregationMode): number {
   switch (mode) {
     case 'mean': return b.count > 0 ? b.sum / b.count : 0;
     case 'sum': return b.sum;
-    case 'count': return b.count;
+    // Records in the category, not records that happen to have a value.
+    case 'count': return b.records ?? b.count;
     case 'min': return b.min === Infinity ? 0 : b.min;
     case 'max': return b.max === -Infinity ? 0 : b.max;
   }

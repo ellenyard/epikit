@@ -67,6 +67,7 @@ jobs:
           npm run test:persistence
           npm run test:variables
           npm run test:data-quality
+          npm run test:chart-aggregation
         timeout-minutes: 10
 
       - name: Build
