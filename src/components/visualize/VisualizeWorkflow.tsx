@@ -47,7 +47,7 @@ export function VisualizeWorkflow({ dataset }: VisualizeWorkflowProps) {
         {selectedChart === null ? (
           <>
             <DatasetSummary dataset={dataset} />
-            <ChartGallery onSelectChart={setSelectedChart} dataset={dataset} />
+            <ChartGallery onSelectChart={setSelectedChart} />
           </>
         ) : (
           <div>

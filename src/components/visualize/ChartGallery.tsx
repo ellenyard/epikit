@@ -1,5 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import type { Dataset, DataColumn } from '../../types/analysis';
+import { useState, type ReactNode } from 'react';
 
 export type ChartType =
   | 'bar'
@@ -287,7 +286,6 @@ const CHART_GROUPS: ChartGroup[] = [
 
 interface ChartGalleryProps {
   onSelectChart: (chartType: ChartType) => void;
-  dataset?: Dataset;
 }
 
 /** Map from ChartType to the full ChartInfo for quick lookup */
@@ -337,73 +335,6 @@ const INTENT_CHARTS: Record<AnalyticalIntent, { type: ChartType; reason: string 
     { type: 'grouped', reason: 'Compare counts or values across two grouping variables' },
   ],
 };
-
-/**
- * Suggest charts based on the column types present in the dataset.
- */
-function suggestCharts(columns: DataColumn[]): { type: ChartType; reason: string }[] {
-  const numericCols = columns.filter(c => c.type === 'number');
-  const categoricalCols = columns.filter(c => c.type === 'categorical' || c.type === 'text');
-  const dateCols = columns.filter(c => c.type === 'date');
-  const suggestions: { type: ChartType; reason: string }[] = [];
-
-  // CI-like columns suggest forest plot
-  const hasCIColumns = numericCols.some(c => {
-    const lower = c.key.toLowerCase();
-    return lower.includes('lower') || lower.includes('ci_lo') || lower.includes('lcl');
-  }) && numericCols.some(c => {
-    const lower = c.key.toLowerCase();
-    return lower.includes('upper') || lower.includes('ci_hi') || lower.includes('ucl');
-  });
-  if (hasCIColumns && categoricalCols.length >= 1) {
-    suggestions.push({ type: 'forest', reason: 'Your data has confidence interval columns — ideal for a forest plot' });
-  }
-
-  // Binary categorical (exactly 2 values) + categorical = paired bar or dumbbell
-  const hasBinaryCat = categoricalCols.some(c => c.valueOrder && c.valueOrder.length === 2);
-  if (hasBinaryCat && categoricalCols.length >= 2) {
-    suggestions.push({ type: 'paired', reason: 'Your data has a binary grouping variable — great for comparing two groups' });
-  }
-
-  // Two numeric columns + categorical = dumbbell
-  if (numericCols.length >= 2 && categoricalCols.length >= 1) {
-    suggestions.push({ type: 'dumbbell', reason: 'Two numeric columns can show the gap between paired values per category' });
-  }
-
-  // Multiple numeric columns = slope chart
-  if (numericCols.length >= 2 && categoricalCols.length >= 1) {
-    suggestions.push({ type: 'slope', reason: 'Multiple numeric columns can show change between two measures' });
-  }
-
-  // Categorical + numeric = bar
-  if (categoricalCols.length >= 1 && numericCols.length >= 1) {
-    suggestions.push({ type: 'bar', reason: 'Compare categories using numeric values' });
-  }
-
-  // Date column + numeric = line chart
-  if (dateCols.length >= 1 && numericCols.length >= 1) {
-    suggestions.push({ type: 'line', reason: 'Visualize trends over time with your date and numeric columns' });
-  }
-
-  // Two categorical = heatmap
-  if (categoricalCols.length >= 2) {
-    suggestions.push({ type: 'heatmap', reason: 'Cross-tabulate two categorical variables with color intensity' });
-  }
-
-  // Numeric with target-like columns = bullet chart
-  const hasTarget = numericCols.some(c => c.key.includes('target') || c.label.toLowerCase().includes('target'));
-  if (hasTarget && categoricalCols.length >= 1) {
-    suggestions.push({ type: 'bullet', reason: 'Compare actual values against targets in your data' });
-  }
-
-  // Deduplicate
-  const seen = new Set<ChartType>();
-  return suggestions.filter(s => {
-    if (seen.has(s.type)) return false;
-    seen.add(s.type);
-    return true;
-  }).slice(0, 5);
-}
 
 function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void; reason?: string }) {
   const Thumbnail = chart.thumbnail;
@@ -460,13 +391,8 @@ function IntentFilter({
   );
 }
 
-export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
+export function ChartGallery({ onSelectChart }: ChartGalleryProps) {
   const [selectedIntent, setSelectedIntent] = useState<AnalyticalIntent | null>(null);
-
-  const suggestions = useMemo(() => {
-    if (!dataset) return [];
-    return suggestCharts(dataset.columns);
-  }, [dataset]);
 
   const intentSuggestions = selectedIntent ? INTENT_CHARTS[selectedIntent] : null;
 
@@ -492,23 +418,6 @@ export function ChartGallery({ onSelectChart, dataset }: ChartGalleryProps) {
                 <div key={type} className="relative">
                   <ChartCard chart={chart} onSelect={() => onSelectChart(type)} />
                   <p className="text-xs text-blue-600 mt-1 ml-1">{reason}</p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Data-driven suggestions */}
-      {suggestions.length > 0 && !selectedIntent && (
-        <div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {suggestions.map(({ type }) => {
-              const chart = CHART_MAP.get(type);
-              if (!chart) return null;
-              return (
-                <div key={type} className="relative">
-                  <ChartCard chart={chart} onSelect={() => onSelectChart(type)} />
                 </div>
               );
             })}
