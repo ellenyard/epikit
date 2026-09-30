@@ -1,3 +1,4 @@
+import { sortCategoryValues } from '../../../utils/recordFilter';
 import type { ReactNode } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { VariableMapper } from './VariableMapper';
@@ -14,14 +15,14 @@ export function FacetWrapper({ dataset, facetCol, renderChart }: FacetWrapperPro
   }
 
   // Get unique facet values
-  const facetValues = Array.from(
+  const facetValues = sortCategoryValues(Array.from(
     new Set(
       dataset.records
         .map(r => r[facetCol])
         .filter(v => v != null && v !== '')
         .map(String)
     )
-  ).sort();
+  ));
 
   if (facetValues.length === 0) {
     return <>{renderChart(dataset, '')}</>;

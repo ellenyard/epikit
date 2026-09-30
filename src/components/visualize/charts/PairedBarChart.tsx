@@ -1,3 +1,4 @@
+import { sortCategoryValues } from '../../../utils/recordFilter';
 import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
@@ -50,7 +51,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
       const v = rec[groupCol];
       if (v !== null && v !== undefined && v !== '') unique.add(String(v));
     }
-    return Array.from(unique).sort();
+    return sortCategoryValues(Array.from(unique));
   }, [inputMode, groupCol, dataset]);
 
   // Build paired data

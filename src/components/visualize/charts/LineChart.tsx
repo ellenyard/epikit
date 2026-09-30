@@ -1,3 +1,4 @@
+import { sortCategoryValues } from '../../../utils/recordFilter';
 import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
@@ -241,7 +242,7 @@ export function LineChart({ dataset }: LineChartProps) {
 
     // Otherwise, use unique values in natural order
     const unique = new Set(rawValues.map(v => String(v)));
-    return Array.from(unique).sort();
+    return sortCategoryValues(Array.from(unique));
   }, [xVar, dataset.records, dataset.columns]);
 
   // Build series data
@@ -273,7 +274,7 @@ export function LineChart({ dataset }: LineChartProps) {
       }
     }
 
-    const strataList = Array.from(strataValues).sort();
+    const strataList = sortCategoryValues(Array.from(strataValues));
     const colors = getChartColors(strataList.length, colorScheme);
 
     return strataList.map((strataValue, i) => {
@@ -525,7 +526,7 @@ export function LineChart({ dataset }: LineChartProps) {
                   facetXValues = col.valueOrder.filter(v => rawValues.some(rv => String(rv) === v));
                 } else {
                   const unique = new Set(rawValues.map(v => String(v)));
-                  facetXValues = Array.from(unique).sort();
+                  facetXValues = sortCategoryValues(Array.from(unique));
                 }
 
                 // Build series for facet
@@ -553,7 +554,7 @@ export function LineChart({ dataset }: LineChartProps) {
                     }
                   }
 
-                  const strataList = Array.from(strataValues).sort();
+                  const strataList = sortCategoryValues(Array.from(strataValues));
                   const colors = getChartColors(strataList.length, colorScheme);
 
                   facetSeries = strataList.map((strataValue, i) => {

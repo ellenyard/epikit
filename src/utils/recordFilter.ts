@@ -54,7 +54,7 @@ export function categoryValue(value: unknown): string {
 export function collectCategoryValues(records: CaseRecord[], column: string): string[] {
   const values = new Set<string>();
   for (const record of records) values.add(categoryValue(record[column]));
-  return Array.from(values).sort();
+  return sortCategoryValues(Array.from(values));
 }
 
 /** How many records fall in one category, for the counts beside a filter. */
@@ -176,4 +176,69 @@ export function sortRecords(records: CaseRecord[], sort: SortConfig | null): Cas
     const comparison = String(aVal).localeCompare(String(bVal));
     return sort.direction === 'asc' ? comparison : -comparison;
   });
+}
+
+/**
+ * Ordering category values for an axis or a legend.
+ *
+ * A bare sort is lexicographic, which puts April before January and "10-14"
+ * before "5-9". Both are ordinary in epidemiological data: a month-by-district
+ * heatmap is drawn precisely to show seasonality, and alphabetical months
+ * scatter the season across the axis so the pattern cannot be seen at all.
+ * Age bands fare no better.
+ */
+
+const MONTH_SEQUENCE = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+
+const MONTH_ORDER = new Map<string, number>();
+MONTH_SEQUENCE.forEach((name, index) => {
+  MONTH_ORDER.set(name, index);
+  MONTH_ORDER.set(name.slice(0, 3), index);
+});
+
+/** The month's position, or null when the text does not name one. */
+function monthPosition(value: string): number | null {
+  return MONTH_ORDER.get(value.trim().toLowerCase()) ?? null;
+}
+
+/** A leading number, so "5-9" sorts before "10-14" and "<5" before "5-9". */
+function leadingNumber(value: string): number | null {
+  const match = /^[<>~]?\s*(-?\d+(?:\.\d+)?)/.exec(value.trim());
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Sort category values into the order a reader expects.
+ *
+ * An explicit valueOrder wins. Otherwise month names sort chronologically and
+ * values opening with a number sort numerically, each only when every value
+ * qualifies, so a single odd entry falls back to alphabetical rather than
+ * producing a half-ordered axis. Missing always sorts last, where a reader
+ * looks for it, rather than alphabetically into the middle of real categories.
+ */
+export function sortCategoryValues(values: string[], valueOrder?: string[]): string[] {
+  const missing = values.filter(v => v === MISSING_CATEGORY_LABEL);
+  const rest = values.filter(v => v !== MISSING_CATEGORY_LABEL);
+
+  let ordered: string[];
+  if (valueOrder && valueOrder.length > 0) {
+    const rank = new Map(valueOrder.map((v, i) => [v, i]));
+    const known = rest.filter(v => rank.has(v)).sort((a, b) => rank.get(a)! - rank.get(b)!);
+    const unknown = sortCategoryValues(rest.filter(v => !rank.has(v)));
+    ordered = [...known, ...unknown];
+  } else if (rest.length > 0 && rest.every(v => monthPosition(v) !== null)) {
+    ordered = [...rest].sort((a, b) => monthPosition(a)! - monthPosition(b)!);
+  } else if (rest.length > 0 && rest.every(v => leadingNumber(v) !== null)) {
+    ordered = [...rest].sort((a, b) => {
+      const diff = leadingNumber(a)! - leadingNumber(b)!;
+      return diff !== 0 ? diff : a.localeCompare(b);
+    });
+  } else {
+    ordered = [...rest].sort((a, b) => a.localeCompare(b));
+  }
+
+  return [...ordered, ...missing];
 }

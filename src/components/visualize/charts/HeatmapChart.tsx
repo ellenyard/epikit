@@ -1,3 +1,4 @@
+import { sortCategoryValues } from '../../../utils/recordFilter';
 import { useState, useMemo } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
@@ -76,8 +77,8 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       if (cv !== null && cv !== undefined && cv !== '') colValues.add(String(cv));
     }
 
-    const rows = Array.from(rowValues).sort();
-    const cols = Array.from(colValues).sort();
+    const rows = sortCategoryValues(Array.from(rowValues));
+    const cols = sortCategoryValues(Array.from(colValues));
 
     if (rows.length === 0 || cols.length === 0) return null;
 

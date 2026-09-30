@@ -33,7 +33,7 @@ try {
 
   const {
     categoryValue, collectCategoryValues, countInCategory, filterByCategoryValues,
-    filterRecords, sortRecords, isMissingValue, MISSING_CATEGORY_LABEL,
+    filterRecords, sortRecords, isMissingValue, MISSING_CATEGORY_LABEL, sortCategoryValues,
   } = await import(pathToFileURL(bundled).href);
 
   // Every way a cell can be empty, as they actually arrive from a spreadsheet.
@@ -245,6 +245,53 @@ try {
     assert.deepEqual(ids(desc).slice(2).sort(), ['2', '4'],
       'and the missing stay at the end rather than moving to the top');
     assert.deepEqual(sortRecords(records, null), records, 'no sort is a no-op');
+  }
+
+  // 12. Category ordering for an axis or legend. A bare sort is lexicographic,
+  //     which puts April before January and "10-14" before "5-9". A month by
+  //     district heatmap exists to show seasonality, and alphabetical months
+  //     scatter the season across the axis so the pattern cannot be read.
+  {
+    const months = ['Mar', 'Jan', 'Dec', 'Feb', 'Nov'];
+    assert.deepEqual(sortCategoryValues(months), ['Jan', 'Feb', 'Mar', 'Nov', 'Dec'],
+      'months sort chronologically, not alphabetically');
+    assert.deepEqual(
+      sortCategoryValues(['September', 'January', 'April']),
+      ['January', 'April', 'September'],
+      'full month names too');
+
+    const bands = ['10-14', '5-9', '0-4', '15-19'];
+    assert.deepEqual(sortCategoryValues(bands), ['0-4', '5-9', '10-14', '15-19'],
+      'age bands sort by their leading number');
+    assert.deepEqual(sortCategoryValues(['<5', '5-9', '10-14']), ['<5', '5-9', '10-14'],
+      'a leading comparator does not break the numeric order');
+
+    // A single value that is not a month must not half-order the axis.
+    assert.deepEqual(
+      sortCategoryValues(['Mar', 'Jan', 'Not recorded']),
+      ['Jan', 'Mar', 'Not recorded'].sort((a, b) => a.localeCompare(b)),
+      'one non-month value falls back to alphabetical for all');
+
+    assert.deepEqual(sortCategoryValues(['South', 'North', 'East']), ['East', 'North', 'South'],
+      'ordinary categories stay alphabetical');
+
+    // Missing sorts last rather than alphabetically into the middle, which is
+    // where a reader looks for it.
+    const withMissing = sortCategoryValues(['South', MISSING_CATEGORY_LABEL, 'North']);
+    assert.equal(withMissing[withMissing.length - 1], MISSING_CATEGORY_LABEL);
+    const monthsWithMissing = sortCategoryValues(['Mar', MISSING_CATEGORY_LABEL, 'Jan']);
+    assert.deepEqual(monthsWithMissing, ['Jan', 'Mar', MISSING_CATEGORY_LABEL],
+      'and does not stop months ordering chronologically');
+
+    // An explicit order wins, with anything unlisted following it.
+    // Deliberately a case where the declared order differs from alphabetical,
+    // or the assertion passes whether or not the order is honoured.
+    assert.deepEqual(
+      sortCategoryValues(['High', 'Low', 'Medium', 'Unlisted'], ['Low', 'Medium', 'High']),
+      ['Low', 'Medium', 'High', 'Unlisted'],
+      'a declared value order is respected over alphabetical');
+
+    assert.deepEqual(sortCategoryValues([]), [], 'an empty axis is not an error');
   }
 
   console.log('record filter regression: all checks passed');
