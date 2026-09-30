@@ -70,6 +70,7 @@ jobs:
           npm run test:chart-aggregation
           npm run test:chunk-recovery
           npm run test:sketch
+          npm run test:sketch-export
         timeout-minutes: 10
 
       - name: Build

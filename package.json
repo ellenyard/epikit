@@ -22,7 +22,8 @@
     "test:data-quality": "node scripts/dataQuality.regression.mjs",
     "test:chart-aggregation": "node scripts/chartAggregation.regression.mjs",
     "test:chunk-recovery": "node scripts/chunkRecovery.regression.mjs",
-    "test:sketch": "node scripts/sketchPersistence.regression.mjs"
+    "test:sketch": "node scripts/sketchPersistence.regression.mjs",
+    "test:sketch-export": "node scripts/sketchExport.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

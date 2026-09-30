@@ -18,6 +18,17 @@ import {
   readSketchState,
   writeSketchState,
 } from '../../utils/sketchPersistence';
+import {
+  LEGEND_EXPORT_HEADER_HEIGHT,
+  LEGEND_EXPORT_PADDING,
+  LEGEND_EXPORT_ROW_HEIGHT,
+  LEGEND_EXPORT_WIDTH,
+  SKETCH_CANVAS_HEIGHT,
+  SKETCH_CANVAS_WIDTH,
+  SKETCH_EXPORT_FONT_STACK,
+  composeSketchExport,
+  legendExportHeight,
+} from '../../utils/sketchExport';
 
 interface MarkerDefinition {
   id: string;
@@ -41,8 +52,11 @@ interface ElementRenderOptions {
   hideSelection?: boolean;
 }
 
-const canvasWidth = 1200;
-const canvasHeight = 800;
+// The canvas size is shared with the export composer, which has to know it to
+// place the legend; two copies would drift and put the legend over the drawing.
+const canvasWidth = SKETCH_CANVAS_WIDTH;
+const canvasHeight = SKETCH_CANVAS_HEIGHT;
+
 
 interface ToolItem { id: SketchTool; label: string; hint: string }
 interface ToolGroup { group: string; items: ToolItem[] }
@@ -192,6 +206,7 @@ interface SketchMapProps {
 
 export function SketchMap({ datasetId }: SketchMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
+  const legendSvgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const clipboardRef = useRef<SketchElement | null>(null);
 
@@ -518,9 +533,19 @@ export function SketchMap({ datasetId }: SketchMapProps) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       try {
         if (!svgRef.current) return;
-        const clone = svgRef.current.cloneNode(true) as SVGSVGElement;
-        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        const svg = new XMLSerializer().serializeToString(clone);
+        const serializer = new XMLSerializer();
+        const innerMarkup = (element: SVGSVGElement) =>
+          Array.from(element.childNodes)
+            .map(node => serializer.serializeToString(node))
+            .join('');
+        const legendElement =
+          showLegend && legendItems.length > 0 ? legendSvgRef.current : null;
+        const { svg } = composeSketchExport({
+          sketchInner: innerMarkup(svgRef.current),
+          legendInner: legendElement ? innerMarkup(legendElement) : null,
+          legendPosition,
+          legendItemCount: legendItems.length,
+        });
         const blob = new Blob([svg], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -1006,6 +1031,61 @@ export function SketchMap({ datasetId }: SketchMapProps) {
             </div>
           )}
         </div>
+
+        {/* Drawn only so SVG export can include the legend; never visible. */}
+        {showLegend && legendItems.length > 0 && (
+          <svg
+            ref={legendSvgRef}
+            xmlns="http://www.w3.org/2000/svg"
+            width={LEGEND_EXPORT_WIDTH}
+            height={legendExportHeight(legendItems.length)}
+            viewBox={`0 0 ${LEGEND_EXPORT_WIDTH} ${legendExportHeight(legendItems.length)}`}
+            style={{ position: 'fixed', left: '-10000px', top: 0, pointerEvents: 'none' }}
+            aria-hidden="true"
+          >
+            <SketchDefs />
+            <rect
+              x={0.5}
+              y={0.5}
+              width={LEGEND_EXPORT_WIDTH - 1}
+              height={legendExportHeight(legendItems.length) - 1}
+              fill="#FFFFFF"
+              stroke="#E5E7EB"
+              rx={6}
+            />
+            <text
+              x={LEGEND_EXPORT_PADDING}
+              y={LEGEND_EXPORT_PADDING + 18}
+              fontFamily={SKETCH_EXPORT_FONT_STACK}
+              fontSize={16}
+              fontWeight={700}
+              fill="#111827"
+            >
+              Legend
+            </text>
+            {legendItems.map((item, index) => {
+              const rowCentre =
+                LEGEND_EXPORT_PADDING +
+                LEGEND_EXPORT_HEADER_HEIGHT +
+                index * LEGEND_EXPORT_ROW_HEIGHT +
+                LEGEND_EXPORT_ROW_HEIGHT / 2;
+              return (
+                <g key={item.key}>
+                  {renderLegendSymbol(item.element, LEGEND_EXPORT_PADDING + 14, rowCentre)}
+                  <text
+                    x={LEGEND_EXPORT_PADDING + 40}
+                    y={rowCentre + 5}
+                    fontFamily={SKETCH_EXPORT_FONT_STACK}
+                    fontSize={14}
+                    fill="#1F2937"
+                  >
+                    {item.label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
       </div>
     </div>
   );
