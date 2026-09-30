@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import type { Dataset, CaseRecord, DataColumn, FilterCondition, SortConfig, EditLogEntry } from '../types/analysis';
+import type { Dataset, CaseRecord, DataColumn, EditLogEntry } from '../types/analysis';
 
 interface UseDatasetOptions {
   initialDatasets?: Dataset[];
@@ -141,66 +141,7 @@ export function useDataset(options?: UseDatasetOptions) {
   };
 }
 
-// Utility functions for filtering and sorting
-export function filterRecords(records: CaseRecord[], filters: FilterCondition[], columns?: DataColumn[]): CaseRecord[] {
-  if (filters.length === 0) return records;
-
-  return records.filter(record => {
-    return filters.every(filter => {
-      const value = record[filter.column];
-      const filterValue = filter.value;
-
-      switch (filter.operator) {
-        case 'equals':
-          return String(value).toLowerCase() === String(filterValue).toLowerCase();
-        case 'not_equals':
-          return String(value).toLowerCase() !== String(filterValue).toLowerCase();
-        case 'contains':
-          return String(value).toLowerCase().includes(String(filterValue).toLowerCase());
-        case 'greater_than':
-        case 'less_than': {
-          // Missing values never match a numeric/date comparison
-          if (value === null || value === undefined || value === '') return false;
-          // Compare date-typed columns as timestamps instead of Number() (NaN)
-          const columnType = columns?.find(c => c.key === filter.column)?.type;
-          let left: number;
-          let right: number;
-          if (columnType === 'date') {
-            left = new Date(String(value)).getTime();
-            right = new Date(String(filterValue)).getTime();
-          } else {
-            left = Number(value);
-            right = Number(filterValue);
-          }
-          if (isNaN(left) || isNaN(right)) return false;
-          return filter.operator === 'greater_than' ? left > right : left < right;
-        }
-        case 'is_empty':
-          return value === null || value === undefined || value === '';
-        case 'is_not_empty':
-          return value !== null && value !== undefined && value !== '';
-        default:
-          return true;
-      }
-    });
-  });
-}
-
-export function sortRecords(records: CaseRecord[], sort: SortConfig | null): CaseRecord[] {
-  if (!sort) return records;
-
-  return [...records].sort((a, b) => {
-    const aVal = a[sort.column];
-    const bVal = b[sort.column];
-
-    if (aVal === null || aVal === undefined) return sort.direction === 'asc' ? 1 : -1;
-    if (bVal === null || bVal === undefined) return sort.direction === 'asc' ? -1 : 1;
-
-    if (typeof aVal === 'number' && typeof bVal === 'number') {
-      return sort.direction === 'asc' ? aVal - bVal : bVal - aVal;
-    }
-
-    const comparison = String(aVal).localeCompare(String(bVal));
-    return sort.direction === 'asc' ? comparison : -comparison;
-  });
-}
+// Filtering and sorting live in utils/recordFilter.ts, where they are tested
+// and shared with the analysis panels. Re-exported here so existing callers and
+// imports keep working.
+export { filterRecords, sortRecords } from '../utils/recordFilter';

@@ -72,6 +72,7 @@ jobs:
           npm run test:sketch
           npm run test:sketch-export
           npm run test:histogram
+          npm run test:record-filter
         timeout-minutes: 10
 
       - name: Build

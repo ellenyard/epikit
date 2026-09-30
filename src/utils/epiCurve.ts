@@ -1,4 +1,5 @@
 import type { CaseRecord } from '../types/analysis';
+import { categoryValue } from './recordFilter';
 
 export type BinSize = 'hourly' | '6hour' | '12hour' | 'daily' | 'weekly-cdc' | 'weekly-iso';
 
@@ -352,7 +353,7 @@ export function processEpiCurveData(
     const strata = new Map<string, CaseRecord[]>();
     if (stratifyBy) {
       binCases.forEach(c => {
-        const strataValue = String(c[stratifyBy] ?? 'Unknown');
+        const strataValue = categoryValue(c[stratifyBy]);
         if (!strata.has(strataValue)) {
           strata.set(strataValue, []);
         }

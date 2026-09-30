@@ -12,6 +12,7 @@ import { SpotMapTutorial } from '../tutorials/SpotMapTutorial';
 import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } from '../shared';
 import { exportToCSV } from '../../utils/csvParser';
 import { useLocale } from '../../contexts/LocaleContext';
+import { categoryValue, collectCategoryValues } from '../../utils/recordFilter';
 
 interface SpotMapProps {
   dataset: Dataset;
@@ -888,7 +889,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
 
         // Use selected classification field for coloring
         const classification = classificationColumn
-          ? String(record[classificationColumn] ?? 'Unknown')
+          ? categoryValue(record[classificationColumn])
           : 'Unknown';
 
         // Apply jitter if obfuscation is enabled
@@ -916,7 +917,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
     }
 
     return mapCases.filter(caseData => {
-      const value = String(caseData.record[filterBy] ?? 'Unknown');
+      const value = categoryValue(caseData.record[filterBy]);
       return selectedFilterValues.has(value);
     });
   }, [mapCases, filterBy, selectedFilterValues]);
@@ -975,8 +976,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
     if (!filterBy) return [];
-    const values = new Set(dataset.records.map(r => String(r[filterBy] ?? 'Unknown')));
-    return Array.from(values).sort();
+    return collectCategoryValues(dataset.records, filterBy);
   }, [dataset.records, filterBy]);
 
   // Reset selected filter values when filter variable changes (skip the initial
@@ -1104,7 +1104,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 </div>
                 <div className="space-y-1">
                   {visibleFilterValues.map(value => {
-                    const count = mapCases.filter(c => String(c.record[filterBy] ?? 'Unknown') === value).length;
+                    const count = mapCases.filter(c => categoryValue(c.record[filterBy]) === value).length;
                     return (
                       <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
                         <input

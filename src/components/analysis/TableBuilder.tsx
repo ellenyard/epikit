@@ -3,6 +3,7 @@ import type { Dataset } from '../../types/analysis';
 import { calculateCrossTabulation } from '../../utils/statistics';
 import type { CrossTabResults } from '../../utils/statistics';
 import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
+import { collectCategoryValues, countInCategory, filterByCategoryValues } from '../../utils/recordFilter';
 
 interface TableBuilderProps {
   dataset: Dataset;
@@ -185,8 +186,7 @@ export function TableBuilder({
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
     if (!filterBy) return [];
-    const values = new Set(dataset.records.map(r => String(r[filterBy] ?? 'Unknown')));
-    return Array.from(values).sort();
+    return collectCategoryValues(dataset.records, filterBy);
   }, [dataset.records, filterBy]);
 
   // Reset selected filter values when filter variable changes
@@ -200,15 +200,10 @@ export function TableBuilder({
   }, [filterBy]);
 
   // Apply filter to records
-  const filteredRecords = useMemo(() => {
-    if (!filterBy || selectedFilterValues.size === 0) {
-      return dataset.records;
-    }
-    return dataset.records.filter(record => {
-      const value = String(record[filterBy] ?? 'Unknown');
-      return selectedFilterValues.has(value);
-    });
-  }, [dataset.records, filterBy, selectedFilterValues]);
+  const filteredRecords = useMemo(
+    () => filterByCategoryValues(dataset.records, filterBy, selectedFilterValues),
+    [dataset.records, filterBy, selectedFilterValues]
+  );
 
   // Drag handlers
   const handleDragStart = (varKey: string) => {
@@ -657,7 +652,7 @@ export function TableBuilder({
                   </div>
                   <div className="space-y-1 max-h-32 overflow-auto">
                     {(showAllFilterValues ? filterValues : filterValues.slice(0, 5)).map(value => {
-                      const count = dataset.records.filter(r => String(r[filterBy] ?? 'Unknown') === value).length;
+                      const count = countInCategory(dataset.records, filterBy, value);
                       return (
                         <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
