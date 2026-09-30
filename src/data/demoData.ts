@@ -590,3 +590,26 @@ function generateSurveillanceRecords(): CaseRecord[] {
 
 export const surveillanceDemoRecords: CaseRecord[] = generateSurveillanceRecords();
 export const surveillanceDemoDatasetName = 'Disease Surveillance - Monthly Reports';
+
+/**
+ * Identifiers of the bundled sample datasets.
+ *
+ * These live here rather than in App.tsx so the dashboard can label them
+ * without importing from App, which would be circular. The dashboard needs the
+ * distinction because the samples are seeded on a first visit: a new user opens
+ * LineList and finds three datasets under "Your datasets" that they did not
+ * create, and nothing on that screen said which were samples.
+ *
+ * The `source` field is not used for this. Every sample happens to carry
+ * source 'form' today and every import carries 'import', but that is a
+ * coincidence of how they are built, not a statement about provenance.
+ */
+export const SAMPLE_DATASET_IDS = [
+  'demo-outbreak-2024',
+  'demo-nutrition-survey-2025',
+  'demo-surveillance-monthly-2025',
+] as const;
+
+export function isSampleDataset(datasetId: string): boolean {
+  return (SAMPLE_DATASET_IDS as readonly string[]).includes(datasetId);
+}

@@ -40,7 +40,7 @@ const EpiCurve = lazy(() => import('./components/analysis/EpiCurve').then((m) =>
 const Maps = lazy(() => import('./components/analysis/Maps').then((m) => ({ default: m.Maps })));
 const AnalysisWorkflow = lazy(() => import('./components/analysis/AnalysisWorkflow').then((m) => ({ default: m.AnalysisWorkflow })));
 const VisualizeWorkflow = lazy(() => import('./components/visualize/VisualizeWorkflow').then((m) => ({ default: m.VisualizeWorkflow })));
-import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords, surveillanceDemoColumns, surveillanceDemoRecords } from './data/demoData';
+import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords, surveillanceDemoColumns, surveillanceDemoRecords, SAMPLE_DATASET_IDS } from './data/demoData';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
@@ -56,9 +56,8 @@ type Module = 'dashboard' | 'review' | 'epicurve' | 'maps' | 'analysis' | 'visua
 // the app. Users can explore features without importing their own data first.
 // =============================================================================
 
-const DEMO_DATASET_ID = 'demo-outbreak-2024';
-const DEMO_NUTRITION_DATASET_ID = 'demo-nutrition-survey-2025';
-const DEMO_SURVEILLANCE_DATASET_ID = 'demo-surveillance-monthly-2025';
+const [DEMO_DATASET_ID, DEMO_NUTRITION_DATASET_ID, DEMO_SURVEILLANCE_DATASET_ID] =
+  SAMPLE_DATASET_IDS;
 // Bump this version whenever demo data in demoData.ts changes.
 // Existing users with stale demo data will get the updated version automatically.
 const DEMO_DATA_VERSION = 7;
