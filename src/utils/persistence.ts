@@ -67,6 +67,7 @@ const MODULE_STATE_PREFIXES = [
   'epikit_tablebuilder_',
   'epikit_twobytwo_',
   'epikit_analysis_workflow_',
+  'epikit_sketchmap_',
 ] as const;
 
 /** Read every per-module analysis state currently in storage. */

@@ -57,7 +57,7 @@ export function Maps({ dataset, datasets }: MapsProps) {
         ) : mode === 'area' ? (
           <AreaMap key={dataset.id} dataset={dataset} datasets={datasets} />
         ) : (
-          <SketchMap key={dataset.id} />
+          <SketchMap key={dataset.id} datasetId={dataset.id} />
         )}
       </div>
     </div>

@@ -1,59 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
 import html2canvas from 'html2canvas';
 import { ExportIcons, ResultsActions, TabHeader } from '../shared';
-
-type SketchTool = 'pen' | 'line' | 'curve' | 'wavy' | 'area' | 'irregularArea' | 'marker' | 'label';
-type SketchBackground = 'grid' | 'blank';
-type FillPattern = 'solid' | 'hatch' | 'crosshatch' | 'dots' | 'waves' | 'grid';
-type LineStyle = 'solid' | 'dashed' | 'dotted';
-type LegendPosition = 'side' | 'below';
-type MarkerShape =
-  | 'circle'
-  | 'house'
-  | 'tree'
-  | 'triangle'
-  | 'paw'
-  | 'water'
-  | 'pond'
-  | 'star'
-  | 'square'
-  | 'diamond'
-  | 'cross'
-  | 'animal'
-  | 'school'
-  | 'clinic'
-  | 'well'
-  | 'latrine'
-  | 'waste'
-  | 'market'
-  | 'food'
-  | 'gathering';
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface SketchElement {
-  id: string;
-  type: SketchTool;
-  points?: Point[];
-  start?: Point;
-  end?: Point;
-  text?: string;
-  color: string;
-  fillColor?: string;
-  strokeWidth: number;
-  size: number;
-  fillPattern: FillPattern;
-  lineStyle: LineStyle;
-  markerId?: string;
-  markerShape?: MarkerShape;
-  legendLabel?: string;
-  filled: boolean;
-  opacity: number;
-}
+import type {
+  FillPattern,
+  LegendPosition,
+  LineStyle,
+  MarkerShape,
+  Point,
+  SketchBackground,
+  SketchElement,
+  SketchTool,
+} from '../../utils/sketchPersistence';
+import {
+  HISTORY_LIMIT,
+  pushHistorySnapshot,
+  readSketchState,
+  writeSketchState,
+} from '../../utils/sketchPersistence';
 
 interface MarkerDefinition {
   id: string;
@@ -221,11 +185,32 @@ const makeAreaElement = (
   ...overrides,
 });
 
-export function SketchMap() {
+interface SketchMapProps {
+  /** Sketches are stored per dataset, matching every other analysis module. */
+  datasetId: string;
+}
+
+export function SketchMap({ datasetId }: SketchMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const clipboardRef = useRef<SketchElement | null>(null);
-  const [elements, setElements] = useState<SketchElement[]>([]);
+
+  // Read once at mount. The component is keyed by dataset id so it remounts
+  // when the dataset changes, and reading here rather than in an effect means
+  // there is no render in which the canvas is blank and the save could fire
+  // over the stored sketch.
+  const [restored] = useState(() =>
+    readSketchState(typeof localStorage === 'undefined' ? undefined : localStorage, datasetId)
+  );
+
+  const [elements, setElements] = useState<SketchElement[]>(restored?.elements ?? []);
+  /**
+   * Undo snapshots. Undo used to be elements.slice(0, -1), which removed
+   * whichever element happened to be last in the array rather than reversing
+   * the last action: after dragging a shape it deleted an unrelated one, and
+   * after a delete or a clear it could not restore anything.
+   */
+  const [history, setHistory] = useState<SketchElement[][]>([]);
   const [draft, setDraft] = useState<SketchElement | null>(null);
   const [tool, setTool] = useState<SketchTool>('marker');
   const [color, setColor] = useState('#1F2937');
@@ -233,20 +218,54 @@ export function SketchMap() {
   const [size, setSize] = useState(40);
   const [fillPattern, setFillPattern] = useState<FillPattern>('solid');
   const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
-  const [background, setBackground] = useState<SketchBackground>('grid');
+  const [background, setBackground] = useState<SketchBackground>(restored?.background ?? 'grid');
   const [labelText, setLabelText] = useState('Label');
   const [markerId, setMarkerId] = useState('case');
-  const [showTitle, setShowTitle] = useState(true);
-  const [title, setTitle] = useState('Sketch map');
-  const [subtitle, setSubtitle] = useState('Not to scale; adapted for teaching.');
-  const [showLegend, setShowLegend] = useState(true);
-  const [legendPosition, setLegendPosition] = useState<LegendPosition>('side');
+  const [showTitle, setShowTitle] = useState(restored?.showTitle ?? true);
+  const [title, setTitle] = useState(restored?.title ?? 'Sketch map');
+  const [subtitle, setSubtitle] = useState(
+    restored?.subtitle ?? 'Not to scale; adapted for teaching.'
+  );
+  const [showLegend, setShowLegend] = useState(restored?.showLegend ?? true);
+  const [legendPosition, setLegendPosition] = useState<LegendPosition>(
+    restored?.legendPosition ?? 'side'
+  );
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragState, setDragState] = useState<{ id: string; lastPoint: Point } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+
+  /**
+   * Snapshot the current elements before a change so it can be undone. Called
+   * at the start of a drag rather than during it, since a drag updates elements
+   * on every pointer move and would otherwise fill the stack with near
+   * identical states.
+   */
+  const rememberForUndo = useCallback(() => {
+    setHistory(previous => pushHistorySnapshot(previous, elements, HISTORY_LIMIT));
+  }, [elements]);
+
+  // Save shortly after drawing stops. Dragging an element updates state on every
+  // pointer move, so writing synchronously would hit storage dozens of times a
+  // second.
+  useEffect(() => {
+    const storage = typeof localStorage === 'undefined' ? undefined : localStorage;
+    if (!storage) return;
+    const timer = setTimeout(() => {
+      writeSketchState(storage, datasetId, {
+        elements,
+        background,
+        showTitle,
+        title,
+        subtitle,
+        showLegend,
+        legendPosition,
+      });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [datasetId, elements, background, showTitle, title, subtitle, showLegend, legendPosition]);
 
   const selectedElement = selectedId ? elements.find(element => element.id === selectedId) ?? null : null;
 
@@ -311,6 +330,7 @@ export function SketchMap() {
 
     if (tool === 'marker' || tool === 'label') {
       const element = buildInstantElement(point);
+      rememberForUndo();
       setElements(previous => [...previous, element]);
       setSelectedId(element.id);
       return;
@@ -363,6 +383,7 @@ export function SketchMap() {
     if (draft) {
       const committed = normalizeDraft(draft);
       if (committed) {
+        rememberForUndo();
         setElements(previous => [...previous, committed]);
         setSelectedId(committed.id);
       }
@@ -377,23 +398,34 @@ export function SketchMap() {
     event.stopPropagation();
     const point = getElementPoint(event);
     setSelectedId(id);
+    rememberForUndo();
     setDragState({ id, lastPoint: point });
     // Capture on the SVG so drags keep working when the pointer leaves the canvas
     event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);
   };
 
   const undo = () => {
-    setElements(previous => previous.slice(0, -1));
-    setSelectedId(null);
+    setHistory(previous => {
+      if (previous.length === 0) return previous;
+      setElements(previous[previous.length - 1]);
+      setSelectedId(null);
+      return previous.slice(0, -1);
+    });
   };
 
   const clearSketch = () => {
+    // Clearing now also removes the saved sketch, so it has to be undoable.
+    // The snapshot is what makes that true; there is no confirmation prompt
+    // because Undo restores the drawing in full.
+    if (elements.length === 0) return;
+    rememberForUndo();
     setElements([]);
     setSelectedId(null);
   };
 
   const updateSelected = (updates: Partial<SketchElement>) => {
     if (!selectedId) return;
+    rememberForUndo();
     setElements(previous => previous.map(element => (
       element.id === selectedId ? { ...element, ...updates } : element
     )));
@@ -421,6 +453,7 @@ export function SketchMap() {
       if (mod && event.key === 'v' && clipboardRef.current) {
         event.preventDefault();
         const duplicate = moveElement({ ...clipboardRef.current, id: createId() }, 26, 26);
+        rememberForUndo();
         setElements(previous => [...previous, duplicate]);
         setSelectedId(duplicate.id);
         clipboardRef.current = duplicate;
@@ -429,6 +462,7 @@ export function SketchMap() {
 
       if (selectedId && (event.key === 'Delete' || event.key === 'Backspace')) {
         event.preventDefault();
+        rememberForUndo();
         setElements(previous => previous.filter(element => element.id !== selectedId));
         setSelectedId(null);
       }
@@ -436,17 +470,19 @@ export function SketchMap() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId, elements]);
+  }, [selectedId, elements, rememberForUndo]);
 
   const duplicateSelected = () => {
     if (!selectedElement) return;
     const duplicate = moveElement({ ...selectedElement, id: createId() }, 26, 26);
+    rememberForUndo();
     setElements(previous => [...previous, duplicate]);
     setSelectedId(duplicate.id);
   };
 
   const reorderSelected = (mode: 'forward' | 'backward' | 'front' | 'back') => {
     if (!selectedId) return;
+    rememberForUndo();
     setElements(previous => reorderElement(previous, selectedId, mode));
   };
 
@@ -526,6 +562,7 @@ export function SketchMap() {
       setShowLegend(true);
       setLegendPosition('side');
       setBackground('grid');
+      rememberForUndo();
       setElements(template.elements);
       setSelectedId(null);
     }
@@ -888,7 +925,7 @@ export function SketchMap() {
             <div className="flex gap-2">
               <button
                 onClick={undo}
-                disabled={elements.length === 0}
+                disabled={history.length === 0}
                 className="flex-1 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
               >
                 Undo

@@ -55,10 +55,22 @@ try {
   };
   const spotMapState = { latColumn: 'latitude', lngColumn: 'longitude', obfuscateLocations: true, jitterDistance: 500 };
   const twoByTwoState = { studyDesign: 'cohort', outcomeVar: 'ill', caseValues: ['Yes'] };
+  // A hand-drawn sketch is often the only record of a village layout, so it has
+  // to travel in the project file like every other piece of analysis.
+  const sketchState = {
+    elements: [{
+      id: 'm1', type: 'marker', start: { x: 100, y: 200 }, color: '#B91C1C',
+      strokeWidth: 4, size: 40, fillPattern: 'solid', lineStyle: 'solid',
+      filled: true, opacity: 1, markerId: 'case', markerShape: 'circle',
+    }],
+    background: 'grid', showTitle: true, title: 'Village sketch',
+    subtitle: 'Not to scale', showLegend: true, legendPosition: 'side',
+  };
 
   localStorage.setItem('epikit_epicurve_ds1', JSON.stringify(epiCurveState));
   localStorage.setItem('epikit_spotmap_ds1', JSON.stringify(spotMapState));
   localStorage.setItem('epikit_twobytwo_ds1', JSON.stringify(twoByTwoState));
+  localStorage.setItem('epikit_sketchmap_ds1', JSON.stringify(sketchState));
   localStorage.setItem('epikit_datasets', JSON.stringify([dataset('ds1', 'A')]));
 
   // 1. Export carries the analysis, not just the data.
@@ -70,6 +82,8 @@ try {
     'spot-map configuration must be exported');
   assert.deepEqual(project.moduleState['epikit_twobytwo_ds1'], twoByTwoState,
     '2x2 setup must be exported');
+  assert.deepEqual(project.moduleState['epikit_sketchmap_ds1'], sketchState,
+    'a hand-drawn sketch map must be exported');
 
   // 2. It survives serialisation, which is how the file actually travels.
   const parsed = parseProjectFile(JSON.stringify(project));
@@ -83,6 +97,8 @@ try {
     'the annotated epi curve must come back');
   assert.deepEqual(JSON.parse(localStorage.getItem('epikit_spotmap_ds1')), spotMapState,
     'the spot map configuration must come back');
+  assert.deepEqual(JSON.parse(localStorage.getItem('epikit_sketchmap_ds1')), sketchState,
+    'the sketch map must come back');
 
   // 4. Files written before this change still import, without module state.
   {
