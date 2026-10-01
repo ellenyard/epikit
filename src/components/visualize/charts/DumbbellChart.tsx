@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
@@ -7,15 +7,22 @@ import { getChartColors, type ChartColorScheme } from '../../../utils/chartColor
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
   svgAxisLine,
   svgGridLine,
+  fitText,
+  estimateTextWidth,
   type ExcelExportData,
 } from '../../../utils/chartExport';
+import { aggregatePairByCategory } from '../../../utils/chartAggregation';
+import { categoryColumns, categoriesInColumn, orderCategories, byCategoryOrder } from '../../../utils/chartCategories';
+import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
-type SortMode = 'gap-desc' | 'gap-asc' | 'value1' | 'alpha';
+type SortMode = 'gap-desc' | 'gap-asc' | 'value1' | 'category';
+type DumbbellAggregation = 'mean' | 'sum';
 
 interface DumbbellPoint {
   category: string;
@@ -25,53 +32,60 @@ interface DumbbellPoint {
 }
 
 export function DumbbellChart({ dataset }: { dataset: Dataset }) {
+  const { config: locale } = useLocale();
   const [categoryCol, setCategoryCol] = useState('');
   const [value1Col, setValue1Col] = useState('');
   const [value2Col, setValue2Col] = useState('');
+  // The dots were always a mean, though nothing on the chart said so.
+  const [aggregation, setAggregation] = useState<DumbbellAggregation>('mean');
   const [sortMode, setSortMode] = useState<SortMode>('gap-desc');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
-  const [title, setTitle] = useState('');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const colLabel = useCallback(
+    (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
+    [dataset.columns]
+  );
+
   // Process data
-  const dumbbellData = useMemo((): DumbbellPoint[] => {
-    if (!categoryCol || !value1Col || !value2Col) return [];
+  const dumbbell = useMemo((): { points: DumbbellPoint[]; dropped: number } => {
+    if (!categoryCol || !value1Col || !value2Col) return { points: [], dropped: 0 };
+    const categoryColumn = dataset.columns.find(c => c.key === categoryCol);
 
-    const grouped = new Map<string, { v1: number[]; v2: number[] }>();
+    // Each column is summarised over the records that have it. A record with
+    // only one of the two values used to be dropped from both.
+    const pairs = aggregatePairByCategory(dataset.records, categoryCol, value1Col, value2Col, aggregation);
+    const points: DumbbellPoint[] = pairs.map(p => ({
+      category: p.category,
+      value1: p.valueA,
+      value2: p.valueB,
+      gap: Math.abs(p.valueB - p.valueA),
+    }));
 
-    for (const record of dataset.records) {
-      const cat = record[categoryCol];
-      const rawV1 = record[value1Col];
-      const rawV2 = record[value2Col];
-      if (cat == null || cat === '' || rawV1 == null || rawV1 === '' || rawV2 == null || rawV2 === '') continue;
-      const v1 = Number(rawV1);
-      const v2 = Number(rawV2);
-      if (isNaN(v1) || isNaN(v2)) continue;
-
-      const key = String(cat);
-      if (!grouped.has(key)) grouped.set(key, { v1: [], v2: [] });
-      const entry = grouped.get(key)!;
-      entry.v1.push(v1);
-      entry.v2.push(v2);
-    }
-
-    const points: DumbbellPoint[] = Array.from(grouped.entries()).map(([category, { v1, v2 }]) => {
-      const value1 = v1.reduce((a, b) => a + b, 0) / v1.length;
-      const value2 = v2.reduce((a, b) => a + b, 0) / v2.length;
-      return { category, value1, value2, gap: Math.abs(value2 - value1) };
-    });
-
-    // Sort
+    // Reading order first, so ties in any other sort fall in that order too
+    const order = orderCategories(points.map(p => p.category), categoryColumn);
+    points.sort(byCategoryOrder(order, p => p.category));
     if (sortMode === 'gap-desc') points.sort((a, b) => b.gap - a.gap);
     else if (sortMode === 'gap-asc') points.sort((a, b) => a.gap - b.gap);
     else if (sortMode === 'value1') points.sort((a, b) => b.value1 - a.value1);
-    else points.sort((a, b) => a.category.localeCompare(b.category));
 
-    return points;
-  }, [dataset.records, categoryCol, value1Col, value2Col, sortMode]);
+    const dropped = categoriesInColumn(dataset.records, categoryColumn).length - points.length;
+    return { points, dropped };
+  }, [dataset.records, dataset.columns, categoryCol, value1Col, value2Col, aggregation, sortMode]);
+
+  const dumbbellData = dumbbell.points;
+
+  const statistic = `${aggregation === 'sum' ? 'Sum' : 'Mean'} per ${colLabel(categoryCol)}`;
+  const defaultTitle = dumbbellData.length === 0
+    ? 'Dumbbell Chart'
+    : `${colLabel(value1Col)} and ${colLabel(value2Col)} by ${colLabel(categoryCol)}`;
+  const title = titleOverride ?? defaultTitle;
 
   // Generate SVG
   const svgContent = useMemo(() => {
@@ -79,60 +93,58 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
 
     const dims = getDefaultDimensions('dumbbell');
     const rowHeight = 28;
-    const minPlotHeight = dumbbellData.length * rowHeight;
     const width = dims.width;
-    const height = Math.max(dims.height, minPlotHeight + dims.margin.top + dims.margin.bottom);
-    const { margin } = dims;
+    const labelFont = 11;
+    const names = dumbbellData.map(d => fitText(d.category, 210, labelFont));
+    const margin = {
+      left: Math.max(60, Math.max(...names.map(n => estimateTextWidth(n, labelFont))) + 18),
+      right: dims.margin.right,
+    };
     const plotW = width - margin.left - margin.right;
-    const plotH = height - margin.top - margin.bottom;
+    const plotH = dumbbellData.length * rowHeight;
 
-    // Value range
+    // Value axis: round ticks through zero
     const allValues = dumbbellData.flatMap(d => [d.value1, d.value2]);
-    let minVal = Math.min(0, ...allValues);
-    let maxVal = Math.max(...allValues);
-    const range = maxVal - minVal || 1;
-    // Only clamp the domain floor to 0 when data is non-negative
-    minVal = minVal >= 0 ? Math.max(0, minVal - range * 0.05) : minVal - range * 0.05;
-    maxVal = maxVal + range * 0.1;
-    const valRange = maxVal - minVal || 1;
-
-    const xScale = (v: number) => margin.left + ((v - minVal) / valRange) * plotW;
-    const yScale = (i: number) => margin.top + (i + 0.5) * (plotH / dumbbellData.length);
+    const scale = niceScale(Math.min(...allValues), Math.max(...allValues));
+    const decimals = decimalsForValues(allValues);
+    const fmt = (v: number) => formatFixed(v, decimals, locale);
 
     const colors = getChartColors(2, colorScheme);
     const dotRadius = 6;
 
-    let svg = '';
+    // Legend under the title block. It used to sit at a fixed height that a
+    // subtitle was printed straight through, with its second entry at a fixed
+    // offset that a long first label overran.
+    const header = svgHeader(width, title, subtitle || undefined);
+    const legendY = header.bottom + 14;
+    const plotTop = legendY + 22;
+    const plotBottom = plotTop + plotH;
 
-    // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
-    }
+    const xScale = (v: number) => margin.left + ((v - scale.min) / (scale.max - scale.min)) * plotW;
+    const yScale = (i: number) => plotTop + (i + 0.5) * rowHeight;
 
-    // Legend
-    const col1Label = dataset.columns.find(c => c.key === value1Col)?.label || value1Col;
-    const col2Label = dataset.columns.find(c => c.key === value2Col)?.label || value2Col;
-    const legendY = margin.top - 12;
-    svg += `<circle cx="${margin.left}" cy="${legendY}" r="4" fill="${colors[0]}"/>`;
-    svg += svgText(margin.left + 8, legendY, col1Label, { anchor: 'start', fontSize: 11, fill: '#555', dy: '0.35em' });
-    svg += `<circle cx="${margin.left + 150}" cy="${legendY}" r="4" fill="${colors[1]}"/>`;
-    svg += svgText(margin.left + 158, legendY, col2Label, { anchor: 'start', fontSize: 11, fill: '#555', dy: '0.35em' });
+    let svg = header.svg;
+
+    const col1Label = fitText(colLabel(value1Col), 280, 11);
+    const col2Label = fitText(colLabel(value2Col), 280, 11);
+    svg += `<circle cx="${margin.left + 4}" cy="${legendY}" r="4" fill="${colors[0]}"/>`;
+    svg += svgText(margin.left + 12, legendY, col1Label, { anchor: 'start', fontSize: 11, fill: '#444', dy: '0.35em' });
+    const second = margin.left + 12 + estimateTextWidth(col1Label, 11) + 24;
+    svg += `<circle cx="${second}" cy="${legendY}" r="4" fill="${colors[1]}"/>`;
+    svg += svgText(second + 8, legendY, col2Label, { anchor: 'start', fontSize: 11, fill: '#444', dy: '0.35em' });
 
     // Vertical gridlines
-    const tickCount = 5;
-    for (let i = 0; i <= tickCount; i++) {
-      const tickVal = minVal + (valRange / tickCount) * i;
-      const x = xScale(tickVal);
-      svg += svgGridLine(x, margin.top, x, margin.top + plotH);
-      const label = Number.isInteger(tickVal) ? String(tickVal) : tickVal.toFixed(1);
-      svg += svgText(x, margin.top + plotH + 18, label, {
-        anchor: 'middle', fontSize: 11, fill: '#888',
+    for (const tick of scale.ticks) {
+      const x = xScale(tick);
+      svg += svgGridLine(x, plotTop, x, plotBottom);
+      svg += svgText(x, plotBottom + 18, formatTick(tick, scale, locale), {
+        anchor: 'middle', fontSize: 11, fill: '#666',
       });
     }
 
     // Axes
-    svg += svgAxisLine(margin.left, margin.top, margin.left, margin.top + plotH);
-    svg += svgAxisLine(margin.left, margin.top + plotH, margin.left + plotW, margin.top + plotH);
+    svg += svgAxisLine(xScale(0), plotTop, xScale(0), plotBottom);
+    svg += svgAxisLine(margin.left, plotBottom, margin.left + plotW, plotBottom);
 
     // Draw dumbbells
     for (let i = 0; i < dumbbellData.length; i++) {
@@ -142,9 +154,8 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
       const x2 = xScale(point.value2);
 
       // Category label
-      const labelText = point.category.length > 22 ? point.category.slice(0, 20) + '\u2026' : point.category;
-      svg += svgText(margin.left - 8, y, labelText, {
-        anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em',
+      svg += svgText(margin.left - 8, y, names[i], {
+        anchor: 'end', fontSize: labelFont, fill: '#333', dy: '0.35em',
       });
 
       // Connecting line
@@ -158,39 +169,46 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
 
       // Value labels
       if (showLabels) {
-        const lab1 = Number.isInteger(point.value1) ? String(point.value1) : point.value1.toFixed(1);
-        const lab2 = Number.isInteger(point.value2) ? String(point.value2) : point.value2.toFixed(1);
+        const lab1 = fmt(point.value1);
+        const lab2 = fmt(point.value2);
         // Position labels on the outer sides of each dot
         const leftDot = x1 < x2 ? x1 : x2;
         const rightDot = x1 < x2 ? x2 : x1;
         const leftLabel = x1 < x2 ? lab1 : lab2;
         const rightLabel = x1 < x2 ? lab2 : lab1;
 
-        svg += svgText(leftDot - dotRadius - 3, y, leftLabel, {
-          anchor: 'end', fontSize: 10, fill: '#555', dy: '0.35em',
-        });
-        svg += svgText(rightDot + dotRadius + 3, y, rightLabel, {
-          anchor: 'start', fontSize: 10, fill: '#555', dy: '0.35em',
-        });
+        // A dot near the left edge has no room beside it: its label would be
+        // printed over the category name. It goes above the dot instead.
+        const leftRoom = leftDot - dotRadius - 3 - estimateTextWidth(leftLabel, 10) >= margin.left + 2;
+        if (leftRoom) {
+          svg += svgText(leftDot - dotRadius - 3, y, leftLabel, { anchor: 'end', fontSize: 10, fill: '#444', dy: '0.35em' });
+        } else {
+          svg += svgText(Math.max(leftDot, margin.left + estimateTextWidth(leftLabel, 10) / 2 + 2), y - dotRadius - 3, leftLabel, { anchor: 'middle', fontSize: 9, fill: '#444' });
+        }
+        svg += svgText(rightDot + dotRadius + 3, y, rightLabel, { anchor: 'start', fontSize: 10, fill: '#444', dy: '0.35em' });
       }
     }
 
-    // Source
-    if (source) {
-      svg += svgSource(width, height, source);
-    }
+    // What the dots measure
+    svg += svgText(margin.left + plotW / 2, plotBottom + 38, fitText(statistic, plotW, 12), { fontSize: 12, fill: '#444' });
 
-    return svgWrapper(width, height, svg);
-  }, [dumbbellData, showLabels, colorScheme, title, subtitle, source, value1Col, value2Col, dataset.columns]);
+    const notes = [
+      `Dots show the ${aggregation} of each column per ${colLabel(categoryCol)}.`,
+    ];
+    if (dumbbell.dropped > 0) {
+      notes.push(`${dumbbell.dropped} ${dumbbell.dropped === 1 ? 'category is' : 'categories are'} not shown: no value in one of the two columns.`);
+    }
+    const footer = svgFooter(width, plotBottom + 44, notes, source || undefined);
+
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [dumbbellData, dumbbell.dropped, aggregation, statistic, showLabels, colorScheme, title, subtitle, source, categoryCol, value1Col, value2Col, locale, colLabel]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
-    const col1Label = dataset.columns.find(c => c.key === value1Col)?.label || value1Col;
-    const col2Label = dataset.columns.find(c => c.key === value2Col)?.label || value2Col;
     const columns = [
-      { header: 'Category', key: 'category' },
-      { header: col1Label, key: 'value1' },
-      { header: col2Label, key: 'value2' },
+      { header: colLabel(categoryCol) || 'Category', key: 'category' },
+      { header: colLabel(value1Col), key: 'value1' },
+      { header: colLabel(value2Col), key: 'value2' },
       { header: 'Gap', key: 'gap' },
     ];
     const rows = dumbbellData.map(d => ({
@@ -201,14 +219,12 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
     }));
     return {
       title,
-      subtitle: subtitle || undefined,
+      subtitle: subtitle ? `${subtitle} (${statistic})` : statistic,
       source: source || undefined,
       columns,
       rows,
     };
-  }, [dumbbellData, title, subtitle, source, value1Col, value2Col, dataset.columns]);
-
-  const displayTitle = title || 'Dumbbell Chart';
+  }, [dumbbellData, title, subtitle, source, categoryCol, value1Col, value2Col, statistic, colLabel]);
 
   return (
     <div className="flex gap-6">
@@ -250,10 +266,9 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
           <VariableMapper
             label="Category"
             description="Categorical variable for each row"
-            columns={dataset.columns}
+            columns={catColumns}
             value={categoryCol}
             onChange={setCategoryCol}
-            filterTypes={['text', 'categorical']}
             required
           />
 
@@ -277,6 +292,18 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
             required
           />
 
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Summarise As</label>
+            <select
+              value={aggregation}
+              onChange={e => setAggregation(e.target.value as DumbbellAggregation)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="mean">Mean per category</option>
+              <option value="sum">Sum per category</option>
+            </select>
+          </div>
+
           {/* Sort mode */}
           <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
@@ -288,7 +315,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
               <option value="gap-desc">Gap (largest first)</option>
               <option value="gap-asc">Gap (smallest first)</option>
               <option value="value1">Value 1 (high to low)</option>
-              <option value="alpha">Alphabetical</option>
+              <option value="category">Category order</option>
             </select>
           </div>
 
@@ -330,7 +357,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
             <input
               type="text"
               value={title}
-              onChange={e => setTitle(e.target.value)}
+              onChange={e => setTitleOverride(e.target.value)}
               placeholder="Chart title"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
@@ -362,9 +389,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
       <div className="flex-1 min-w-0">
         {svgContent ? (
           <ChartContainer
-            title={displayTitle}
-            subtitle={subtitle || undefined}
-            source={source || undefined}
+            title={title}
             svgContent={svgContent}
             excelData={excelData}
             filename="dumbbell-chart"

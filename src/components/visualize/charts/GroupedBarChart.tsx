@@ -1,95 +1,98 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
-import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
+import { getChartColors, textColorOn, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
   svgAxisLine,
   svgGridLine,
-  escapeXml,
+  fitText,
+  fitRotatedLabel,
+  estimateTextWidth,
   type ExcelExportData,
 } from '../../../utils/chartExport';
+import { crossAggregate, type CrossAggregationMode } from '../../../utils/chartAggregation';
+import { categoryColumns, orderCategories, recordCount } from '../../../utils/chartCategories';
+import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface GroupedBarChartProps {
   dataset: Dataset;
 }
 
 type DisplayMode = 'grouped' | 'stacked' | 'percent';
-type ValueMode = 'count' | 'column';
 
 export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
+  const { config: locale } = useLocale();
   const [categoryVar, setCategoryVar] = useState('');
   const [groupVar, setGroupVar] = useState('');
-  const [valueMode, setValueMode] = useState<ValueMode>('count');
+  // What a bar measures. "Numeric column" used to mean a sum without saying
+  // so, which on a column of rates adds percentages together.
+  const [valueMode, setValueMode] = useState<CrossAggregationMode>('count');
   const [valueVar, setValueVar] = useState('');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('grouped');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showDataLabels, setShowDataLabels] = useState(true);
-  const [title, setTitle] = useState('Grouped Bar Chart');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const colLabel = useCallback(
+    (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
+    [dataset.columns]
+  );
+
   // Build data structure: category -> group -> value
   const chartData = useMemo(() => {
     if (!categoryVar || !groupVar) return null;
-    if (valueMode === 'column' && !valueVar) return null;
+    if (valueMode !== 'count' && !valueVar) return null;
+
+    const table = crossAggregate(
+      dataset.records, categoryVar, groupVar, valueMode === 'count' ? null : valueVar, valueMode
+    );
+    if (table.categories.length === 0) return null;
 
     const dataMap = new Map<string, Map<string, number>>();
-    const groupValuesSet = new Set<string>();
-    const categoryOrder: string[] = [];
-
-    for (const record of dataset.records) {
-      const cat = record[categoryVar];
-      const grp = record[groupVar];
-      if (cat == null || grp == null || cat === '' || grp === '') continue;
-
-      const catStr = String(cat);
-      const grpStr = String(grp);
-      groupValuesSet.add(grpStr);
-
-      if (!dataMap.has(catStr)) {
-        dataMap.set(catStr, new Map());
-        categoryOrder.push(catStr);
-      }
-
-      const groupMap = dataMap.get(catStr)!;
-
-      if (valueMode === 'count') {
-        groupMap.set(grpStr, (groupMap.get(grpStr) || 0) + 1);
-      } else {
-        const rawVal = record[valueVar];
-        if (rawVal !== null && rawVal !== undefined && rawVal !== '') {
-          const val = Number(rawVal);
-          if (!isNaN(val)) {
-            // Sum values for same category+group combo
-            groupMap.set(grpStr, (groupMap.get(grpStr) || 0) + val);
-          }
-        }
-      }
+    for (const [cat, row] of table.cells) {
+      dataMap.set(cat, new Map(Array.from(row, ([grp, cell]) => [grp, cell.value])));
     }
 
-    if (categoryOrder.length === 0) return null;
-
-    // Count negative aggregated values — they cannot be drawn as bars
+    // Count negative aggregated values. A stack cannot hold them.
     let negativeCount = 0;
-    if (valueMode === 'column') {
-      for (const catGroups of dataMap.values()) {
-        for (const v of catGroups.values()) {
-          if (v < 0) negativeCount++;
-        }
+    for (const catGroups of dataMap.values()) {
+      for (const v of catGroups.values()) {
+        if (v < 0) negativeCount++;
       }
     }
 
-    const groupValues = Array.from(groupValuesSet).sort();
-    return { dataMap, groupValues, categoryOrder, negativeCount };
-  }, [categoryVar, groupVar, valueMode, valueVar, dataset.records]);
+    // Both axes in reading order: a declared order first, then numeric-aware.
+    // Categories used to appear in the order their first record happened to
+    // come, and groups in a bare sort.
+    const categoryOrder = orderCategories(table.categories, dataset.columns.find(c => c.key === categoryVar));
+    const groupValues = orderCategories(table.groups, dataset.columns.find(c => c.key === groupVar));
+    return { dataMap, groupValues, categoryOrder, negativeCount, excluded: table.excludedMissing };
+  }, [categoryVar, groupVar, valueMode, valueVar, dataset.records, dataset.columns]);
+
+  // What a bar measures, for the axis and the notes
+  const statistic = valueMode === 'count'
+    ? 'Number of records'
+    : `${valueMode === 'sum' ? 'Sum' : 'Mean'} of ${colLabel(valueVar)}`;
+  // A mean cannot be stacked into a total or a share, so those modes fall back to side by side.
+  const effectiveDisplay: DisplayMode = valueMode === 'mean' ? 'grouped' : displayMode;
+
+  const defaultTitle = !categoryVar || !groupVar
+    ? 'Grouped Bar Chart'
+    : `${valueMode === 'count' ? 'Records' : statistic} by ${colLabel(categoryVar)} and ${colLabel(groupVar)}`;
+  const title = titleOverride ?? defaultTitle;
 
   const svgContent = useMemo(() => {
     if (!chartData) return '';
@@ -99,57 +102,75 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
 
     const dims = getDefaultDimensions('grouped');
     const width = dims.width;
-
-    const plotLeft = dims.margin.left;
-    const plotRight = width - dims.margin.right;
+    const plotLeft = 72;
+    const plotRight = width - 30;
     const plotWidth = plotRight - plotLeft;
-    const plotTop = dims.margin.top;
-    const plotBottom = dims.height - dims.margin.bottom;
-    const plotHeight = plotBottom - plotTop;
 
-    // Determine max value
-    let maxValue = 0;
-    if (displayMode === 'percent') {
-      maxValue = 100;
-    } else if (displayMode === 'stacked') {
-      for (const catGroups of dataMap.values()) {
-        let total = 0;
-        for (const v of catGroups.values()) {
-          if (v > 0) total += v; // negative values are omitted from bars
-        }
-        maxValue = Math.max(maxValue, total);
+    // Legend under the title block, wrapped to as many rows as it needs. It
+    // used to be one fixed-pitch row at the bottom, which ran off both edges
+    // with many groups and sat on top of the source line.
+    const header = svgHeader(width, title, subtitle || undefined);
+    const legendTitle = `${colLabel(groupVar)}:`;
+    const legendRows: { text: string; index: number; x: number }[][] = [[]];
+    let lx = plotLeft + estimateTextWidth(legendTitle, 11, true) + 10;
+    groupValues.forEach((group, index) => {
+      const text = fitText(group, 170, 11);
+      const itemWidth = 18 + estimateTextWidth(text, 11) + 16;
+      if (lx + itemWidth > width - 10 && legendRows[legendRows.length - 1].length > 0) {
+        legendRows.push([]);
+        lx = plotLeft;
       }
-    } else {
-      for (const catGroups of dataMap.values()) {
-        for (const v of catGroups.values()) {
-          maxValue = Math.max(maxValue, v);
-        }
+      legendRows[legendRows.length - 1].push({ text, index, x: lx });
+      lx += itemWidth;
+    });
+    const legendTop = header.bottom + 10;
+    const plotTop = legendTop + legendRows.length * 18 + 16;
+    const plotHeight = dims.height - 170;
+    const plotBottom = plotTop + plotHeight;
+
+    // Value scale
+    const allValues: number[] = [];
+    for (const catGroups of dataMap.values()) {
+      if (effectiveDisplay === 'grouped') {
+        allValues.push(...catGroups.values());
+      } else {
+        let total = 0;
+        for (const v of catGroups.values()) if (v > 0) total += v; // negative values are left out of a stack
+        allValues.push(total);
       }
     }
-
-    const niceMax = displayMode === 'percent' ? 100 : ceilToNice(maxValue);
+    const scale = effectiveDisplay === 'percent'
+      ? niceScale(0, 100, { maxIntervals: 5 })
+      : niceScale(Math.min(...allValues, 0), Math.max(...allValues, 0), { integer: valueMode === 'count' });
+    const span = scale.max - scale.min;
+    const yScale = (v: number) => plotBottom - ((v - scale.min) / span) * plotHeight;
+    const zeroY = yScale(0);
+    const decimals = valueMode === 'count' ? 0 : decimalsForValues(allValues);
+    const fmt = (v: number) => formatFixed(v, decimals, locale);
 
     // Compute bar widths
     const categoryCount = categoryOrder.length;
     const categoryWidth = plotWidth / categoryCount;
-    const categoryPadding = categoryWidth * 0.2;
+    const categoryPadding = categoryWidth * 0.15;
     const barAreaWidth = categoryWidth - categoryPadding * 2;
 
-    let svg = '';
+    let svg = header.svg;
 
-    // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
-    }
+    // Legend
+    svg += svgText(plotLeft, legendTop + 9, legendTitle, { anchor: 'start', fontSize: 11, fontWeight: 'bold', fill: '#444', dy: '0.35em' });
+    legendRows.forEach((row, r) => {
+      const y = legendTop + 9 + r * 18;
+      for (const item of row) {
+        svg += `<rect x="${item.x}" y="${y - 6}" width="12" height="12" fill="${colors[item.index]}" rx="2"/>`;
+        svg += svgText(item.x + 18, y, item.text, { anchor: 'start', fontSize: 11, fill: '#333', dy: '0.35em' });
+      }
+    });
 
     // Y-axis gridlines and labels
-    const tickCount = 5;
-    for (let i = 0; i <= tickCount; i++) {
-      const val = (niceMax / tickCount) * i;
-      const y = plotBottom - (val / niceMax) * plotHeight;
+    for (const tick of scale.ticks) {
+      const y = yScale(tick);
       svg += svgGridLine(plotLeft, y, plotRight, y);
-      const tickLabel = displayMode === 'percent' ? `${Math.round(val)}%` : formatNumber(val);
-      svg += svgText(plotLeft - 10, y, tickLabel, {
+      svg += svgText(plotLeft - 10, y, formatTick(tick, scale, locale, effectiveDisplay === 'percent' ? '%' : ''), {
         anchor: 'end',
         fontSize: 11,
         fill: '#666',
@@ -157,80 +178,115 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       });
     }
 
-    // Axes
+    // Axes: the left edge, and the zero line the bars grow from
     svg += svgAxisLine(plotLeft, plotTop, plotLeft, plotBottom);
-    svg += svgAxisLine(plotLeft, plotBottom, plotRight, plotBottom);
+    svg += svgAxisLine(plotLeft, zeroY, plotRight, zeroY);
 
     // Draw bars
-    if (displayMode === 'grouped') {
-      svg += drawGroupedBars(
-        categoryOrder, groupValues, dataMap, colors,
-        plotLeft, plotBottom, plotHeight, niceMax,
-        categoryWidth, categoryPadding, barAreaWidth,
-        showDataLabels
-      );
-    } else if (displayMode === 'percent') {
-      svg += drawPercentBars(
-        categoryOrder, groupValues, dataMap, colors,
-        plotLeft, plotBottom, plotHeight,
-        categoryWidth, categoryPadding, barAreaWidth,
-        showDataLabels
-      );
-    } else {
-      svg += drawStackedBars(
-        categoryOrder, groupValues, dataMap, colors,
-        plotLeft, plotBottom, plotHeight, niceMax,
-        categoryWidth, categoryPadding, barAreaWidth,
-        showDataLabels
-      );
-    }
+    categoryOrder.forEach((cat, ci) => {
+      const groupMap = dataMap.get(cat);
+      if (!groupMap) return;
+      const x0 = plotLeft + ci * categoryWidth + categoryPadding;
 
-    // X-axis category labels
-    const shouldRotate = categoryCount > 6;
-    for (let i = 0; i < categoryOrder.length; i++) {
-      const x = plotLeft + i * categoryWidth + categoryWidth / 2;
-      const label = truncateLabel(categoryOrder[i], 15);
-      if (shouldRotate) {
-        svg += svgText(x, plotBottom + 15, label, {
-          anchor: 'end',
-          fontSize: 11,
-          fill: '#333',
-          rotate: -45,
+      if (effectiveDisplay === 'grouped') {
+        const barWidth = barAreaWidth / groupValues.length;
+        const barPadding = Math.min(2, barWidth * 0.1);
+        groupValues.forEach((grp, gi) => {
+          const value = groupMap.get(grp);
+          if (value === undefined) return;
+          const x = x0 + gi * barWidth + barPadding;
+          const w = barWidth - barPadding * 2;
+          const endY = yScale(value);
+          svg += `<rect x="${x}" y="${Math.min(zeroY, endY)}" width="${w}" height="${Math.abs(endY - zeroY)}" fill="${colors[gi]}" rx="2"/>`;
+          // A label wider than its bar would run into its neighbours' labels.
+          if (showDataLabels && estimateTextWidth(fmt(value), 10, true) <= barWidth + 2) {
+            svg += svgText(x + w / 2, value >= 0 ? endY - 4 : endY + 12, fmt(value), {
+              anchor: 'middle', fontSize: 10, fill: '#333', fontWeight: 'bold',
+            });
+          }
         });
-      } else {
-        svg += svgText(x, plotBottom + 20, label, {
-          anchor: 'middle',
-          fontSize: 11,
-          fill: '#333',
-        });
+        return;
       }
-    }
 
-    // Legend
-    const legendY = dims.height - 15;
-    const legendItemWidth = 100;
-    const legendTotalWidth = groupValues.length * legendItemWidth;
-    const legendStartX = (width - legendTotalWidth) / 2;
+      // Stacked, as totals or as shares of the category
+      let total = 0;
+      for (const v of groupMap.values()) if (v > 0) total += v;
+      if (total === 0) return;
+      let cumulative = 0;
+      groupValues.forEach((grp, gi) => {
+        const value = groupMap.get(grp) || 0;
+        if (value <= 0) return;
+        const from = effectiveDisplay === 'percent' ? (cumulative / total) * 100 : cumulative;
+        cumulative += value;
+        const to = effectiveDisplay === 'percent' ? (cumulative / total) * 100 : cumulative;
+        const top = yScale(to);
+        const segH = yScale(from) - top;
+        svg += `<rect x="${x0}" y="${top}" width="${barAreaWidth}" height="${segH}" fill="${colors[gi]}"/>`;
 
-    for (let i = 0; i < groupValues.length; i++) {
-      const lx = legendStartX + i * legendItemWidth;
-      svg += `<rect x="${lx}" y="${legendY - 7}" width="12" height="12" fill="${escapeXml(colors[i])}" rx="2"/>`;
-      svg += svgText(lx + 18, legendY, truncateLabel(groupValues[i], 12), {
-        anchor: 'start',
-        fontSize: 11,
-        fill: '#333',
-        dy: '0.35em',
+        const text = effectiveDisplay === 'percent'
+          ? `${formatFixed((value / total) * 100, 1, locale)}%`
+          : fmt(value);
+        if (showDataLabels && segH > 14 && estimateTextWidth(text, 10, true) <= barAreaWidth) {
+          // Dark text on a light segment, white on a dark one.
+          svg += svgText(x0 + barAreaWidth / 2, top + segH / 2, text, {
+            anchor: 'middle', fontSize: 10, fill: textColorOn(colors[gi]), fontWeight: 'bold', dy: '0.35em',
+          });
+        }
       });
+      // Total on top of a stack; n on top of a 100% bar, the denominator of its shares
+      if (showDataLabels) {
+        const topY = yScale(effectiveDisplay === 'percent' ? 100 : total);
+        const text = effectiveDisplay === 'percent'
+          ? (valueMode === 'count' ? `n = ${fmt(total)}` : '')
+          : fmt(total);
+        if (text && estimateTextWidth(text, 10, true) <= categoryWidth) {
+          svg += svgText(x0 + barAreaWidth / 2, topY - 6, text, { anchor: 'middle', fontSize: 10, fill: '#333', fontWeight: 'bold' });
+        }
+      }
+    });
+
+    // X-axis category labels, rotated once they no longer fit their slot
+    const labels = categoryOrder.map(c => fitText(c, 150, 11));
+    const widest = Math.max(...labels.map(l => estimateTextWidth(l, 11)));
+    const shouldRotate = widest > categoryWidth - 8;
+    const labelDepth = shouldRotate ? Math.min(widest * 0.72 + 16, 130) : 24;
+    labels.forEach((label, i) => {
+      const x = plotLeft + i * categoryWidth + categoryWidth / 2;
+      if (shouldRotate) {
+        svg += svgText(x, plotBottom + 14, fitRotatedLabel(categoryOrder[i], x, 11), { anchor: 'end', fontSize: 11, fill: '#333', rotate: -40 });
+      } else {
+        svg += svgText(x, plotBottom + 18, label, { anchor: 'middle', fontSize: 11, fill: '#333' });
+      }
+    });
+
+    // Axis titles: what a bar measures, and the category variable
+    const yTitle = effectiveDisplay === 'percent'
+      ? (valueMode === 'count' ? `Percent of records in each ${colLabel(categoryVar)}` : `Percent of ${statistic.toLowerCase()}`)
+      : statistic;
+    svg += svgText(16, plotTop + plotHeight / 2, fitText(yTitle, plotHeight + 60, 12), { fontSize: 12, fill: '#444', rotate: -90 });
+    svg += svgText(plotLeft + plotWidth / 2, plotBottom + labelDepth + 16, fitText(colLabel(categoryVar), plotWidth, 12), { fontSize: 12, fill: '#444' });
+
+    const notes: string[] = [];
+    if (effectiveDisplay === 'percent') {
+      notes.push(valueMode === 'count'
+        ? `Each bar shows the percent of that ${colLabel(categoryVar)}'s records in each ${colLabel(groupVar)}, among records with both recorded.`
+        : `Each bar shows each ${colLabel(groupVar)}'s share of the ${statistic.toLowerCase()} within that ${colLabel(categoryVar)}.`);
+    } else {
+      notes.push(valueMode === 'count'
+        ? `Bars show the number of records for each ${colLabel(categoryVar)} and ${colLabel(groupVar)}.`
+        : `Bars show the ${valueMode} of ${colLabel(valueVar)} for each ${colLabel(categoryVar)} and ${colLabel(groupVar)}.`);
+    }
+    if (chartData.excluded > 0) {
+      const fields = [colLabel(categoryVar), colLabel(groupVar), valueMode !== 'count' && colLabel(valueVar)].filter(Boolean);
+      notes.push(`${recordCount(chartData.excluded)} excluded: no value for ${fields.join(' or ')}.`);
+    }
+    if (chartData.negativeCount > 0 && effectiveDisplay !== 'grouped') {
+      notes.push(`${chartData.negativeCount} negative value${chartData.negativeCount === 1 ? ' is' : 's are'} left out: a stack cannot show them. Use Grouped mode.`);
     }
 
-    // Source
-    const height = dims.height;
-    if (source) {
-      svg += svgSource(width, height, source);
-    }
-
-    return svgWrapper(width, height, svg);
-  }, [chartData, displayMode, colorScheme, showDataLabels, title, subtitle, source]);
+    const footer = svgFooter(width, plotBottom + labelDepth + 22, notes, source || undefined);
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [chartData, effectiveDisplay, valueMode, categoryVar, groupVar, valueVar, statistic, colorScheme, showDataLabels, title, subtitle, source, locale, colLabel]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -239,25 +295,25 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     }
     const { dataMap, groupValues, categoryOrder } = chartData;
     const columns = [
-      { header: 'Category', key: 'category' },
-      ...groupValues.map(gv => ({ header: gv, key: gv })),
+      { header: colLabel(categoryVar), key: '__category' },
+      ...groupValues.map((gv, i) => ({ header: gv, key: `g${i}` })),
     ];
     const rows = categoryOrder.map(cat => {
-      const row: Record<string, string | number | null> = { category: cat };
+      const row: Record<string, string | number | null> = { __category: cat };
       const groupMap = dataMap.get(cat);
-      for (const gv of groupValues) {
-        row[gv] = groupMap?.get(gv) ?? null;
-      }
+      groupValues.forEach((gv, i) => {
+        row[`g${i}`] = groupMap?.get(gv) ?? null;
+      });
       return row;
     });
     return {
       title,
-      subtitle: subtitle || undefined,
+      subtitle: subtitle ? `${subtitle} (${statistic})` : statistic,
       source: source || undefined,
       columns,
       rows,
     };
-  }, [chartData, title, subtitle, source]);
+  }, [chartData, categoryVar, statistic, title, subtitle, source, colLabel]);
 
   const isReady = categoryVar && groupVar && (valueMode === 'count' || valueVar);
 
@@ -296,10 +352,10 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
         />
 
         {/* Negative value warning */}
-        {chartData && chartData.negativeCount > 0 && (
+        {chartData && chartData.negativeCount > 0 && effectiveDisplay !== 'grouped' && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-xs text-amber-800">
-              <strong>{chartData.negativeCount} negative value{chartData.negativeCount !== 1 ? 's' : ''} omitted.</strong> Bars with negative totals cannot be displayed and are excluded from the chart.
+              <strong>{chartData.negativeCount} negative value{chartData.negativeCount !== 1 ? 's' : ''} omitted.</strong> A stack cannot show a negative value. Switch to Grouped mode to see them.
             </p>
           </div>
         )}
@@ -310,20 +366,18 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
           <VariableMapper
             label="Category (X-axis)"
             description="The main grouping variable"
-            columns={dataset.columns}
+            columns={catColumns}
             value={categoryVar}
             onChange={setCategoryVar}
-            filterTypes={['categorical', 'text']}
             required
           />
 
           <VariableMapper
             label="Group Variable"
             description="Sub-groups within each category"
-            columns={dataset.columns}
+            columns={catColumns}
             value={groupVar}
             onChange={setGroupVar}
-            filterTypes={['categorical', 'text']}
             required
           />
 
@@ -334,18 +388,19 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
             </label>
             <select
               value={valueMode}
-              onChange={(e) => setValueMode(e.target.value as ValueMode)}
+              onChange={(e) => setValueMode(e.target.value as CrossAggregationMode)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="count">Count (frequency)</option>
-              <option value="column">Numeric column</option>
+              <option value="sum">Sum of a numeric column</option>
+              <option value="mean">Mean of a numeric column</option>
             </select>
           </div>
 
-          {valueMode === 'column' && (
+          {valueMode !== 'count' && (
             <VariableMapper
               label="Value Column"
-              description="Numeric column to aggregate"
+              description={valueMode === 'sum' ? 'Numeric column to add up' : 'Numeric column to average'}
               columns={dataset.columns}
               value={valueVar}
               onChange={setValueVar}
@@ -364,7 +419,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
               <button
                 onClick={() => setDisplayMode('grouped')}
                 className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer ${
-                  displayMode === 'grouped'
+                  effectiveDisplay === 'grouped'
                     ? 'bg-white text-gray-900 shadow-sm font-medium'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
@@ -374,7 +429,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
               <button
                 onClick={() => setDisplayMode('stacked')}
                 className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer ${
-                  displayMode === 'stacked'
+                  effectiveDisplay === 'stacked'
                     ? 'bg-white text-gray-900 shadow-sm font-medium'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
@@ -384,7 +439,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
               <button
                 onClick={() => setDisplayMode('percent')}
                 className={`flex-1 px-3 py-1.5 text-sm rounded-md transition-colors cursor-pointer ${
-                  displayMode === 'percent'
+                  effectiveDisplay === 'percent'
                     ? 'bg-white text-gray-900 shadow-sm font-medium'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
@@ -392,6 +447,9 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
                 100%
               </button>
             </div>
+            {valueMode === 'mean' && (
+              <p className="text-xs text-gray-500 mt-1">Means are shown side by side: they cannot be stacked into a total.</p>
+            )}
           </div>
 
           <div className="mb-3">
@@ -428,7 +486,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => setTitleOverride(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -462,8 +520,6 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
         {isReady && svgContent ? (
           <ChartContainer
             title={title}
-            subtitle={subtitle || undefined}
-            source={source || undefined}
             svgContent={svgContent}
             excelData={excelData}
             filename="grouped-bar-chart"
@@ -481,204 +537,4 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       </div>
     </div>
   );
-}
-
-/** Draw bars in grouped (side-by-side) layout */
-function drawGroupedBars(
-  categories: string[],
-  groupValues: string[],
-  dataMap: Map<string, Map<string, number>>,
-  colors: string[],
-  plotLeft: number,
-  plotBottom: number,
-  plotHeight: number,
-  maxValue: number,
-  categoryWidth: number,
-  categoryPadding: number,
-  barAreaWidth: number,
-  showLabels: boolean,
-): string {
-  let svg = '';
-  const groupCount = groupValues.length;
-  const barWidth = barAreaWidth / groupCount;
-  const barPadding = Math.min(2, barWidth * 0.1);
-
-  for (let ci = 0; ci < categories.length; ci++) {
-    const cat = categories[ci];
-    const groupMap = dataMap.get(cat);
-    if (!groupMap) continue;
-
-    for (let gi = 0; gi < groupValues.length; gi++) {
-      const grp = groupValues[gi];
-      const value = groupMap.get(grp) || 0;
-      if (value <= 0) continue;
-
-      const barH = (value / maxValue) * plotHeight;
-      const x = plotLeft + ci * categoryWidth + categoryPadding + gi * barWidth + barPadding;
-      const y = plotBottom - barH;
-      const w = barWidth - barPadding * 2;
-
-      svg += `<rect x="${x}" y="${y}" width="${w}" height="${barH}" fill="${escapeXml(colors[gi])}" rx="2"/>`;
-
-      if (showLabels && barH > 14) {
-        svg += svgText(x + w / 2, y - 4, formatNumber(value), {
-          anchor: 'middle',
-          fontSize: 10,
-          fill: '#333',
-          fontWeight: 'bold',
-        });
-      }
-    }
-  }
-
-  return svg;
-}
-
-/** Draw bars in stacked layout */
-function drawStackedBars(
-  categories: string[],
-  groupValues: string[],
-  dataMap: Map<string, Map<string, number>>,
-  colors: string[],
-  plotLeft: number,
-  plotBottom: number,
-  plotHeight: number,
-  maxValue: number,
-  categoryWidth: number,
-  categoryPadding: number,
-  barAreaWidth: number,
-  showLabels: boolean,
-): string {
-  let svg = '';
-
-  for (let ci = 0; ci < categories.length; ci++) {
-    const cat = categories[ci];
-    const groupMap = dataMap.get(cat);
-    if (!groupMap) continue;
-
-    const x = plotLeft + ci * categoryWidth + categoryPadding;
-    const w = barAreaWidth;
-    let currentY = plotBottom;
-    let total = 0;
-
-    // Draw segments bottom to top
-    for (let gi = 0; gi < groupValues.length; gi++) {
-      const grp = groupValues[gi];
-      const value = groupMap.get(grp) || 0;
-      if (value <= 0) continue;
-
-      total += value;
-      const segH = (value / maxValue) * plotHeight;
-      currentY -= segH;
-
-      svg += `<rect x="${x}" y="${currentY}" width="${w}" height="${segH}" fill="${escapeXml(colors[gi])}" rx="${gi === groupValues.length - 1 ? 2 : 0}"/>`;
-
-      // Segment label if enough space
-      if (showLabels && segH > 16) {
-        svg += svgText(x + w / 2, currentY + segH / 2, formatNumber(value), {
-          anchor: 'middle',
-          fontSize: 10,
-          fill: '#fff',
-          fontWeight: 'bold',
-          dy: '0.35em',
-        });
-      }
-    }
-
-    // Total label on top of stacked bar
-    if (showLabels && total > 0) {
-      const topY = plotBottom - (total / maxValue) * plotHeight;
-      svg += svgText(x + w / 2, topY - 6, formatNumber(total), {
-        anchor: 'middle',
-        fontSize: 10,
-        fill: '#333',
-        fontWeight: 'bold',
-      });
-    }
-  }
-
-  return svg;
-}
-
-/** Draw bars in 100% stacked layout (proportional) */
-function drawPercentBars(
-  categories: string[],
-  groupValues: string[],
-  dataMap: Map<string, Map<string, number>>,
-  colors: string[],
-  plotLeft: number,
-  plotBottom: number,
-  plotHeight: number,
-  categoryWidth: number,
-  categoryPadding: number,
-  barAreaWidth: number,
-  showLabels: boolean,
-): string {
-  let svg = '';
-
-  for (let ci = 0; ci < categories.length; ci++) {
-    const cat = categories[ci];
-    const groupMap = dataMap.get(cat);
-    if (!groupMap) continue;
-
-    // Compute total for this category (negative values are omitted from bars)
-    let total = 0;
-    for (const v of groupMap.values()) {
-      if (v > 0) total += v;
-    }
-    if (total === 0) continue;
-
-    const x = plotLeft + ci * categoryWidth + categoryPadding;
-    const w = barAreaWidth;
-    let currentY = plotBottom;
-
-    // Draw segments bottom to top as percentages
-    for (let gi = 0; gi < groupValues.length; gi++) {
-      const grp = groupValues[gi];
-      const value = groupMap.get(grp) || 0;
-      if (value <= 0) continue;
-
-      const pct = (value / total) * 100;
-      const segH = (pct / 100) * plotHeight;
-      currentY -= segH;
-
-      svg += `<rect x="${x}" y="${currentY}" width="${w}" height="${segH}" fill="${escapeXml(colors[gi])}" rx="${gi === groupValues.length - 1 ? 2 : 0}"/>`;
-
-      // Segment label if enough space
-      if (showLabels && segH > 16) {
-        svg += svgText(x + w / 2, currentY + segH / 2, `${pct.toFixed(1)}%`, {
-          anchor: 'middle',
-          fontSize: 10,
-          fill: '#fff',
-          fontWeight: 'bold',
-          dy: '0.35em',
-        });
-      }
-    }
-  }
-
-  return svg;
-}
-
-/** Round up to a nice number for axis max */
-function ceilToNice(value: number): number {
-  if (value <= 0) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
-  const normalized = value / magnitude;
-  if (normalized <= 1) return magnitude;
-  if (normalized <= 2) return 2 * magnitude;
-  if (normalized <= 5) return 5 * magnitude;
-  return 10 * magnitude;
-}
-
-/** Format number for display */
-function formatNumber(value: number): string {
-  if (Number.isInteger(value)) return value.toLocaleString();
-  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
-}
-
-/** Truncate a label string */
-function truncateLabel(label: string, maxLen: number): string {
-  if (label.length <= maxLen) return label;
-  return label.slice(0, maxLen - 1) + '\u2026';
 }

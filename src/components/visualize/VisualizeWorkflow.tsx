@@ -59,7 +59,12 @@ export function VisualizeWorkflow({ dataset }: VisualizeWorkflowProps) {
             </button>
             {(() => {
               const ChartComponent = chartComponents[selectedChart];
-              return <ChartComponent dataset={dataset} />;
+              // Keyed by dataset so a chart starts afresh when the dataset is
+              // switched from the toolbar. Its column choices belong to the
+              // dataset they were made on; carried over, they showed a blank
+              // chart with stale selections, and the forest plot wrote the
+              // old dataset's case definition into the new one's saved settings.
+              return <ChartComponent key={dataset.id} dataset={dataset} />;
             })()}
           </div>
         )}

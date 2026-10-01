@@ -1,30 +1,47 @@
-import { sortCategoryValues } from '../../../utils/recordFilter';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
-  getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
   svgAxisLine,
   svgGridLine,
+  fitText,
+  estimateTextWidth,
   type ExcelExportData,
 } from '../../../utils/chartExport';
+import { crossAggregate, aggregatePairByCategory } from '../../../utils/chartAggregation';
+import { categoryColumns, categoriesInColumn, orderCategories, recordCount } from '../../../utils/chartCategories';
+import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface PairedBarChartProps {
   dataset: Dataset;
 }
 
 type InputMode = 'two-columns' | 'group-split';
+type PairedAggMode = 'mean' | 'sum' | 'count';
+type RowOrder = 'auto' | 'top' | 'bottom';
+
+interface PairedRow {
+  category: string;
+  /** null when the side has no records to aggregate, which is not the same as zero. */
+  leftVal: number | null;
+  rightVal: number | null;
+}
 
 export function PairedBarChart({ dataset }: PairedBarChartProps) {
+  const { config: locale } = useLocale();
   const [categoryCol, setCategoryCol] = useState('');
-  const [inputMode, setInputMode] = useState<InputMode>('two-columns');
+  // A pyramid counts records by a two-group variable, so that is the mode the
+  // chart opens in. It used to open asking for two numeric columns, and Count
+  // still demanded a numeric column it never read.
+  const [inputMode, setInputMode] = useState<InputMode>('group-split');
 
   // Two-column mode
   const [leftValueCol, setLeftValueCol] = useState('');
@@ -33,242 +50,258 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   // Group-split mode
   const [numericCol, setNumericCol] = useState('');
   const [groupCol, setGroupCol] = useState('');
+  const [leftGroupChoice, setLeftGroupChoice] = useState('');
+  const [rightGroupChoice, setRightGroupChoice] = useState('');
 
-  type PairedAggMode = 'mean' | 'sum' | 'count';
-  const [aggMode, setAggMode] = useState<PairedAggMode>('mean');
+  const [aggMode, setAggMode] = useState<PairedAggMode>('count');
+  const [rowOrder, setRowOrder] = useState<RowOrder>('auto');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
-  const [title, setTitle] = useState('Paired Bar Chart');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
-  // Detect the two unique group values when in group-split mode
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const colLabel = useCallback(
+    (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
+    [dataset.columns]
+  );
+
+  // Counting two numeric columns means nothing, so two-column mode falls back to the mean.
+  const effectiveAgg: PairedAggMode = inputMode === 'two-columns' && aggMode === 'count' ? 'mean' : aggMode;
+
+  // The values of the group variable, in reading order
   const groupValues = useMemo(() => {
     if (inputMode !== 'group-split' || !groupCol) return [];
-    const unique = new Set<string>();
-    for (const rec of dataset.records) {
-      const v = rec[groupCol];
-      if (v !== null && v !== undefined && v !== '') unique.add(String(v));
-    }
-    return sortCategoryValues(Array.from(unique));
+    return categoriesInColumn(dataset.records, dataset.columns.find(c => c.key === groupCol));
   }, [inputMode, groupCol, dataset]);
 
+  // The two groups drawn. A variable with a third value (Unknown, say) used to
+  // be refused outright; now two are chosen and the rest are reported as left out.
+  const leftGroup = groupValues.includes(leftGroupChoice) ? leftGroupChoice : (groupValues[0] ?? '');
+  const rightGroup = groupValues.includes(rightGroupChoice) && rightGroupChoice !== leftGroup
+    ? rightGroupChoice
+    : (groupValues.find(v => v !== leftGroup) ?? '');
+
   // Build paired data
-  const pairedRows = useMemo(() => {
+  const paired = useMemo(() => {
     if (!categoryCol) return null;
+    const categoryColumn = dataset.columns.find(c => c.key === categoryCol);
 
-    // Determine if we have valid config
-    const isTwoCol = inputMode === 'two-columns' && leftValueCol && rightValueCol;
-    const isGroupSplit = inputMode === 'group-split' && numericCol && groupCol && groupValues.length === 2;
+    let rows: PairedRow[];
+    const notes: string[] = [];
 
-    if (!isTwoCol && !isGroupSplit) return null;
-
-    // Build data: { category, leftVal, rightVal }
-    const categoryMap = new Map<string, {
-      leftSum: number; leftCount: number;
-      rightSum: number; rightCount: number;
-    }>();
-
-    for (const rec of dataset.records) {
-      const cat = rec[categoryCol];
-      if (cat === null || cat === undefined || cat === '') continue;
-      const catStr = String(cat);
-
-      if (!categoryMap.has(catStr)) {
-        categoryMap.set(catStr, { leftSum: 0, leftCount: 0, rightSum: 0, rightCount: 0 });
+    if (inputMode === 'two-columns') {
+      if (!leftValueCol || !rightValueCol) return null;
+      const pairs = aggregatePairByCategory(
+        dataset.records, categoryCol, leftValueCol, rightValueCol, effectiveAgg === 'sum' ? 'sum' : 'mean'
+      );
+      rows = pairs.map(p => ({ category: p.category, leftVal: p.valueA, rightVal: p.valueB }));
+      const dropped = categoriesInColumn(dataset.records, categoryColumn).length - rows.length;
+      if (dropped > 0) {
+        notes.push(`${dropped} ${dropped === 1 ? 'category is' : 'categories are'} not shown: no value in one of the two columns.`);
       }
-      const entry = categoryMap.get(catStr)!;
-
-      if (isTwoCol) {
-        const rawL = rec[leftValueCol];
-        if (rawL !== null && rawL !== undefined && rawL !== '') {
-          const lv = Number(rawL);
-          if (!isNaN(lv)) { entry.leftSum += lv; entry.leftCount++; }
-        }
-        const rawR = rec[rightValueCol];
-        if (rawR !== null && rawR !== undefined && rawR !== '') {
-          const rv = Number(rawR);
-          if (!isNaN(rv)) { entry.rightSum += rv; entry.rightCount++; }
-        }
-      } else if (isGroupSplit) {
-        const grp = String(rec[groupCol]);
-        const isLeft = grp === groupValues[0];
-        const isRight = grp === groupValues[1];
-        if (!isLeft && !isRight) continue;
-        if (aggMode === 'count') {
-          // Count mode compares group sizes — a numeric value is not required
-          if (isLeft) entry.leftCount++;
-          else entry.rightCount++;
-        } else {
-          const rawVal = rec[numericCol];
-          if (rawVal === null || rawVal === undefined || rawVal === '') continue;
-          const val = Number(rawVal);
-          if (isNaN(val)) continue;
-          if (isLeft) {
-            entry.leftSum += val;
-            entry.leftCount++;
-          } else {
-            entry.rightSum += val;
-            entry.rightCount++;
-          }
-        }
+    } else {
+      if (!groupCol || !leftGroup || !rightGroup) return null;
+      if (effectiveAgg !== 'count' && !numericCol) return null;
+      const table = crossAggregate(
+        dataset.records, categoryCol, groupCol,
+        effectiveAgg === 'count' ? null : numericCol, effectiveAgg, [leftGroup, rightGroup]
+      );
+      rows = table.categories.map(category => ({
+        category,
+        leftVal: table.cells.get(category)?.get(leftGroup)?.value ?? (effectiveAgg === 'count' ? 0 : null),
+        rightVal: table.cells.get(category)?.get(rightGroup)?.value ?? (effectiveAgg === 'count' ? 0 : null),
+      }));
+      if (table.excludedMissing > 0) {
+        const what = effectiveAgg === 'count'
+          ? `${colLabel(categoryCol)} or ${colLabel(groupCol)}`
+          : `${colLabel(categoryCol)}, ${colLabel(groupCol)} or ${colLabel(numericCol)}`;
+        notes.push(`${recordCount(table.excludedMissing)} excluded: no value for ${what}.`);
+      }
+      if (table.excludedOtherGroup > 0) {
+        const others = groupValues.filter(v => v !== leftGroup && v !== rightGroup);
+        notes.push(`${recordCount(table.excludedOtherGroup)} with ${colLabel(groupCol)} of ${others.join(', ')} not shown.`);
       }
     }
-
-    const resolveAgg = (sum: number, count: number) => {
-      switch (aggMode) {
-        case 'mean': return count > 0 ? sum / count : 0;
-        case 'sum': return sum;
-        case 'count': return count;
-      }
-    };
-
-    const rows = Array.from(categoryMap.entries()).map(([cat, agg]) => ({
-      category: cat,
-      leftVal: resolveAgg(agg.leftSum, agg.leftCount),
-      rightVal: resolveAgg(agg.rightSum, agg.rightCount),
-    }));
-
-    // Sort alphabetically by category
-    rows.sort((a, b) => a.category.localeCompare(b.category));
 
     if (rows.length === 0) return null;
 
-    return rows;
-  }, [categoryCol, inputMode, leftValueCol, rightValueCol, numericCol, groupCol, groupValues, aggMode, dataset.records]);
+    // Reading order: a declared order, then numeric-aware, so age bands run
+    // 0-4, 5-9, 10-14 rather than 0-4, 10-14, 15-19, 5-9.
+    const order = orderCategories(rows.map(r => r.category), categoryColumn);
+    const byName = new Map(rows.map(r => [r.category, r]));
+    const ordered = order.map(category => byName.get(category)!);
+
+    return { rows: ordered, notes };
+  }, [categoryCol, inputMode, leftValueCol, rightValueCol, numericCol, groupCol, leftGroup, rightGroup, groupValues, effectiveAgg, dataset, colLabel]);
+
+  const pairedRows = paired?.rows ?? null;
+
+  // Labels for the two sides
+  const leftLabel = inputMode === 'two-columns' ? colLabel(leftValueCol) : leftGroup;
+  const rightLabel = inputMode === 'two-columns' ? colLabel(rightValueCol) : rightGroup;
+
+  // What the bars measure, stated on the axis
+  const statistic = useMemo(() => {
+    if (inputMode === 'two-columns') return effectiveAgg === 'sum' ? 'Sum' : 'Mean';
+    if (effectiveAgg === 'count') return 'Number of records';
+    return `${effectiveAgg === 'sum' ? 'Sum' : 'Mean'} of ${colLabel(numericCol)}`;
+  }, [inputMode, effectiveAgg, numericCol, colLabel]);
+
+  const defaultTitle = useMemo(() => {
+    const label = colLabel;
+    if (!categoryCol) return 'Paired Bar Chart';
+    if (inputMode === 'two-columns') {
+      return leftValueCol && rightValueCol
+        ? `${label(leftValueCol)} and ${label(rightValueCol)} by ${label(categoryCol)}`
+        : 'Paired Bar Chart';
+    }
+    if (!groupCol) return 'Paired Bar Chart';
+    return effectiveAgg === 'count'
+      ? `Records by ${label(categoryCol)} and ${label(groupCol)}`
+      : `${statistic} by ${label(categoryCol)} and ${label(groupCol)}`;
+  }, [categoryCol, inputMode, leftValueCol, rightValueCol, groupCol, effectiveAgg, statistic, colLabel]);
+  const title = titleOverride ?? defaultTitle;
+
+  // A pyramid is read with the youngest band at the bottom. Follow that when
+  // every category opens with a number, and leave other categories reading
+  // from the top like every other chart.
+  const firstAtBottom = rowOrder === 'bottom'
+    || (rowOrder === 'auto' && !!pairedRows && pairedRows.every(r => /^[<>~]?\s*\d/.test(r.category)));
 
   const svgContent = useMemo(() => {
-    if (!categoryCol) return '';
     if (!pairedRows) return '';
 
-    // Get group labels
-    const isTwoCol = inputMode === 'two-columns' && leftValueCol && rightValueCol;
-    let leftLabel: string;
-    let rightLabel: string;
-    if (isTwoCol) {
-      leftLabel = dataset.columns.find(c => c.key === leftValueCol)?.label || leftValueCol;
-      rightLabel = dataset.columns.find(c => c.key === rightValueCol)?.label || rightValueCol;
-    } else {
-      leftLabel = groupValues[0];
-      rightLabel = groupValues[1];
-    }
+    const rows = firstAtBottom ? [...pairedRows].reverse() : pairedRows;
+    const isCount = inputMode === 'group-split' && effectiveAgg === 'count';
 
-    // Determine max value for scaling
-    let maxVal = 0;
-    for (const r of pairedRows) {
-      if (r.leftVal > maxVal) maxVal = r.leftVal;
-      if (r.rightVal > maxVal) maxVal = r.rightVal;
-    }
-    maxVal = maxVal || 1;
+    const values = rows.flatMap(r => [r.leftVal, r.rightVal]).filter((v): v is number => v !== null);
+    // One scale for both sides, through zero. A mean can be negative (a z-score
+    // is, for most groups in a nutrition survey), and those bars must still be drawn.
+    const scale = niceScale(Math.min(...values, 0), Math.max(...values, 0), { integer: isCount, maxIntervals: 4 });
+    const decimals = isCount ? 0 : decimalsForValues(values);
 
-    const dims = getDefaultDimensions('paired');
-    const { width, height, margin } = dims;
-    const plotW = width - margin.left - margin.right;
-    const plotH = height - margin.top - margin.bottom;
+    const width = 800;
+    const sideMargin = 56;
+    const categoryFont = 11;
+    // The category names sit in a gutter between the two halves. They were
+    // drawn on the centre line and then both bars were painted over them.
+    const longest = Math.max(
+      ...rows.map(r => estimateTextWidth(r.category, categoryFont)),
+      estimateTextWidth(colLabel(categoryCol), 10),
+      30
+    );
+    const gutter = Math.min(Math.max(longest + 20, 60), 220);
+    const halfW = (width - sideMargin * 2 - gutter) / 2;
+    const leftEnd = sideMargin + halfW;          // inner edge of the left half
+    const rightStart = leftEnd + gutter;         // inner edge of the right half
 
-    const halfW = plotW / 2;
-    const centerX = margin.left + halfW;
-    const barHeight = Math.min(plotH / pairedRows.length - 4, 20);
-    const rowHeight = plotH / pairedRows.length;
+    const span = scale.max - scale.min;
+    // Mirrored: on the left a larger value lies further left.
+    const xLeft = (v: number) => leftEnd - ((v - scale.min) / span) * halfW;
+    const xRight = (v: number) => rightStart + ((v - scale.min) / span) * halfW;
+
+    const header = svgHeader(width, title, subtitle || undefined);
+    const plotTop = header.bottom + 32;
+    const rowHeight = Math.max(Math.min(390 / rows.length, 34), 16);
+    const barHeight = Math.min(rowHeight - 6, 22);
+    const plotH = rowHeight * rows.length;
+    const plotBottom = plotTop + plotH;
     const colors = getChartColors(2, colorScheme);
 
-    // Scale: value -> pixel width of bar
-    const barScale = (val: number) => (val / maxVal) * (halfW - 40); // leave room for labels
+    let svg = header.svg;
 
-    let svg = '';
+    // Side headings, with the size of each group when the bars are counts
+    const total = (side: 'leftVal' | 'rightVal') => rows.reduce((s, r) => s + (r[side] ?? 0), 0);
+    const leftHeading = isCount ? `${leftLabel} (n = ${formatFixed(total('leftVal'), 0, locale)})` : leftLabel;
+    const rightHeading = isCount ? `${rightLabel} (n = ${formatFixed(total('rightVal'), 0, locale)})` : rightLabel;
+    svg += svgText(sideMargin + halfW / 2, plotTop - 12, fitText(leftHeading, halfW, 12, true), { fontSize: 12, fontWeight: 'bold', fill: colors[0] });
+    svg += svgText(rightStart + halfW / 2, plotTop - 12, fitText(rightHeading, halfW, 12, true), { fontSize: 12, fontWeight: 'bold', fill: colors[1] });
+    svg += svgText(leftEnd + gutter / 2, plotTop - 12, fitText(colLabel(categoryCol), gutter - 8, 10), { fontSize: 10, fill: '#6B7280' });
 
-    // Title
-    svg += svgTitle(width, title, subtitle || undefined);
-
-    // Group labels at top
-    svg += svgText(centerX - halfW / 2, margin.top - 12, leftLabel, { anchor: 'middle', fontSize: 12, fontWeight: 'bold', fill: colors[0] });
-    svg += svgText(centerX + halfW / 2, margin.top - 12, rightLabel, { anchor: 'middle', fontSize: 12, fontWeight: 'bold', fill: colors[1] });
-
-    // Center axis
-    svg += svgAxisLine(centerX, margin.top, centerX, margin.top + plotH);
-
-    // Grid lines on both sides
-    const tickCount = 4;
-    for (let i = 1; i <= tickCount; i++) {
-      const val = (maxVal * i) / tickCount;
-      const barW = barScale(val);
-
-      // Left side grid
-      svg += svgGridLine(centerX - barW, margin.top, centerX - barW, margin.top + plotH);
-      // Right side grid
-      svg += svgGridLine(centerX + barW, margin.top, centerX + barW, margin.top + plotH);
-
-      // Tick labels at bottom
-      const formatted = val >= 1000 ? `${(val / 1000).toFixed(1)}k` : (Number.isInteger(val) ? String(val) : val.toFixed(1));
-      svg += svgText(centerX - barW, margin.top + plotH + 16, formatted, { anchor: 'middle', fontSize: 9, fill: '#888' });
-      svg += svgText(centerX + barW, margin.top + plotH + 16, formatted, { anchor: 'middle', fontSize: 9, fill: '#888' });
-    }
-
-    // Bottom axis
-    svg += svgAxisLine(margin.left, margin.top + plotH, margin.left + plotW, margin.top + plotH);
-
-    // Bars
-    for (let i = 0; i < pairedRows.length; i++) {
-      const row = pairedRows[i];
-      const cy = margin.top + i * rowHeight + rowHeight / 2;
-
-      // Category label (center)
-      const labelText = row.category.length > 14 ? row.category.slice(0, 12) + '...' : row.category;
-      svg += svgText(centerX, cy, labelText, { anchor: 'middle', fontSize: 10, fill: '#333', dy: '0.35em' });
-
-      // Left bar (extends leftward from center)
-      const leftBarW = barScale(row.leftVal);
-      if (leftBarW > 0) {
-        svg += `<rect x="${centerX - leftBarW}" y="${cy - barHeight / 2}" width="${leftBarW}" height="${barHeight}" fill="${colors[0]}" rx="2"/>`;
-
-        // Left data label
-        if (showLabels) {
-          const lbl = Number.isInteger(row.leftVal) ? String(row.leftVal) : row.leftVal.toFixed(1);
-          svg += svgText(centerX - leftBarW - 4, cy, lbl, { anchor: 'end', fontSize: 9, fill: '#555', dy: '0.35em' });
-        }
-      }
-
-      // Right bar (extends rightward from center)
-      const rightBarW = barScale(row.rightVal);
-      if (rightBarW > 0) {
-        svg += `<rect x="${centerX}" y="${cy - barHeight / 2}" width="${rightBarW}" height="${barHeight}" fill="${colors[1]}" rx="2"/>`;
-
-        // Right data label
-        if (showLabels) {
-          const lbl = Number.isInteger(row.rightVal) ? String(row.rightVal) : row.rightVal.toFixed(1);
-          svg += svgText(centerX + rightBarW + 4, cy, lbl, { anchor: 'start', fontSize: 9, fill: '#555', dy: '0.35em' });
-        }
+    // Grid lines and tick labels, the same values on both sides
+    for (const tick of scale.ticks) {
+      const label = formatTick(tick, scale, locale);
+      for (const x of [xLeft(tick), xRight(tick)]) {
+        svg += svgGridLine(x, plotTop, x, plotBottom);
+        svg += svgText(x, plotBottom + 16, label, { fontSize: 10, fill: '#666' });
       }
     }
 
-    // Source
-    if (source) {
-      svg += svgSource(width, height, source);
-    }
+    // Bottom axes and the zero line each side's bars grow from
+    svg += svgAxisLine(sideMargin, plotBottom, leftEnd, plotBottom);
+    svg += svgAxisLine(rightStart, plotBottom, rightStart + halfW, plotBottom);
+    svg += svgAxisLine(xLeft(0), plotTop, xLeft(0), plotBottom);
+    svg += svgAxisLine(xRight(0), plotTop, xRight(0), plotBottom);
 
-    return svgWrapper(width, height, svg);
-  }, [pairedRows, inputMode, categoryCol, leftValueCol, rightValueCol, groupValues, colorScheme, showLabels, title, subtitle, source, dataset.columns]);
+    rows.forEach((row, i) => {
+      const cy = plotTop + i * rowHeight + rowHeight / 2;
+
+      svg += svgText(leftEnd + gutter / 2, cy, fitText(row.category, gutter - 12, categoryFont), {
+        fontSize: categoryFont, fill: '#333', dy: '0.35em',
+      });
+
+      const drawBar = (value: number | null, x: (v: number) => number, color: string, mirrored: boolean) => {
+        if (value === null) return;
+        const x0 = x(0);
+        const x1 = x(value);
+        if (value !== 0) {
+          svg += `<rect x="${Math.min(x0, x1)}" y="${cy - barHeight / 2}" width="${Math.abs(x1 - x0)}" height="${barHeight}" fill="${color}" rx="2"/>`;
+        }
+        if (showLabels) {
+          const text = formatFixed(value, decimals, locale);
+          // +1 where larger x is away from the gutter, -1 where it is toward it.
+          const away = mirrored ? -1 : 1;
+          if (value >= 0) {
+            // Past the end of the bar, on the outer side.
+            svg += svgText(x1 + away * 4, cy, text, {
+              anchor: mirrored ? 'end' : 'start', fontSize: 10, fill: '#444', dy: '0.35em',
+            });
+          } else if (Math.abs(x1 - x0) > estimateTextWidth(text, 10, true) + 10) {
+            // A negative bar grows toward the gutter, where the category names
+            // are, so its label goes inside the bar's end rather than past it.
+            svg += svgText(x1 + away * 4, cy, text, {
+              anchor: mirrored ? 'end' : 'start', fontSize: 10, fontWeight: 'bold', fill: '#fff', dy: '0.35em',
+            });
+          } else {
+            svg += svgText(x0 + away * 4, cy, text, {
+              anchor: mirrored ? 'end' : 'start', fontSize: 10, fill: '#444', dy: '0.35em',
+            });
+          }
+        }
+      };
+      drawBar(row.leftVal, xLeft, colors[0], true);
+      drawBar(row.rightVal, xRight, colors[1], false);
+    });
+
+    // What the bars measure
+    svg += svgText(width / 2, plotBottom + 36, statistic, { fontSize: 12, fill: '#444' });
+
+    const notes = [
+      inputMode === 'two-columns'
+        ? `Bars show the ${effectiveAgg} of each column per ${colLabel(categoryCol)}.`
+        : isCount
+          ? `Bars show the number of records in each ${colLabel(categoryCol)}, for ${colLabel(groupCol)} ${leftLabel} and ${rightLabel}.`
+          : `Bars show the ${effectiveAgg} of ${colLabel(numericCol)} in each ${colLabel(categoryCol)}, for ${colLabel(groupCol)} ${leftLabel} and ${rightLabel}.`,
+      ...(paired?.notes ?? []),
+    ];
+    const footer = svgFooter(width, plotBottom + 44, notes, source || undefined);
+
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [pairedRows, paired, firstAtBottom, inputMode, effectiveAgg, categoryCol, groupCol, numericCol, leftLabel, rightLabel, statistic, colorScheme, showLabels, title, subtitle, source, locale, colLabel]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
     if (!pairedRows) {
       return { columns: [], rows: [] };
     }
-    const isTwoCol = inputMode === 'two-columns' && leftValueCol && rightValueCol;
-    let leftLabel: string;
-    let rightLabel: string;
-    if (isTwoCol) {
-      leftLabel = dataset.columns.find(c => c.key === leftValueCol)?.label || leftValueCol;
-      rightLabel = dataset.columns.find(c => c.key === rightValueCol)?.label || rightValueCol;
-    } else {
-      leftLabel = groupValues[0];
-      rightLabel = groupValues[1];
-    }
     const columns = [
-      { header: 'Category', key: 'category' },
-      { header: leftLabel, key: 'leftVal' },
-      { header: rightLabel, key: 'rightVal' },
+      { header: colLabel(categoryCol) || 'Category', key: 'category' },
+      { header: `${leftLabel} (${statistic})`, key: 'leftVal' },
+      { header: `${rightLabel} (${statistic})`, key: 'rightVal' },
     ];
     const rows = pairedRows.map(r => ({
       category: r.category,
@@ -282,7 +315,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
       columns,
       rows,
     };
-  }, [pairedRows, inputMode, leftValueCol, rightValueCol, groupValues, title, subtitle, source, dataset.columns]);
+  }, [pairedRows, categoryCol, leftLabel, rightLabel, statistic, title, subtitle, source, colLabel]);
 
   return (
     <div className="flex gap-6">
@@ -293,11 +326,10 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
 
           <VariableMapper
             label="Category"
-            description="Groups shown in the center"
-            columns={dataset.columns}
+            description="Rows of the chart, such as age group"
+            columns={catColumns}
             value={categoryCol}
             onChange={setCategoryCol}
-            filterTypes={['text', 'categorical']}
             required
           />
 
@@ -308,8 +340,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
               onChange={(e) => setInputMode(e.target.value as InputMode)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
+              <option value="group-split">Split by a two-group variable</option>
               <option value="two-columns">Two numeric columns</option>
-              <option value="group-split">One numeric + group variable</option>
             </select>
           </div>
 
@@ -337,34 +369,73 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           ) : (
             <>
               <VariableMapper
-                label="Numeric Value"
-                description="Value to compare between groups"
-                columns={dataset.columns}
-                value={numericCol}
-                onChange={setNumericCol}
-                filterTypes={['number']}
-                required
-              />
-              <VariableMapper
                 label="Group Variable"
-                description="Must have exactly 2 unique values"
-                columns={dataset.columns}
+                description="The two sides of the chart, such as sex"
+                columns={catColumns}
                 value={groupCol}
                 onChange={setGroupCol}
-                filterTypes={['text', 'categorical']}
                 required
               />
-              {groupCol && groupValues.length !== 2 && (
-                <p className="text-xs text-red-600 mt-1">
-                  Selected column has {groupValues.length} unique values. Exactly 2 required.
+              {groupCol && groupValues.length < 2 && (
+                <p className="text-xs text-red-600 -mt-2 mb-3">
+                  This column has {groupValues.length} value{groupValues.length === 1 ? '' : 's'}. Two are needed.
                 </p>
               )}
-              {groupCol && groupValues.length === 2 && (
-                <p className="text-xs text-gray-500 mt-1">
-                  Left: {groupValues[0]} | Right: {groupValues[1]}
+              {groupValues.length >= 2 && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Left side</label>
+                    <select
+                      value={leftGroup}
+                      onChange={(e) => setLeftGroupChoice(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                    >
+                      {groupValues.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Right side</label>
+                    <select
+                      value={rightGroup}
+                      onChange={(e) => setRightGroupChoice(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                    >
+                      {groupValues.filter(v => v !== leftGroup).map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+              {groupValues.length > 2 && (
+                <p className="text-xs text-gray-500 -mt-1 mb-3">
+                  Records with any other value are left out and counted in a note under the chart.
                 </p>
               )}
             </>
+          )}
+
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Bars show</label>
+            <select
+              value={effectiveAgg}
+              onChange={(e) => setAggMode(e.target.value as PairedAggMode)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              {inputMode === 'group-split' && <option value="count">Number of records</option>}
+              <option value="mean">Mean of a numeric variable</option>
+              <option value="sum">Sum of a numeric variable</option>
+            </select>
+          </div>
+
+          {inputMode === 'group-split' && effectiveAgg !== 'count' && (
+            <VariableMapper
+              label="Numeric Value"
+              description="Value to compare between the two groups"
+              columns={dataset.columns}
+              value={numericCol}
+              onChange={setNumericCol}
+              filterTypes={['number']}
+              required
+            />
           )}
         </div>
 
@@ -372,17 +443,16 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Options</h4>
 
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Aggregation</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Row Order</label>
             <select
-              value={aggMode}
-              onChange={(e) => setAggMode(e.target.value as PairedAggMode)}
+              value={rowOrder}
+              onChange={(e) => setRowOrder(e.target.value as RowOrder)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="mean">Mean (average)</option>
-              <option value="sum">Sum (total)</option>
-              <option value="count">Count (frequency)</option>
+              <option value="auto">Automatic (age bands from the bottom up)</option>
+              <option value="top">First category at the top</option>
+              <option value="bottom">First category at the bottom</option>
             </select>
-            <p className="text-xs text-gray-400 mt-1">Count mode compares group sizes per category</p>
           </div>
 
           <div className="mb-3">
@@ -419,7 +489,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => setTitleOverride(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -446,8 +516,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
         </div>
 
         <VisualizationTip
-          tip="Paired bar charts (population pyramids) are ideal for comparing two groups across the same categories, such as age-sex distributions. Use Count mode to compare group sizes."
-          context="Try this: Category=Age Group, Group=Sex, Aggregation=Count — to see a population pyramid by age and sex"
+          tip="Paired bar charts (population pyramids) compare two groups across the same categories, such as an age-sex distribution."
+          context="Try this: Category = Age Group, Group Variable = Sex. The chart counts the records in each."
         />
 
         <div className="border border-blue-100 rounded-lg overflow-hidden">
@@ -482,8 +552,6 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
         {svgContent ? (
           <ChartContainer
             title={title}
-            subtitle={subtitle}
-            source={source}
             svgContent={svgContent}
             excelData={excelData}
             filename="paired-bar-chart"
@@ -493,7 +561,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
         ) : (
           <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
             <p className="text-gray-500 text-lg">Configure data mapping to create a paired bar chart</p>
-            <p className="text-gray-400 text-sm mt-2">Select a category and two value sources using the panel on the left</p>
+            <p className="text-gray-400 text-sm mt-2">Select a category and a variable with two groups using the panel on the left</p>
           </div>
         )}
       </div>

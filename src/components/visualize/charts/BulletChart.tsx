@@ -1,48 +1,60 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
-import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
+import { getChartColor, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
   svgAxisLine,
   svgGridLine,
-  escapeXml,
+  fitText,
+  estimateTextWidth,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 import { aggregatePairByCategory, type AggregationMode } from '../../../utils/chartAggregation';
+import { categoryColumns, categoriesInColumn, numberOf, orderCategories, byCategoryOrder } from '../../../utils/chartCategories';
+import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface BulletChartProps {
   dataset: Dataset;
 }
 
 export function BulletChart({ dataset }: BulletChartProps) {
+  const { config: locale } = useLocale();
   const [categoryVar, setCategoryVar] = useState('');
   const [actualVar, setActualVar] = useState('');
   const [targetVar, setTargetVar] = useState('');
   const [aggMode, setAggMode] = useState<AggregationMode>('mean');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showValueLabels, setShowValueLabels] = useState(true);
-  const [title, setTitle] = useState('Bullet Chart');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const colLabel = useCallback(
+    (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
+    [dataset.columns]
+  );
+
+  const categoryColumn = useMemo(
+    () => dataset.columns.find(c => c.key === categoryVar),
+    [dataset.columns, categoryVar]
+  );
+
   // Count unique categories for warning
-  const uniqueCategories = useMemo(() => {
-    if (!categoryVar) return 0;
-    const unique = new Set<string>();
-    for (const rec of dataset.records) {
-      const cat = rec[categoryVar];
-      if (cat !== null && cat !== undefined && cat !== '') unique.add(String(cat));
-    }
-    return unique.size;
-  }, [categoryVar, dataset.records]);
+  const uniqueCategories = useMemo(
+    () => categoriesInColumn(dataset.records, categoryColumn).length,
+    [categoryColumn, dataset.records]
+  );
 
   // Detect negative source values (bullet charts can only draw from a zero baseline)
   const hasNegativeValues = useMemo(() => {
@@ -50,67 +62,75 @@ export function BulletChart({ dataset }: BulletChartProps) {
     for (const rec of dataset.records) {
       for (const key of [actualVar, targetVar]) {
         if (!key) continue;
-        const raw = rec[key];
-        if (raw === null || raw === undefined || raw === '') continue;
-        const v = Number(raw);
-        if (!isNaN(v) && v < 0) return true;
+        const v = numberOf(rec[key]);
+        if (v !== null && v < 0) return true;
       }
     }
     return false;
   }, [actualVar, targetVar, dataset.records]);
 
-  const svgContent = useMemo(() => {
-    if (!categoryVar || !actualVar || !targetVar) return '';
-
-    // Extract data with aggregation by category
+  // Rows in reading order: a declared order first, then numeric-aware. They
+  // used to appear in whatever order their first record came.
+  const rows = useMemo(() => {
+    if (!categoryVar || !actualVar || !targetVar) return [];
     const aggregated = aggregatePairByCategory(dataset.records, categoryVar, actualVar, targetVar, aggMode);
-    const rows = aggregated.map(a => ({
-      category: a.category,
-      actual: a.valueA,
-      target: a.valueB,
-    }));
+    const order = orderCategories(aggregated.map(a => a.category), categoryColumn);
+    return aggregated
+      .map(a => ({ category: a.category, actual: a.valueA, target: a.valueB }))
+      .sort(byCategoryOrder(order, r => r.category));
+  }, [categoryVar, actualVar, targetVar, aggMode, categoryColumn, dataset.records]);
 
+  const aggWord = aggMode === 'count' ? 'Number of values recorded' : `${aggMode[0].toUpperCase()}${aggMode.slice(1)}`;
+  const defaultTitle = rows.length === 0
+    ? 'Bullet Chart'
+    : `${colLabel(actualVar)} against ${colLabel(targetVar)} by ${colLabel(categoryVar)}`;
+  const title = titleOverride ?? defaultTitle;
+
+  const svgContent = useMemo(() => {
     if (rows.length === 0) return '';
 
     const dims = getDefaultDimensions('bullet');
-    const barHeight = 30;
+    const barHeight = 26;
     const barGap = 10;
     const totalBarArea = rows.length * (barHeight + barGap) - barGap;
-
-    // Adjust height to fit all rows
-    const neededHeight = dims.margin.top + totalBarArea + dims.margin.bottom;
-    const height = Math.max(dims.height, neededHeight);
     const width = dims.width;
 
-    const plotLeft = dims.margin.left;
-    const plotRight = width - dims.margin.right;
+    const labelFont = 12;
+    const names = rows.map(r => fitText(r.category, 220, labelFont));
+    const plotLeft = Math.max(60, Math.max(...names.map(n => estimateTextWidth(n, labelFont))) + 20);
+    const plotRight = width - 56;
     const plotWidth = plotRight - plotLeft;
-    const plotTop = dims.margin.top;
 
-    // Determine max value for scale
-    const maxValue = Math.max(
-      ...rows.map(r => Math.max(r.actual, r.target))
-    );
-    const niceMax = ceilToNice(maxValue);
+    const header = svgHeader(width, title, subtitle || undefined);
+    const legendY = header.bottom + 14;
+    const plotTop = legendY + 20;
 
-    const colors = getChartColors(rows.length, colorScheme);
+    // Value scale from zero, with round ticks
+    const allValues = rows.flatMap(r => [r.actual, r.target]);
+    const scale = niceScale(0, Math.max(...allValues, 0), { integer: aggMode === 'count' });
+    const decimals = aggMode === 'count' ? 0 : decimalsForValues(allValues);
+    const xScale = (v: number) => plotLeft + (Math.max(v, 0) / scale.max) * plotWidth;
 
-    let svg = '';
+    // One colour for every bar. Each row used to take the next palette colour,
+    // which meant nothing and, in the grey and sequential schemes, left the
+    // later rows paler than the track behind them.
+    const barColor = getChartColor(0, colorScheme);
 
-    // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
-    }
+    let svg = header.svg;
+
+    // Legend: what the bar is and what the marker is
+    const actualLabel = fitText(colLabel(actualVar), 260, 11);
+    svg += `<rect x="${plotLeft}" y="${legendY - 4}" width="18" height="8" fill="${barColor}" rx="2"/>`;
+    svg += svgText(plotLeft + 24, legendY, actualLabel, { anchor: 'start', fontSize: 11, fill: '#444', dy: '0.35em' });
+    const second = plotLeft + 24 + estimateTextWidth(actualLabel, 11) + 24;
+    svg += `<line x1="${second}" y1="${legendY - 7}" x2="${second}" y2="${legendY + 7}" stroke="#111" stroke-width="2.5"/>`;
+    svg += svgText(second + 8, legendY, fitText(`Target: ${colLabel(targetVar)}`, 280, 11), { anchor: 'start', fontSize: 11, fill: '#444', dy: '0.35em' });
 
     // X-axis gridlines and labels
-    const tickCount = 5;
-    for (let i = 0; i <= tickCount; i++) {
-      const val = (niceMax / tickCount) * i;
-      const x = plotLeft + (val / niceMax) * plotWidth;
-      // Gridline
+    for (const tick of scale.ticks) {
+      const x = xScale(tick);
       svg += svgGridLine(x, plotTop, x, plotTop + totalBarArea);
-      // Tick label
-      svg += svgText(x, plotTop + totalBarArea + 20, formatNumber(val), {
+      svg += svgText(x, plotTop + totalBarArea + 18, formatTick(tick, scale, locale), {
         anchor: 'middle',
         fontSize: 11,
         fill: '#666',
@@ -124,37 +144,37 @@ export function BulletChart({ dataset }: BulletChartProps) {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       const y = plotTop + i * (barHeight + barGap);
-      const barColor = colors[i % colors.length];
 
       // Category label on left
-      svg += svgText(plotLeft - 10, y + barHeight / 2, row.category, {
+      svg += svgText(plotLeft - 10, y + barHeight / 2, names[i], {
         anchor: 'end',
-        fontSize: 12,
+        fontSize: labelFont,
         fill: '#333',
         dy: '0.35em',
       });
 
-      // Background band (full range) - light gray
-      const bandWidth = plotWidth;
-      svg += `<rect x="${plotLeft}" y="${y}" width="${bandWidth}" height="${barHeight}" fill="#E5E7EB" rx="3"/>`;
+      // A plain track across the full range. There was a darker band inside it
+      // ending at three quarters of the axis maximum; it looked like a
+      // threshold and was only an artefact of where the axis happened to stop.
+      svg += `<rect x="${plotLeft}" y="${y}" width="${plotWidth}" height="${barHeight}" fill="#EEF0F2" rx="3"/>`;
 
-      // 75% qualitative range - medium gray
-      const qualWidth = (0.75 * niceMax / niceMax) * plotWidth;
-      svg += `<rect x="${plotLeft}" y="${y + 4}" width="${qualWidth}" height="${barHeight - 8}" fill="#D1D5DB" rx="2"/>`;
-
-      // Actual value bar - colored, narrower (clamp negatives to the zero baseline)
-      const actualWidth = Math.max(0, (row.actual / niceMax) * plotWidth);
-      const innerBarHeight = barHeight * 0.4;
+      // Actual value bar (clamp negatives to the zero baseline)
+      const actualEnd = xScale(row.actual);
+      const innerBarHeight = barHeight * 0.46;
       const innerBarY = y + (barHeight - innerBarHeight) / 2;
-      svg += `<rect x="${plotLeft}" y="${innerBarY}" width="${actualWidth}" height="${innerBarHeight}" fill="${escapeXml(barColor)}" rx="2"/>`;
+      svg += `<rect x="${plotLeft}" y="${innerBarY}" width="${actualEnd - plotLeft}" height="${innerBarHeight}" fill="${barColor}" rx="2"/>`;
 
-      // Target marker line (clamped to the plot area)
-      const targetX = Math.max(plotLeft, plotLeft + (row.target / niceMax) * plotWidth);
+      // Target marker line
+      const targetX = xScale(row.target);
       svg += `<line x1="${targetX}" y1="${y + 2}" x2="${targetX}" y2="${y + barHeight - 2}" stroke="#111" stroke-width="2.5"/>`;
 
-      // Value labels
+      // Value labels: the actual value, and the target it is measured against
       if (showValueLabels) {
-        svg += svgText(plotLeft + actualWidth + 4, innerBarY + innerBarHeight / 2, formatNumber(row.actual), {
+        const actualText = formatFixed(row.actual, decimals, locale);
+        // Keep the label clear of the target marker when the two are close.
+        const labelX = actualEnd + 4;
+        const collides = targetX > labelX - 2 && targetX < labelX + estimateTextWidth(actualText, 10, true) + 4;
+        svg += svgText(collides ? targetX + 6 : labelX, innerBarY + innerBarHeight / 2, actualText, {
           anchor: 'start',
           fontSize: 10,
           fill: '#333',
@@ -164,48 +184,42 @@ export function BulletChart({ dataset }: BulletChartProps) {
       }
     }
 
-    // Legend for target marker
-    const legendY = plotTop + totalBarArea + 40;
-    svg += `<line x1="${plotLeft}" y1="${legendY - 4}" x2="${plotLeft}" y2="${legendY + 4}" stroke="#111" stroke-width="2.5"/>`;
-    svg += svgText(plotLeft + 8, legendY, 'Target', {
-      anchor: 'start',
-      fontSize: 11,
-      fill: '#666',
-      dy: '0.35em',
-    });
+    // What the axis measures
+    svg += svgText(plotLeft + plotWidth / 2, plotTop + totalBarArea + 38, fitText(`${aggWord} per ${colLabel(categoryVar)}`, plotWidth, 12), { fontSize: 12, fill: '#444' });
 
-    // Source
-    if (source) {
-      svg += svgSource(width, height, source);
+    const dropped = uniqueCategories - rows.length;
+    const notes = [
+      aggMode === 'count'
+        ? `Bars and markers show how many records have a value in each column, per ${colLabel(categoryVar)}.`
+        : `Bars show the ${aggMode} of ${colLabel(actualVar)} and markers the ${aggMode} of ${colLabel(targetVar)}, per ${colLabel(categoryVar)}.`,
+    ];
+    if (dropped > 0) {
+      notes.push(`${dropped} ${dropped === 1 ? 'category is' : 'categories are'} not shown: no value in one of the two columns.`);
     }
+    if (hasNegativeValues) notes.push('Negative values are drawn at zero.');
+    const footer = svgFooter(width, plotTop + totalBarArea + 44, notes, source || undefined);
 
-    return svgWrapper(width, height, svg);
-  }, [categoryVar, actualVar, targetVar, aggMode, colorScheme, showValueLabels, title, subtitle, source, dataset.records]);
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [rows, uniqueCategories, hasNegativeValues, categoryVar, actualVar, targetVar, aggMode, aggWord, colorScheme, showValueLabels, title, subtitle, source, locale, colLabel]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
-    if (!categoryVar || !actualVar || !targetVar) {
+    if (rows.length === 0) {
       return { columns: [], rows: [] };
     }
-    const aggregated = aggregatePairByCategory(dataset.records, categoryVar, actualVar, targetVar, aggMode);
     const columns = [
-      { header: 'Category', key: 'category' },
-      { header: 'Actual', key: 'actual' },
-      { header: 'Target', key: 'target' },
+      { header: colLabel(categoryVar), key: 'category' },
+      { header: `${colLabel(actualVar)} (${aggWord.toLowerCase()})`, key: 'actual' },
+      { header: `${colLabel(targetVar)} (${aggWord.toLowerCase()})`, key: 'target' },
     ];
-    const rows = aggregated.map(a => ({
-      category: a.category,
-      actual: a.valueA,
-      target: a.valueB,
-    }));
     return {
       title,
       subtitle: subtitle || undefined,
       source: source || undefined,
       columns,
-      rows,
+      rows: rows.map(r => ({ category: r.category, actual: r.actual, target: r.target })),
     };
-  }, [categoryVar, actualVar, targetVar, aggMode, title, subtitle, source, dataset.records]);
+  }, [rows, categoryVar, actualVar, targetVar, aggWord, title, subtitle, source, colLabel]);
 
   const isReady = categoryVar && actualVar && targetVar;
 
@@ -236,7 +250,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
           {showGuide && (
             <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
               <p>• Comparing actual values against a target or benchmark</p>
-              <p>• Showing performance metrics with context (good/fair/poor ranges)</p>
+              <p>• Showing how far each group is from where it should be</p>
               <p>• Monitoring vaccination coverage against WHO/national targets</p>
               <p>• Dashboard-style displays of key performance indicators</p>
               <p className="text-blue-500 italic mt-2">Useful for comparing actual surveillance metrics against established targets or benchmarks.</p>
@@ -257,7 +271,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
         {hasNegativeValues && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
             <p className="text-xs text-amber-800">
-              <strong>Negative values detected.</strong> Bullet charts draw from a zero baseline — negative actual or target values are clamped to zero.
+              <strong>Negative values detected.</strong> Bullet charts draw from a zero baseline, so negative actual or target values are drawn at zero. A dumbbell chart shows them as they are.
             </p>
           </div>
         )}
@@ -268,10 +282,9 @@ export function BulletChart({ dataset }: BulletChartProps) {
           <VariableMapper
             label="Category"
             description="Label for each bullet row"
-            columns={dataset.columns}
+            columns={catColumns}
             value={categoryVar}
             onChange={setCategoryVar}
-            filterTypes={['text', 'categorical']}
             required
           />
 
@@ -347,7 +360,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => setTitleOverride(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -381,8 +394,6 @@ export function BulletChart({ dataset }: BulletChartProps) {
         {isReady && svgContent ? (
           <ChartContainer
             title={title}
-            subtitle={subtitle || undefined}
-            source={source || undefined}
             svgContent={svgContent}
             excelData={excelData}
             filename="bullet-chart"
@@ -400,21 +411,4 @@ export function BulletChart({ dataset }: BulletChartProps) {
       </div>
     </div>
   );
-}
-
-/** Round up to a nice number for axis max */
-function ceilToNice(value: number): number {
-  if (value <= 0) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
-  const normalized = value / magnitude;
-  if (normalized <= 1) return magnitude;
-  if (normalized <= 2) return 2 * magnitude;
-  if (normalized <= 5) return 5 * magnitude;
-  return 10 * magnitude;
-}
-
-/** Format number for display */
-function formatNumber(value: number): string {
-  if (Number.isInteger(value)) return value.toLocaleString();
-  return value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }

@@ -8,6 +8,7 @@
  */
 
 import type { Dataset, DataColumn } from '../types/analysis';
+import { categoryOf } from './chartCategories';
 
 /**
  * Upper bound on distinct values for a column to be auto-selected as the
@@ -20,11 +21,17 @@ import type { Dataset, DataColumn } from '../types/analysis';
  */
 export const MAX_AUTO_CATEGORIES = 30;
 
-/** Distinct non-empty values in a column. */
+/**
+ * Distinct categories in a column, counted the way the charts will draw them:
+ * trimmed, with a whitespace-only cell as missing.
+ */
 function distinctCount(dataset: Dataset, key: string): number {
-  return new Set(
-    dataset.records.map(r => String(r[key] ?? '')).filter(v => v !== '')
-  ).size;
+  const seen = new Set<string>();
+  for (const record of dataset.records) {
+    const category = categoryOf(record[key]);
+    if (category !== null) seen.add(category);
+  }
+  return seen.size;
 }
 
 /**

@@ -4,79 +4,118 @@ import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
-import { calculateFrequency } from '../../../utils/statistics';
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
+  fitText,
   escapeXml,
   type ExcelExportData,
 } from '../../../utils/chartExport';
+import {
+  categoryColumns,
+  categoryOf,
+  orderCategories,
+  hasNaturalOrder,
+  byCategoryOrder,
+  recordCount,
+} from '../../../utils/chartCategories';
+import { allocateSquares, formatFixed } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface WaffleChartProps {
   dataset: Dataset;
 }
 
+interface WaffleSlice {
+  category: string;
+  count: number;
+  /** The true share of records, which is what the legend prints. */
+  percent: number;
+  /** Squares on the grid: the share rounded so that all squares sum to 100. */
+  squares: number;
+}
+
 export function WaffleChart({ dataset }: WaffleChartProps) {
+  const { config: locale } = useLocale();
   const [categoryVar, setCategoryVar] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
-  const [title, setTitle] = useState('Waffle Chart');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const categoryColumn = useMemo(
+    () => dataset.columns.find(c => c.key === categoryVar),
+    [dataset.columns, categoryVar]
+  );
+  const categoryLabel = categoryColumn?.label || categoryVar;
+
+  const waffle = useMemo(() => {
+    if (!categoryVar) return null;
+
+    const counts = new Map<string, number>();
+    let missing = 0;
+    for (const record of dataset.records) {
+      const category = categoryOf(record[categoryVar]);
+      if (category === null) missing++;
+      else counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    const total = Array.from(counts.values()).reduce((a, b) => a + b, 0);
+    if (total === 0) return null;
+
+    // Largest share first, unless the categories have an order of their own
+    const order = orderCategories(counts.keys(), categoryColumn);
+    const entries = Array.from(counts.entries()).sort(byCategoryOrder(order, e => e[0]));
+    if (!hasNaturalOrder(order, categoryColumn)) entries.sort((a, b) => b[1] - a[1]);
+
+    const squares = allocateSquares(entries.map(e => e[1]));
+    const slices: WaffleSlice[] = entries.map(([category, count], i) => ({
+      category,
+      count,
+      percent: (count / total) * 100,
+      squares: squares[i],
+    }));
+    return { slices, total, missing };
+  }, [categoryVar, categoryColumn, dataset.records]);
+
+  const defaultTitle = categoryVar ? `Share of records by ${categoryLabel}` : 'Waffle Chart';
+  const title = titleOverride ?? defaultTitle;
+
   const svgContent = useMemo(() => {
-    if (!categoryVar) return '';
-
-    // Get values for the category variable
-    const values = dataset.records.map(r => r[categoryVar]).filter(v => v != null && v !== '');
-    if (values.length === 0) return '';
-
-    // Calculate frequencies
-    const freq = calculateFrequency(values);
-    if (freq.length === 0) return '';
-
-    // Round percentages to whole numbers that sum to 100
-    const rounded = roundToHundred(freq.map(f => f.percent));
+    if (!waffle) return '';
+    const { slices, total, missing } = waffle;
 
     const dims = getDefaultDimensions('waffle');
     const gridSize = 10;
     const squareSize = 30;
     const squareGap = 3;
     const gridTotalSize = gridSize * squareSize + (gridSize - 1) * squareGap;
-
-    // Center grid horizontally
-    const gridLeft = (dims.width - gridTotalSize) / 2;
-    const gridTop = dims.margin.top;
-
-    // Calculate needed height: grid + legend
-    const legendItemHeight = 20;
-    const legendTop = gridTop + gridTotalSize + 25;
-    const legendHeight = Math.ceil(freq.length / 2) * legendItemHeight + 10;
-    const height = legendTop + legendHeight + dims.margin.bottom;
     const width = dims.width;
 
-    const colors = getChartColors(freq.length, colorScheme);
+    const header = svgHeader(width, title, subtitle || undefined);
+
+    // Center grid horizontally
+    const gridLeft = (width - gridTotalSize) / 2;
+    const gridTop = header.bottom + 14;
+
+    const colors = getChartColors(slices.length, colorScheme);
 
     // Build square-to-category mapping
     const squareColors: string[] = [];
     const squareCategories: string[] = [];
-    for (let i = 0; i < freq.length; i++) {
-      const count = rounded[i];
-      for (let j = 0; j < count; j++) {
+    slices.forEach((slice, i) => {
+      for (let j = 0; j < slice.squares; j++) {
         squareColors.push(colors[i]);
-        squareCategories.push(freq[i].value);
+        squareCategories.push(slice.category);
       }
-    }
+    });
 
-    let svg = '';
-
-    // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
-    }
+    let svg = header.svg;
 
     // Draw 10x10 grid (top-left to bottom-right, row by row)
     for (let row = 0; row < gridSize; row++) {
@@ -95,51 +134,65 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
       }
     }
 
-    // Legend below grid (two columns)
-    const legendColWidth = gridTotalSize / 2;
-    for (let i = 0; i < freq.length; i++) {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const lx = gridLeft + col * legendColWidth;
-      const ly = legendTop + row * legendItemHeight;
-
-      // Color swatch
-      svg += `<rect x="${lx}" y="${ly}" width="14" height="14" fill="${escapeXml(colors[i])}" rx="2"/>`;
-
-      // Label with percentage
-      svg += svgText(lx + 20, ly + 7, `${freq[i].value} (${rounded[i]}%)`, {
+    // Legend below the grid: one row per category, with its real percentage
+    // and its count. The legend used to print the number of squares as if it
+    // were the percentage, so six equal categories read 17%, 17%, 17%, 17%,
+    // 16%, 16%, and one death in 300 read 1%.
+    const legendItemHeight = 18;
+    const legendTop = gridTop + gridTotalSize + 18;
+    const legendLeft = Math.max(16, gridLeft - 40);
+    const legendWidth = width - legendLeft * 2;
+    slices.forEach((slice, i) => {
+      const ly = legendTop + i * legendItemHeight;
+      svg += `<rect x="${legendLeft}" y="${ly}" width="14" height="14" fill="${escapeXml(colors[i])}" rx="2"/>`;
+      const share = `${formatFixed(slice.percent, slice.percent < 10 || !Number.isInteger(slice.percent) ? 1 : 0, locale)}% (n = ${formatFixed(slice.count, 0, locale)})`;
+      svg += svgText(legendLeft + 20, ly + 7, fitText(slice.category, legendWidth - 150, 11), {
         anchor: 'start',
         fontSize: 11,
         fill: '#333',
         dy: '0.35em',
       });
-    }
+      svg += svgText(legendLeft + legendWidth, ly + 7, share, {
+        anchor: 'end',
+        fontSize: 11,
+        fill: '#333',
+        dy: '0.35em',
+      });
+    });
 
-    // Source
-    if (source) {
-      svg += svgSource(width, height, source);
+    const notes = [
+      `Each square is 1% of the ${recordCount(total)} with ${categoryLabel} recorded.`,
+    ];
+    if (slices.some(sl => sl.squares === 0)) {
+      notes.push('A category under half a percent may have no square; its share is in the legend.');
     }
+    if (slices.length > 8) {
+      notes.push('Colours repeat in lighter and darker shades beyond eight categories; a bar chart reads better with this many.');
+    }
+    if (missing > 0) {
+      notes.push(`${recordCount(missing)} excluded: no ${categoryLabel} recorded.`);
+    }
+    const footer = svgFooter(width, legendTop + slices.length * legendItemHeight + 2, notes, source || undefined);
 
-    return svgWrapper(width, height, svg);
-  }, [categoryVar, colorScheme, title, subtitle, source, dataset.records]);
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [waffle, categoryLabel, colorScheme, title, subtitle, source, locale]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
-    if (!categoryVar) {
+    if (!waffle) {
       return { columns: [], rows: [] };
     }
-    const values = dataset.records.map(r => r[categoryVar]).filter(v => v != null && v !== '');
-    const freq = calculateFrequency(values);
-    const rounded = roundToHundred(freq.map(f => f.percent));
     const columns = [
-      { header: 'Category', key: 'category' },
+      { header: categoryLabel || 'Category', key: 'category' },
       { header: 'Count', key: 'count' },
-      { header: 'Percentage', key: 'percent' },
+      { header: 'Percent of records', key: 'percent' },
+      { header: 'Squares', key: 'squares' },
     ];
-    const rows = freq.map((f, i) => ({
-      category: f.value,
-      count: f.count,
-      percent: rounded[i],
+    const rows = waffle.slices.map(slice => ({
+      category: slice.category,
+      count: slice.count,
+      percent: slice.percent,
+      squares: slice.squares,
     }));
     return {
       title,
@@ -148,7 +201,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
       columns,
       rows,
     };
-  }, [categoryVar, title, subtitle, source, dataset.records]);
+  }, [waffle, categoryLabel, title, subtitle, source]);
 
   const isReady = !!categoryVar;
 
@@ -193,10 +246,9 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
           <VariableMapper
             label="Category Variable"
             description="The variable whose frequency becomes the waffle"
-            columns={dataset.columns}
+            columns={catColumns}
             value={categoryVar}
             onChange={setCategoryVar}
-            filterTypes={['categorical', 'text']}
             required
           />
         </div>
@@ -228,7 +280,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => setTitleOverride(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -262,8 +314,6 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
         {isReady && svgContent ? (
           <ChartContainer
             title={title}
-            subtitle={subtitle || undefined}
-            source={source || undefined}
             svgContent={svgContent}
             excelData={excelData}
             filename="waffle-chart"
@@ -281,24 +331,4 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
       </div>
     </div>
   );
-}
-
-/**
- * Round an array of percentages so they sum to exactly 100.
- * Uses largest-remainder method to minimize rounding error.
- */
-function roundToHundred(percents: number[]): number[] {
-  const floored = percents.map(p => Math.floor(p));
-  const remainder = 100 - floored.reduce((a, b) => a + b, 0);
-
-  // Get fractional parts with their indices
-  const fractions = percents.map((p, i) => ({ index: i, frac: p - Math.floor(p) }));
-  fractions.sort((a, b) => b.frac - a.frac);
-
-  // Distribute remaining units to largest fractional parts
-  for (let i = 0; i < remainder && i < fractions.length; i++) {
-    floored[fractions[i].index]++;
-  }
-
-  return floored;
 }

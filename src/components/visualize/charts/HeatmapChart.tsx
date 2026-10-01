@@ -1,5 +1,4 @@
-import { sortCategoryValues } from '../../../utils/recordFilter';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
@@ -8,11 +7,17 @@ import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
+  fitText,
+  estimateTextWidth,
   type ExcelExportData,
 } from '../../../utils/chartExport';
+import { crossAggregate } from '../../../utils/chartAggregation';
+import { categoryColumns, orderCategories, recordCount } from '../../../utils/chartCategories';
+import { formatFixed, decimalsForValues } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface HeatmapChartProps {
   dataset: Dataset;
@@ -50,64 +55,42 @@ function textColorForBg(t: number): string {
 }
 
 export function HeatmapChart({ dataset }: HeatmapChartProps) {
+  const { config: locale } = useLocale();
   const [rowCol, setRowCol] = useState('');
   const [colCol, setColCol] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
   const [valueCol, setValueCol] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('blue');
   const [showCellLabels, setShowCellLabels] = useState(true);
-  const [title, setTitle] = useState('Heatmap');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
+
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const colLabel = useCallback(
+    (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
+    [dataset.columns]
+  );
 
   // Build heatmap data
   const heatmapData = useMemo(() => {
     if (!rowCol || !colCol) return null;
     if (valueMode === 'average' && !valueCol) return null;
 
-    // Collect unique row and column values
-    const rowValues = new Set<string>();
-    const colValues = new Set<string>();
+    const table = crossAggregate(
+      dataset.records, rowCol, colCol, valueMode === 'average' ? valueCol : null,
+      valueMode === 'average' ? 'mean' : 'count'
+    );
 
-    for (const rec of dataset.records) {
-      const rv = rec[rowCol];
-      const cv = rec[colCol];
-      if (rv !== null && rv !== undefined && rv !== '') rowValues.add(String(rv));
-      if (cv !== null && cv !== undefined && cv !== '') colValues.add(String(cv));
-    }
-
-    const rows = sortCategoryValues(Array.from(rowValues));
-    const cols = sortCategoryValues(Array.from(colValues));
+    // Both axes in reading order. The column's declared order is honoured
+    // here: it was dropped on the way to the shared sort, so education levels
+    // read Higher, None, Primary, Secondary.
+    const rows = orderCategories(table.categories, dataset.columns.find(c => c.key === rowCol));
+    const cols = orderCategories(table.groups, dataset.columns.find(c => c.key === colCol));
 
     if (rows.length === 0 || cols.length === 0) return null;
-
-    // Build matrix
-    const matrix = new Map<string, { sum: number; count: number; valueCount: number }>();
-    for (const rec of dataset.records) {
-      const rv = rec[rowCol];
-      const cv = rec[colCol];
-      if (rv === null || rv === undefined || rv === '') continue;
-      if (cv === null || cv === undefined || cv === '') continue;
-
-      const key = `${String(rv)}|||${String(cv)}`;
-      if (!matrix.has(key)) {
-        matrix.set(key, { sum: 0, count: 0, valueCount: 0 });
-      }
-      const entry = matrix.get(key)!;
-      entry.count++;
-
-      if (valueMode === 'average' && valueCol) {
-        const rawV = rec[valueCol];
-        if (rawV !== null && rawV !== undefined && rawV !== '') {
-          const v = Number(rawV);
-          if (!isNaN(v)) {
-            entry.sum += v;
-            entry.valueCount++;
-          }
-        }
-      }
-    }
 
     // Get cell values (null = no data, rendered as an empty cell)
     const cellValues: (number | null)[][] = [];
@@ -117,15 +100,9 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     for (let ri = 0; ri < rows.length; ri++) {
       cellValues[ri] = [];
       for (let ci = 0; ci < cols.length; ci++) {
-        const key = `${rows[ri]}|||${cols[ci]}`;
-        const entry = matrix.get(key);
-        let val: number | null;
-        if (valueMode === 'count') {
-          val = entry ? entry.count : 0;
-        } else {
-          // Average over records with a numeric value only
-          val = entry && entry.valueCount > 0 ? entry.sum / entry.valueCount : null;
-        }
+        const cell = table.cells.get(rows[ri])?.get(cols[ci]);
+        // A combination nobody falls in is a count of zero, but it has no average.
+        const val = cell ? cell.value : (valueMode === 'count' ? 0 : null);
         cellValues[ri][ci] = val;
         if (val !== null) {
           if (val < globalMin) globalMin = val;
@@ -139,57 +116,68 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       globalMax = 0;
     }
 
-    return { rows, cols, cellValues, matrix, globalMin, globalMax };
-  }, [rowCol, colCol, valueMode, valueCol, dataset.records]);
+    return { rows, cols, cellValues, globalMin, globalMax, excluded: table.excludedMissing };
+  }, [rowCol, colCol, valueMode, valueCol, dataset.records, dataset.columns]);
+
+  // What a cell's colour measures
+  const statistic = valueMode === 'count' ? 'Number of records' : `Mean of ${colLabel(valueCol)}`;
+  const defaultTitle = !rowCol || !colCol
+    ? 'Heatmap'
+    : `${valueMode === 'count' ? 'Records' : statistic} by ${colLabel(rowCol)} and ${colLabel(colCol)}`;
+  const title = titleOverride ?? defaultTitle;
 
   const svgContent = useMemo(() => {
     if (!heatmapData) return '';
 
     const { rows, cols, cellValues, globalMin, globalMax } = heatmapData;
     const valRange = globalMax - globalMin || 1;
+    const decimals = valueMode === 'count'
+      ? 0
+      : decimalsForValues(cellValues.flat().filter((v): v is number => v !== null));
+    const fmt = (v: number) => formatFixed(v, decimals, locale);
 
     const dims = getDefaultDimensions('heatmap');
-    const { margin } = dims;
+    const header = svgHeader(dims.width, title, subtitle || undefined);
 
     // Dynamic sizing
-    const maxColLabelLen = Math.max(...cols.map(c => c.length));
-    const rotateColLabels = cols.length > 6 || maxColLabelLen > 8;
-    const colLabelHeight = rotateColLabels ? Math.min(maxColLabelLen * 5.5, 80) : 20;
-    const adjustedTop = margin.top + colLabelHeight;
-
-    const maxRowLabelLen = Math.max(...rows.map(r => r.length));
-    const adjustedLeft = Math.max(margin.left, maxRowLabelLen * 6.5 + 16);
+    const colLabels = cols.map(c => fitText(c, 90, 10));
+    const maxColLabelW = Math.max(...colLabels.map(l => estimateTextWidth(l, 10)));
+    const rowLabels = rows.map(r => fitText(r, 170, 10));
+    const adjustedLeft = Math.max(60, Math.max(...rowLabels.map(l => estimateTextWidth(l, 10))) + 34);
 
     const legendWidth = 20;
     const legendGap = 30;
-    const adjustedRight = margin.right + legendWidth + legendGap + 30;
+    const adjustedRight = legendGap + legendWidth + 70;
 
     // Grow the canvas width when many columns need more than the default width
     const minPlotW = dims.width - adjustedLeft - adjustedRight;
     const cellW = Math.max(minPlotW / cols.length, 20);
+    const rotateColLabels = maxColLabelW > cellW - 6;
+    const colLabelHeight = rotateColLabels ? Math.min(maxColLabelW * 0.72 + 10, 80) : 16;
+    // Room above the grid for the column variable's name and the column labels
+    const adjustedTop = header.bottom + 24 + colLabelHeight;
     const cellH = Math.max(Math.min(30, 400 / rows.length), 16);
     const actualPlotW = cellW * cols.length;
     const width = Math.max(dims.width, adjustedLeft + actualPlotW + adjustedRight);
     const actualPlotH = cellH * rows.length;
-    const adjustedHeight = adjustedTop + actualPlotH + margin.bottom;
 
     const ramp = COLOR_RAMPS[colorScheme] || COLOR_RAMPS.blue;
 
-    let svg = '';
+    // The header is laid out again at the final width so the title stays centred
+    let svg = svgHeader(width, title, subtitle || undefined).svg;
 
-    // Title
-    svg += svgTitle(width, title, subtitle || undefined);
+    // Axis titles: which variable runs across and which runs down
+    svg += svgText(adjustedLeft + actualPlotW / 2, header.bottom + 14, fitText(colLabel(colCol), actualPlotW, 11, true), { fontSize: 11, fontWeight: 'bold', fill: '#444' });
+    svg += svgText(14, adjustedTop + actualPlotH / 2, fitText(colLabel(rowCol), Math.max(actualPlotH + 40, 120), 11, true), { fontSize: 11, fontWeight: 'bold', fill: '#444', rotate: -90 });
 
     // Column labels (top)
     for (let ci = 0; ci < cols.length; ci++) {
       const x = adjustedLeft + ci * cellW + cellW / 2;
       const y = adjustedTop - 6;
-      const labelText = cols[ci].length > 14 ? cols[ci].slice(0, 12) + '...' : cols[ci];
-
       if (rotateColLabels) {
-        svg += svgText(x, y, labelText, { anchor: 'start', fontSize: 10, fill: '#555', rotate: -45 });
+        svg += svgText(x, y, colLabels[ci], { anchor: 'start', fontSize: 10, fill: '#555', rotate: -40 });
       } else {
-        svg += svgText(x, y, labelText, { anchor: 'middle', fontSize: 10, fill: '#555' });
+        svg += svgText(x, y, colLabels[ci], { anchor: 'middle', fontSize: 10, fill: '#555' });
       }
     }
 
@@ -198,8 +186,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       const cy = adjustedTop + ri * cellH + cellH / 2;
 
       // Row label
-      const rowLabel = rows[ri].length > 16 ? rows[ri].slice(0, 14) + '...' : rows[ri];
-      svg += svgText(adjustedLeft - 8, cy, rowLabel, { anchor: 'end', fontSize: 10, fill: '#555', dy: '0.35em' });
+      svg += svgText(adjustedLeft - 8, cy, rowLabels[ri], { anchor: 'end', fontSize: 10, fill: '#555', dy: '0.35em' });
 
       for (let ci = 0; ci < cols.length; ci++) {
         const cx = adjustedLeft + ci * cellW;
@@ -227,11 +214,8 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
 
         // Cell label
         if (showCellLabels && cellW >= 24 && cellH >= 14) {
-          const displayVal = valueMode === 'count'
-            ? String(val)
-            : (Number.isInteger(val) ? String(val) : val.toFixed(1));
           const textFill = textColorForBg(t);
-          svg += svgText(cx + cellW / 2, adjustedTop + ri * cellH + cellH / 2, displayVal, {
+          svg += svgText(cx + cellW / 2, adjustedTop + ri * cellH + cellH / 2, fmt(val), {
             anchor: 'middle',
             fontSize: Math.min(10, cellH - 4),
             fill: textFill,
@@ -244,40 +228,42 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     // Border around grid
     svg += `<rect x="${adjustedLeft}" y="${adjustedTop}" width="${actualPlotW}" height="${actualPlotH}" fill="none" stroke="#CCC" stroke-width="1"/>`;
 
-    // Color legend (gradient bar on the right)
+    // Color legend (gradient bar on the right), titled with what it measures
     const legendX = adjustedLeft + actualPlotW + legendGap;
-    const legendH = Math.min(actualPlotH, 200);
-    const legendY = adjustedTop + (actualPlotH - legendH) / 2;
+    const legendH = Math.max(Math.min(actualPlotH, 200), 40);
+    const legendY = adjustedTop + Math.max(0, (actualPlotH - legendH) / 2);
     const legendSteps = 20;
     const stepH = legendH / legendSteps;
 
-    for (let i = 0; i < legendSteps; i++) {
-      const t = 1 - i / (legendSteps - 1); // top = high, bottom = low
-      const color = interpolateColor(ramp.light, ramp.dark, t);
-      svg += `<rect x="${legendX}" y="${legendY + i * stepH}" width="${legendWidth}" height="${stepH + 0.5}" fill="${color}"/>`;
+    if (globalMax > globalMin) {
+      for (let i = 0; i < legendSteps; i++) {
+        const t = 1 - i / (legendSteps - 1); // top = high, bottom = low
+        const color = interpolateColor(ramp.light, ramp.dark, t);
+        svg += `<rect x="${legendX}" y="${legendY + i * stepH}" width="${legendWidth}" height="${stepH + 0.5}" fill="${color}"/>`;
+      }
+      svg += `<rect x="${legendX}" y="${legendY}" width="${legendWidth}" height="${legendH}" fill="none" stroke="#CCC" stroke-width="1"/>`;
+      svg += svgText(legendX + legendWidth + 6, legendY + 8, fmt(globalMax), { anchor: 'start', fontSize: 9, fill: '#555' });
+      svg += svgText(legendX + legendWidth + 6, legendY + legendH, fmt(globalMin), { anchor: 'start', fontSize: 9, fill: '#555' });
+    } else {
+      // Every cell holds the same value, so there is no range for a ramp to show.
+      svg += `<rect x="${legendX}" y="${legendY}" width="${legendWidth}" height="${legendWidth}" fill="${ramp.light}" stroke="#CCC" stroke-width="1"/>`;
+      svg += svgText(legendX + legendWidth + 6, legendY + 14, fmt(globalMax), { anchor: 'start', fontSize: 9, fill: '#555' });
     }
+    svg += svgText(legendX, legendY - 8, fitText(valueMode === 'count' ? 'Records' : 'Mean', 90, 10, true), { anchor: 'start', fontSize: 10, fontWeight: 'bold', fill: '#444' });
 
-    // Legend border
-    svg += `<rect x="${legendX}" y="${legendY}" width="${legendWidth}" height="${legendH}" fill="none" stroke="#CCC" stroke-width="1"/>`;
-
-    // Legend labels
-    const maxLabel = valueMode === 'count'
-      ? String(globalMax)
-      : (Number.isInteger(globalMax) ? String(globalMax) : globalMax.toFixed(1));
-    const minLabel = valueMode === 'count'
-      ? String(globalMin)
-      : (Number.isInteger(globalMin) ? String(globalMin) : globalMin.toFixed(1));
-
-    svg += svgText(legendX + legendWidth + 6, legendY + 4, maxLabel, { anchor: 'start', fontSize: 9, fill: '#666', dy: '0em' });
-    svg += svgText(legendX + legendWidth + 6, legendY + legendH, minLabel, { anchor: 'start', fontSize: 9, fill: '#666', dy: '0em' });
-
-    // Source
-    if (source) {
-      svg += svgSource(width, adjustedHeight, source);
+    const notes = [
+      valueMode === 'count'
+        ? `Cells show the number of records for each ${colLabel(rowCol)} and ${colLabel(colCol)}.`
+        : `Cells show the mean of ${colLabel(valueCol)} for each ${colLabel(rowCol)} and ${colLabel(colCol)}. A dash marks a combination with no value.`,
+    ];
+    if (heatmapData.excluded > 0) {
+      const fields = [colLabel(rowCol), colLabel(colCol), valueMode === 'average' && colLabel(valueCol)].filter(Boolean);
+      notes.push(`${recordCount(heatmapData.excluded)} excluded: no value for ${fields.join(' or ')}.`);
     }
+    const footer = svgFooter(width, adjustedTop + Math.max(actualPlotH, legendY + legendH - adjustedTop) + 8, notes, source || undefined);
 
-    return svgWrapper(width, adjustedHeight, svg);
-  }, [heatmapData, valueMode, colorScheme, showCellLabels, title, subtitle, source]);
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [heatmapData, valueMode, rowCol, colCol, valueCol, colorScheme, showCellLabels, title, subtitle, source, locale, colLabel]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -286,24 +272,24 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     }
     const { rows, cols, cellValues } = heatmapData;
     const columns = [
-      { header: 'Row', key: 'rowLabel' },
-      ...cols.map(col => ({ header: col, key: col })),
+      { header: `${colLabel(rowCol)} \\ ${colLabel(colCol)}`, key: '__row' },
+      ...cols.map((col, ci) => ({ header: col, key: `c${ci}` })),
     ];
     const excelRows = rows.map((rowLabel, ri) => {
-      const row: Record<string, string | number | null> = { rowLabel };
+      const row: Record<string, string | number | null> = { __row: rowLabel };
       for (let ci = 0; ci < cols.length; ci++) {
-        row[cols[ci]] = cellValues[ri][ci];
+        row[`c${ci}`] = cellValues[ri][ci];
       }
       return row;
     });
     return {
       title,
-      subtitle: subtitle || undefined,
+      subtitle: subtitle ? `${subtitle} (${statistic})` : statistic,
       source: source || undefined,
       columns,
       rows: excelRows,
     };
-  }, [heatmapData, title, subtitle, source]);
+  }, [heatmapData, rowCol, colCol, statistic, title, subtitle, source, colLabel]);
 
   return (
     <div className="flex gap-6">
@@ -315,20 +301,18 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
           <VariableMapper
             label="Row Variable"
             description="Categories shown as rows"
-            columns={dataset.columns}
+            columns={catColumns}
             value={rowCol}
             onChange={setRowCol}
-            filterTypes={['text', 'categorical']}
             required
           />
 
           <VariableMapper
             label="Column Variable"
             description="Categories shown as columns"
-            columns={dataset.columns}
+            columns={catColumns}
             value={colCol}
             onChange={setColCol}
-            filterTypes={['text', 'categorical']}
             required
           />
 
@@ -394,7 +378,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => setTitleOverride(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
@@ -457,8 +441,6 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
         {svgContent ? (
           <ChartContainer
             title={title}
-            subtitle={subtitle}
-            source={source}
             svgContent={svgContent}
             excelData={excelData}
             filename="heatmap"

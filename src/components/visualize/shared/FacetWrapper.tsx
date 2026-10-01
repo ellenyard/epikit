@@ -1,79 +1,97 @@
-import { sortCategoryValues } from '../../../utils/recordFilter';
-import type { ReactNode } from 'react';
-import type { Dataset } from '../../../types/analysis';
+import type { CaseRecord, Dataset } from '../../../types/analysis';
 import { VariableMapper } from './VariableMapper';
+import { ChartContainer } from './ChartContainer';
+import { composeFacetSvg, svgWrapper, svgText, FACET_PANEL_WIDTH } from '../../../utils/chartExport';
+import type { ExcelExportData, FacetPanel } from '../../../utils/chartExport';
+import { categoriesInColumn, categoryOf, recordCount } from '../../../utils/chartCategories';
 
 interface FacetWrapperProps {
   dataset: Dataset;
   facetCol: string;
-  renderChart: (facetDataset: Dataset, facetLabel: string) => ReactNode;
+  title: string;
+  subtitle?: string;
+  source?: string;
+  /** Notes that apply to the whole figure, printed once under the panels. */
+  notes: string[];
+  /**
+   * Draw one panel from the records of one stratum, FACET_PANEL_WIDTH wide.
+   * An empty string means the stratum has nothing to plot.
+   */
+  renderPanel: (records: CaseRecord[], label: string) => string;
+  filename: string;
+  excelData?: ExcelExportData;
 }
 
-export function FacetWrapper({ dataset, facetCol, renderChart }: FacetWrapperProps) {
-  if (!facetCol) {
-    return <>{renderChart(dataset, '')}</>;
-  }
+/**
+ * A chart split into one panel per value of a stratifying variable.
+ *
+ * The panels are composed into a single drawing. They used to be separate
+ * 800px charts inside narrow scrolling boxes, which showed the left 350px of
+ * each (every bar appeared to run to the edge of its box, with no values or
+ * axis in view) and could not be exported at all.
+ */
+export function FacetWrapper({
+  dataset,
+  facetCol,
+  title,
+  subtitle,
+  source,
+  notes,
+  renderPanel,
+  filename,
+  excelData,
+}: FacetWrapperProps) {
+  const column = dataset.columns.find(c => c.key === facetCol);
+  const facetValues = categoriesInColumn(dataset.records, column);
+  const facetLabel = column?.label || facetCol;
 
-  // Get unique facet values
-  const facetValues = sortCategoryValues(Array.from(
-    new Set(
-      dataset.records
-        .map(r => r[facetCol])
-        .filter(v => v != null && v !== '')
-        .map(String)
-    )
-  ));
-
-  if (facetValues.length === 0) {
-    return <>{renderChart(dataset, '')}</>;
-  }
-
-  // Create filtered datasets
-  const facetDatasets = facetValues.map(value => {
-    const filteredRecords = dataset.records.filter(r => String(r[facetCol]) === value);
-    const facetDataset: Dataset = {
-      ...dataset,
-      id: `${dataset.id}-facet-${value}`,
-      name: `${dataset.name}, ${value}`,
-      records: filteredRecords,
-    };
-    return { value, dataset: facetDataset };
+  const panels: FacetPanel[] = facetValues.map(value => {
+    const records = dataset.records.filter(r => categoryOf(r[facetCol]) === value);
+    const svg = renderPanel(records, value)
+      || svgWrapper(FACET_PANEL_WIDTH, 80, svgText(FACET_PANEL_WIDTH / 2, 44, 'Nothing to plot in this panel', { fontSize: 12, fill: '#6B7280' }));
+    return { label: value, records: records.length, svg };
   });
 
+  // A record with no value for the stratifier belongs to no panel. Say so,
+  // rather than letting the panels quietly add up to less than the dataset.
+  const unplaced = dataset.records.filter(r => categoryOf(r[facetCol]) === null).length;
+  const allNotes = unplaced > 0
+    ? [...notes, `${recordCount(unplaced)} with no ${facetLabel} ${unplaced === 1 ? 'is' : 'are'} not shown.`]
+    : notes;
+
+  const svgContent = composeFacetSvg(panels, {
+    title,
+    subtitle: subtitle || `By ${facetLabel}`,
+    notes: allNotes,
+    source,
+  });
+
+  if (!svgContent) {
+    return (
+      <div className="flex items-center justify-center h-64 text-gray-400 text-sm">
+        No panels to draw: {facetLabel} has no values.
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-2">
-        <span className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full">
-          Stratify
-        </span>
-        <span className="text-xs text-gray-500">
-          Stratified by {dataset.columns.find(c => c.key === facetCol)?.label || facetCol} ({facetValues.length} panels)
-        </span>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {facetDatasets.map(({ value, dataset: fd }) => (
-          <div key={value} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
-            <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200">
-              <p className="text-sm font-medium text-gray-700">{value}</p>
-              <p className="text-xs text-gray-400">{fd.records.length} records</p>
-            </div>
-            <div className="p-2" style={{ maxHeight: '400px', overflow: 'auto' }}>
-              {renderChart(fd, value)}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <ChartContainer title={title} svgContent={svgContent} excelData={excelData} filename={filename}>
+      <div dangerouslySetInnerHTML={{ __html: svgContent }} />
+    </ChartContainer>
   );
 }
 
 interface FacetControlProps {
+  /** The columns that can stratify a chart (see categoryColumns). */
   columns: Dataset['columns'];
   value: string;
   onChange: (col: string) => void;
+  /** Whether every panel uses one value axis. Omit to hide the choice. */
+  sharedScale?: boolean;
+  onSharedScaleChange?: (shared: boolean) => void;
 }
 
-export function FacetControl({ columns, value, onChange }: FacetControlProps) {
+export function FacetControl({ columns, value, onChange, sharedScale, onSharedScaleChange }: FacetControlProps) {
   return (
     <div className="border-t border-gray-200 pt-3 mt-3">
       <div className="flex items-center gap-2 mb-2">
@@ -88,9 +106,19 @@ export function FacetControl({ columns, value, onChange }: FacetControlProps) {
         columns={columns}
         value={value}
         onChange={onChange}
-        filterTypes={['categorical', 'text']}
         placeholder="None (single chart)"
       />
+      {value && onSharedScaleChange && (
+        <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={sharedScale ?? true}
+            onChange={(e) => onSharedScaleChange(e.target.checked)}
+            className="rounded border-gray-300"
+          />
+          Same scale in every panel
+        </label>
+      )}
     </div>
   );
 }

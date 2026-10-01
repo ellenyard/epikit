@@ -6,24 +6,33 @@ import { VariableMapper } from '../shared/VariableMapper';
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
   svgAxisLine,
   svgGridLine,
+  fitText,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 import { getChartColor, type ChartColorScheme } from '../../../utils/chartColors';
+import {
+  categoryColumns,
+  categoryOf,
+  numberOf,
+  orderCategories,
+  hasNaturalOrder,
+  byCategoryOrder,
+  recordCount,
+} from '../../../utils/chartCategories';
+import { niceScale, formatTick, formatFixed, decimalsForValues, median } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface LollipopChartProps {
   dataset: Dataset;
 }
 
-/** Floor for the fitted canvas so a one- or two-row chart is not absurdly short. */
-const MIN_CHART_HEIGHT = 240;
-
 type ValueMode = 'count' | 'numeric';
-type SortMode = 'value-desc' | 'value-asc' | 'alpha';
+type SortMode = 'value-desc' | 'value-asc' | 'category';
 type ValueFormat = 'number' | 'percent';
 type Aggregation = 'mean' | 'sum' | 'median';
 
@@ -36,14 +45,8 @@ interface LollipopDataPoint {
 interface LollipopData {
   points: LollipopDataPoint[];
   excluded: number;
-}
-
-/** Format a numeric value for tick and value labels. */
-function formatValue(val: number, format: ValueFormat, abbreviate = false): string {
-  let base: string;
-  if (abbreviate && Math.abs(val) >= 1000) base = `${(val / 1000).toFixed(1)}k`;
-  else base = Number.isInteger(val) ? String(val) : val.toFixed(1);
-  return format === 'percent' ? `${base}%` : base;
+  /** Records counted, the denominator of a percentage. */
+  included: number;
 }
 
 /** Wrap a category label into at most 2 lines, breaking near 22-25 chars on a space when possible. */
@@ -65,10 +68,13 @@ function wrapCategoryLabel(label: string): string[] {
 }
 
 export function LollipopChart({ dataset }: LollipopChartProps) {
+  const { config: locale } = useLocale();
   const [categoryColChoice, setCategoryColChoice] = useState('');
   const [valueMode, setValueMode] = useState<ValueMode>('count');
   const [numericColChoice, setNumericColChoice] = useState('');
-  const [sortMode, setSortMode] = useState<SortMode>('value-desc');
+  // null means "follow the data": categories with an order of their own keep
+  // it, and the rest are ranked by value.
+  const [sortChoice, setSortChoice] = useState<SortMode | null>(null);
   const [aggregation, setAggregation] = useState<Aggregation>('mean');
   const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
   const [highlightCat, setHighlightCat] = useState('');
@@ -77,13 +83,15 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
   const [referenceLabel, setReferenceLabel] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
-  const [title, setTitle] = useState('');
-  const [subtitle, setSubtitle] = useState('');
   // null means "follow the data"; a string is an explicit override typed by the
   // user. Derived rather than synced in an effect, so the title cannot lag the
   // controls it describes.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
+  const [subtitle, setSubtitle] = useState('');
   const [axisTitleOverride, setAxisTitleOverride] = useState<string | null>(null);
   const [source, setSource] = useState('');
+
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
 
   // Effective selections: the user's choice while it remains valid for the
   // current dataset, otherwise an automatic pick. Derived rather than written
@@ -91,17 +99,28 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
   const categoryCol = resolveColumnChoice(dataset, categoryColChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
   const numericCol = resolveColumnChoice(dataset, numericColChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
 
+  const categoryColumn = useMemo(
+    () => dataset.columns.find(c => c.key === categoryCol),
+    [dataset.columns, categoryCol]
+  );
+  const numericLabel = dataset.columns.find(c => c.key === numericCol)?.label || '';
+  const statistic = valueMode === 'count' ? '' : `${aggregation[0].toUpperCase()}${aggregation.slice(1)} of ${numericLabel}`;
+
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
-    const columnLabel = dataset.columns.find(c => c.key === numericCol)?.label || '';
     if (valueMode === 'count') {
       return valueFormat === 'percent' ? 'Percent of records' : 'Number of records';
     }
-    // Outside count mode a bare 'Percent' hid which variable was plotted, and
-    // the values are not converted to percentages anyway: the aggregate is only
-    // a percentage if the column already was one. Keep the name and mark the unit.
-    return valueFormat === 'percent' ? `${columnLabel} (%)` : columnLabel;
-  }, [axisTitleOverride, valueMode, numericCol, valueFormat, dataset]);
+    // Outside count mode the values are not converted to percentages: the
+    // aggregate is only a percentage if the column already was one. Name the
+    // statistic and the variable, and mark the unit.
+    return valueFormat === 'percent' ? `${statistic} (%)` : statistic;
+  }, [axisTitleOverride, valueMode, statistic, valueFormat]);
+
+  const defaultTitle = !categoryCol
+    ? 'Lollipop Chart'
+    : `${valueMode === 'count' ? 'Records' : statistic} by ${categoryColumn?.label || categoryCol}`;
+  const title = titleOverride ?? defaultTitle;
 
   const referenceValue = useMemo(() => {
     if (referenceLine.trim() === '') return null;
@@ -110,21 +129,21 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
   }, [referenceLine]);
 
   // Build lollipop data
-  const { points: lollipopData, excluded } = useMemo((): LollipopData => {
-    if (!categoryCol) return { points: [], excluded: 0 };
+  const { points: unsortedData, excluded, included } = useMemo((): LollipopData => {
+    if (!categoryCol) return { points: [], excluded: 0, included: 0 };
 
     let points: LollipopDataPoint[];
     let excluded = 0;
+    let included = 0;
 
     if (valueMode === 'count') {
       const counts = new Map<string, number>();
       for (const record of dataset.records) {
-        const cat = record[categoryCol];
-        if (cat === null || cat === undefined || cat === '') {
+        const key = categoryOf(record[categoryCol]);
+        if (key === null) {
           excluded++;
           continue;
         }
-        const key = String(cat);
         counts.set(key, (counts.get(key) || 0) + 1);
       }
       points = Array.from(counts.entries()).map(([category, count]) => ({
@@ -132,40 +151,34 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
         value: count,
         n: count,
       }));
+      included = points.reduce((s, p) => s + p.n, 0);
 
       // In count mode with percent format, plot each category's share of the included records
-      if (valueFormat === 'percent') {
-        const total = points.reduce((s, p) => s + p.n, 0);
-        if (total > 0) {
-          for (const p of points) p.value = (p.n / total) * 100;
-        }
+      if (valueFormat === 'percent' && included > 0) {
+        for (const p of points) p.value = (p.n / included) * 100;
       }
     } else {
-      if (!numericCol) return { points: [], excluded: 0 };
+      if (!numericCol) return { points: [], excluded: 0, included: 0 };
       const grouped = new Map<string, number[]>();
 
       for (const record of dataset.records) {
-        const cat = record[categoryCol];
-        const raw = record[numericCol];
-        const num = raw !== null && raw !== undefined && raw !== '' ? Number(raw) : NaN;
-        if (cat === null || cat === undefined || cat === '' || isNaN(num)) {
+        const key = categoryOf(record[categoryCol]);
+        const num = numberOf(record[numericCol]);
+        if (key === null || num === null) {
           excluded++;
           continue;
         }
-        const key = String(cat);
         if (!grouped.has(key)) grouped.set(key, []);
         grouped.get(key)!.push(num);
+        included++;
       }
 
       const aggregate = (values: number[]): number => {
         switch (aggregation) {
           case 'sum':
             return values.reduce((a, b) => a + b, 0);
-          case 'median': {
-            const sorted = [...values].sort((a, b) => a - b);
-            const mid = Math.floor(sorted.length / 2);
-            return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-          }
+          case 'median':
+            return median(values);
           default:
             return values.reduce((a, b) => a + b, 0) / values.length;
         }
@@ -178,23 +191,32 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       }));
     }
 
-    // Sort
-    if (sortMode === 'value-desc') {
-      points.sort((a, b) => b.value - a.value);
-    } else if (sortMode === 'value-asc') {
-      points.sort((a, b) => a.value - b.value);
-    } else {
-      points.sort((a, b) => a.category.localeCompare(b.category));
-    }
+    return { points, excluded, included };
+  }, [categoryCol, valueMode, numericCol, aggregation, valueFormat, dataset.records]);
 
-    return { points, excluded };
-  }, [categoryCol, valueMode, numericCol, aggregation, valueFormat, sortMode, dataset.records]);
-
-  // Categories available for the highlight selector (alphabetical)
-  const categoryOptions = useMemo(
-    () => [...new Set(lollipopData.map(p => p.category))].sort((a, b) => a.localeCompare(b)),
-    [lollipopData]
+  // Category order: the column's declared order, then numeric-aware, so age
+  // bands run 0-4, 5-9, 10-14. The old "Alphabetical" put 10-14 before 5-9.
+  const categoryOrder = useMemo(
+    () => orderCategories(unsortedData.map(d => d.category), categoryColumn),
+    [unsortedData, categoryColumn]
   );
+  const sortMode: SortMode = sortChoice
+    ?? (hasNaturalOrder(categoryOrder, categoryColumn) ? 'category' : 'value-desc');
+
+  const lollipopData = useMemo(() => {
+    const inOrder = [...unsortedData].sort(byCategoryOrder(categoryOrder, d => d.category));
+    if (sortMode === 'value-desc') return inOrder.sort((a, b) => b.value - a.value);
+    if (sortMode === 'value-asc') return inOrder.sort((a, b) => a.value - b.value);
+    return inOrder;
+  }, [unsortedData, categoryOrder, sortMode]);
+
+  // Categories available for the highlight selector
+  const categoryOptions = categoryOrder;
+
+  // A highlight left over from a previous category variable or dataset matches
+  // no category, which turned every dot grey while the selector read "None".
+  // Derive the effective value rather than syncing state in an effect.
+  const activeHighlight = categoryOptions.includes(highlightCat) ? highlightCat : '';
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -205,7 +227,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       // so the header must not claim 'Count'.
       {
         header: valueMode === 'numeric' && numericCol
-          ? colLabel(numericCol)
+          ? statistic
           : (valueFormat === 'percent' ? 'Percent of records' : 'Count'),
         key: 'value',
       },
@@ -223,7 +245,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       columns,
       rows,
     };
-  }, [lollipopData, title, subtitle, source, dataset, categoryCol, valueMode, numericCol, valueFormat]);
+  }, [lollipopData, title, subtitle, source, dataset, categoryCol, valueMode, numericCol, valueFormat, statistic]);
 
   // Generate SVG
   const svgContent = useMemo(() => {
@@ -235,28 +257,36 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     // Wrap category labels (max 2 lines) and widen the left margin to fit the longest line
     const wrappedLabels = lollipopData.map(d => wrapCategoryLabel(d.category));
     const maxLabelChars = wrappedLabels.reduce((m, lines) => Math.max(m, ...lines.map(l => l.length)), 0);
-    const margin = { ...dims.margin, left: Math.min(260, Math.max(60, Math.ceil(maxLabelChars * 6.8) + 16)) };
+    const margin = { left: Math.min(260, Math.max(60, Math.ceil(maxLabelChars * 6.8) + 16)), right: dims.margin.right };
 
     // Fit rows within the default plot height (capped at 28px per row, floor 12px;
     // the SVG grows only if rows would drop below the floor)
     const defaultPlotH = dims.height - dims.margin.top - dims.margin.bottom;
     const rowHeight = Math.max(Math.min(defaultPlotH / lollipopData.length, 28), 12);
     const actualPlotH = rowHeight * lollipopData.length;
-    // Fit the canvas to the rows actually drawn. Flooring at dims.height stranded short
-    // charts in the top third of a 500px canvas with the source line orphaned at the bottom.
-    const baseHeight = Math.max(
-      MIN_CHART_HEIGHT,
-      actualPlotH + dims.margin.top + dims.margin.bottom
-    );
     const plotW = width - margin.left - margin.right;
-    const axisY = margin.top + actualPlotH;
 
-    // Value scale from a zero baseline; extend the nice max to cover the reference line
-    const maxVal = Math.max(...lollipopData.map(d => d.value));
-    const niceMax = getNiceMax(Math.max(maxVal, referenceValue ?? 0));
+    const header = svgHeader(width, title, subtitle || undefined);
+    const plotTop = header.bottom + 14;
+    const axisY = plotTop + actualPlotH;
 
-    const xScale = (v: number) => margin.left + (v / niceMax) * plotW;
-    const yScale = (i: number) => margin.top + (i + 0.5) * rowHeight;
+    // The value axis runs through zero and covers the data and the reference
+    // line on both sides of it. It used to assume positive values, so negative
+    // means were drawn off the left edge of the canvas, and a negative
+    // reference line across the category names.
+    const values = lollipopData.map(d => d.value);
+    const isRecordCount = valueMode === 'count' && valueFormat !== 'percent';
+    const scale = niceScale(
+      Math.min(...values, referenceValue ?? 0),
+      Math.max(...values, referenceValue ?? 0),
+      { integer: isRecordCount }
+    );
+    const suffix = valueFormat === 'percent' ? '%' : '';
+    const decimals = isRecordCount ? 0 : valueMode === 'count' ? 1 : decimalsForValues(values);
+
+    const xScale = (v: number) => margin.left + ((v - scale.min) / (scale.max - scale.min)) * plotW;
+    const yScale = (i: number) => plotTop + (i + 0.5) * rowHeight;
+    const zeroX = xScale(0);
 
     const colLabel = (key: string) => dataset.columns.find(c => c.key === key)?.label || key;
 
@@ -265,27 +295,19 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     const HIGHLIGHT_COLOR = '#E57A3A';
     const MUTED_COLOR = '#D1D5DB';
 
-    let svg = '';
+    let svg = header.svg;
 
-    // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
-    }
-
-    // Vertical gridlines
-    const tickCount = 5;
-    for (let i = 0; i <= tickCount; i++) {
-      const tickVal = (niceMax / tickCount) * i;
-      const x = xScale(tickVal);
-      svg += svgGridLine(x, margin.top, x, axisY);
-      // Tick labels on bottom
-      svg += svgText(x, axisY + 18, formatValue(tickVal, valueFormat, true), {
-        anchor: 'middle', fontSize: 11, fill: '#888',
+    // Vertical gridlines and tick labels
+    for (const tick of scale.ticks) {
+      const x = xScale(tick);
+      svg += svgGridLine(x, plotTop, x, axisY);
+      svg += svgText(x, axisY + 18, formatTick(tick, scale, locale, suffix), {
+        anchor: 'middle', fontSize: 11, fill: '#666',
       });
     }
 
-    // Y-axis line (zero baseline the sticks grow from)
-    svg += svgAxisLine(margin.left, margin.top, margin.left, axisY);
+    // Zero baseline the sticks grow from
+    svg += svgAxisLine(zeroX, plotTop, zeroX, axisY);
 
     // Bottom axis line
     svg += svgAxisLine(margin.left, axisY, margin.left + plotW, axisY);
@@ -293,9 +315,10 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     // Reference line
     if (referenceValue !== null) {
       const refX = xScale(referenceValue);
-      svg += `<line x1="${refX}" y1="${margin.top}" x2="${refX}" y2="${axisY}" stroke="#9CA3AF" stroke-width="1.5" stroke-dasharray="5,4"/>`;
+      svg += `<line x1="${refX}" y1="${plotTop}" x2="${refX}" y2="${axisY}" stroke="#6B7280" stroke-width="1.5" stroke-dasharray="5,4"/>`;
       if (referenceLabel) {
-        svg += svgText(refX + 4, margin.top + 4, referenceLabel, { anchor: 'start', fontSize: 10, fill: '#777', dy: '0.35em' });
+        const onRight = refX < margin.left + plotW * 0.7;
+        svg += svgText(refX + (onRight ? 4 : -4), plotTop - 5, referenceLabel, { anchor: onRight ? 'start' : 'end', fontSize: 10, fill: '#555' });
       }
     }
 
@@ -305,21 +328,21 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       const point = lollipopData[i];
       const y = yScale(i);
       const xEnd = xScale(point.value);
-      const color = highlightCat
-        ? (point.category === highlightCat ? HIGHLIGHT_COLOR : MUTED_COLOR)
+      const color = activeHighlight
+        ? (point.category === activeHighlight ? HIGHLIGHT_COLOR : MUTED_COLOR)
         : schemeColor;
 
       // Category label on the left (wrapped to at most 2 lines)
       const lines = wrappedLabels[i];
-      if (lines.length === 1) {
-        svg += svgText(margin.left - 8, y, lines[0], { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
+      if (lines.length === 1 || rowHeight < 24) {
+        svg += svgText(margin.left - 8, y, fitText(point.category, margin.left - 14, 11), { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
       } else {
         svg += svgText(margin.left - 8, y - 7, lines[0], { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
         svg += svgText(margin.left - 8, y + 7, lines[1], { anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em' });
       }
 
-      // Stick (thin line from axis to dot)
-      svg += `<line x1="${margin.left}" y1="${y}" x2="${xEnd}" y2="${y}" stroke="${color}" stroke-width="2" stroke-opacity="0.7"/>`;
+      // Stick (thin line from the zero line to the dot)
+      svg += `<line x1="${zeroX}" y1="${y}" x2="${xEnd}" y2="${y}" stroke="${color}" stroke-width="2" stroke-opacity="0.7"/>`;
 
       // Dot at the end (hollow when the small-count flag applies)
       const hollow = flagSmallCounts && point.n < 20;
@@ -327,25 +350,26 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
         ? `<circle cx="${xEnd}" cy="${y}" r="${dotRadius}" fill="white" stroke="${color}" stroke-width="1.5"/>`
         : `<circle cx="${xEnd}" cy="${y}" r="${dotRadius}" fill="${color}"/>`;
 
-      // Value label next to dot
+      // Value label past the dot, away from the zero line
       if (showLabels) {
-        svg += svgText(xEnd + dotRadius + 4, y, formatValue(point.value, valueFormat), {
-          anchor: 'start', fontSize: 10, fill: '#555', dy: '0.35em',
+        const outward = point.value >= 0 ? 1 : -1;
+        svg += svgText(xEnd + outward * (dotRadius + 4), y, `${formatFixed(point.value, decimals, locale)}${suffix}`, {
+          anchor: outward === 1 ? 'start' : 'end', fontSize: 10, fill: '#444', dy: '0.35em',
         });
       }
     }
 
-    // Bottom area: axis title, then footnotes stacked at the bottom left, then the source line
-    let cursorY = axisY + 34;
+    // Bottom area: axis title, then footnotes and the source line
+    let cursorY = axisY + 24;
     if (axisTitle) {
-      svg += svgText(margin.left + plotW / 2, cursorY, axisTitle, { fontSize: 12, fill: '#444' });
-      cursorY += 4;
+      cursorY += 14;
+      svg += svgText(margin.left + plotW / 2, cursorY, fitText(axisTitle, plotW + margin.right, 12), { fontSize: 12, fill: '#444' });
     }
 
     const footnotes: string[] = [];
     if (valueMode === 'count') {
       footnotes.push(valueFormat === 'percent'
-        ? `Values show the percent of records per ${colLabel(categoryCol)}.`
+        ? `Values show the percent of the ${recordCount(included)} with ${colLabel(categoryCol)} recorded.`
         : `Values show the number of records per ${colLabel(categoryCol)}.`);
     } else {
       footnotes.push(`Values show the ${aggregation} of ${colLabel(numericCol)} per ${colLabel(categoryCol)}.`);
@@ -354,24 +378,12 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       footnotes.push('Hollow dots indicate categories based on fewer than 20 records. Interpret with caution.');
     }
     if (excluded > 0) {
-      footnotes.push(`${excluded} record${excluded === 1 ? '' : 's'} excluded due to missing values.`);
-    }
-    for (const note of footnotes) {
-      cursorY += 14;
-      svg += svgText(10, cursorY, note, { anchor: 'start', fontSize: 10, fill: '#999' });
+      footnotes.push(`${recordCount(excluded)} excluded due to missing values.`);
     }
 
-    const height = Math.max(cursorY + 18, baseHeight);
-
-    // Source
-    if (source) {
-      svg += svgSource(width, height, source);
-    }
-
-    return svgWrapper(width, height, svg);
-  }, [lollipopData, excluded, showLabels, flagSmallCounts, colorScheme, highlightCat, valueFormat, referenceValue, referenceLabel, axisTitle, title, subtitle, source, valueMode, categoryCol, numericCol, aggregation, dataset]);
-
-  const displayTitle = title || 'Lollipop Chart';
+    const footer = svgFooter(width, cursorY + 4, footnotes, source || undefined);
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [lollipopData, excluded, included, showLabels, flagSmallCounts, colorScheme, activeHighlight, valueFormat, referenceValue, referenceLabel, axisTitle, title, subtitle, source, valueMode, categoryCol, numericCol, aggregation, dataset, locale]);
 
   return (
     <div className="flex gap-6">
@@ -383,10 +395,9 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
           <VariableMapper
             label="Category"
             description="Categorical variable for each row"
-            columns={dataset.columns}
+            columns={catColumns}
             value={categoryCol}
             onChange={setCategoryColChoice}
-            filterTypes={['text', 'categorical']}
             required
           />
 
@@ -438,12 +449,12 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
             <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
             <select
               value={sortMode}
-              onChange={e => setSortMode(e.target.value as SortMode)}
+              onChange={e => setSortChoice(e.target.value as SortMode)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="value-desc">Value (high to low)</option>
               <option value="value-asc">Value (low to high)</option>
-              <option value="alpha">Alphabetical</option>
+              <option value="category">Category order</option>
             </select>
           </div>
 
@@ -477,7 +488,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
           <div className="mb-3">
             <label className="block text-sm font-medium text-gray-700 mb-1">Highlight category</label>
             <select
-              value={highlightCat}
+              value={activeHighlight}
               onChange={e => setHighlightCat(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
@@ -555,7 +566,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
             <input
               type="text"
               value={title}
-              onChange={e => setTitle(e.target.value)}
+              onChange={e => setTitleOverride(e.target.value)}
               placeholder="Chart title"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
@@ -602,9 +613,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       <div className="flex-1 min-w-0">
         {svgContent ? (
           <ChartContainer
-            title={displayTitle}
-            subtitle={subtitle || undefined}
-            source={source || undefined}
+            title={title}
             svgContent={svgContent}
             excelData={excelData}
             filename="lollipop-chart"
@@ -621,17 +630,4 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       </div>
     </div>
   );
-}
-
-/** Compute a "nice" maximum for axis scaling */
-function getNiceMax(value: number): number {
-  if (value <= 0) return 1;
-  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
-  const normalized = value / magnitude;
-  let nice: number;
-  if (normalized <= 1) nice = 1;
-  else if (normalized <= 2) nice = 2;
-  else if (normalized <= 5) nice = 5;
-  else nice = 10;
-  return nice * magnitude;
 }

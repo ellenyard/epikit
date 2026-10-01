@@ -55,17 +55,18 @@ function LineThumbnail() {
 }
 
 function SlopeThumbnail() {
+  // Blue rises and orange falls, as on the chart itself.
   return (
     <svg width="80" height="60" viewBox="0 0 80 60" className={THUMBNAIL_CLASSES}>
-      <line x1="18" y1="14" x2="62" y2="26" stroke="currentColor" strokeWidth="2" />
-      <line x1="18" y1="30" x2="62" y2="18" stroke="#E57A3A" strokeWidth="2" />
-      <line x1="18" y1="42" x2="62" y2="46" stroke="#5BA155" strokeWidth="2" />
-      <circle cx="18" cy="14" r="3" fill="currentColor" />
-      <circle cx="62" cy="26" r="3" fill="currentColor" />
-      <circle cx="18" cy="30" r="3" fill="#E57A3A" />
-      <circle cx="62" cy="18" r="3" fill="#E57A3A" />
-      <circle cx="18" cy="42" r="3" fill="#5BA155" />
-      <circle cx="62" cy="46" r="3" fill="#5BA155" />
+      <line x1="18" y1="14" x2="62" y2="26" stroke="#E57A3A" strokeWidth="2" />
+      <line x1="18" y1="30" x2="62" y2="18" stroke="currentColor" strokeWidth="2" />
+      <line x1="18" y1="42" x2="62" y2="46" stroke="#E57A3A" strokeWidth="2" />
+      <circle cx="18" cy="14" r="3" fill="#E57A3A" />
+      <circle cx="62" cy="26" r="3" fill="#E57A3A" />
+      <circle cx="18" cy="30" r="3" fill="currentColor" />
+      <circle cx="62" cy="18" r="3" fill="currentColor" />
+      <circle cx="18" cy="42" r="3" fill="#E57A3A" />
+      <circle cx="62" cy="46" r="3" fill="#E57A3A" />
     </svg>
   );
 }
@@ -252,8 +253,8 @@ const CHART_GROUPS: ChartGroup[] = [
     charts: [
       { type: 'bar', name: 'Bar Chart', description: 'Compare categories with horizontal bars and direct labels', thumbnail: BarThumbnail },
       { type: 'lollipop', name: 'Lollipop Chart', description: 'A lighter alternative to bar charts with dot endpoints', thumbnail: LollipopThumbnail },
-      { type: 'dot', name: 'Dot Plot', description: 'Plot individual values along a single axis with precision', thumbnail: DotPlotThumbnail },
-      { type: 'waffle', name: 'Waffle Chart', description: 'Display proportions as filled squares — 1 square = 1%', thumbnail: WaffleThumbnail },
+      { type: 'dot', name: 'Dot Plot', description: 'Compare one summary value per category as dots on a shared axis', thumbnail: DotPlotThumbnail },
+      { type: 'waffle', name: 'Waffle Chart', description: 'Display proportions as filled squares, where 1 square is 1%', thumbnail: WaffleThumbnail },
       { type: 'bullet', name: 'Bullet Chart', description: 'Show performance against a target or benchmark', thumbnail: BulletThumbnail },
     ],
   },
@@ -293,7 +294,7 @@ const ALL_CHARTS = CHART_GROUPS.flatMap(g => g.charts);
 const CHART_MAP = new Map(ALL_CHARTS.map(c => [c.type, c]));
 
 /**
- * Analytical intent categories for the intent-based suggestion layer.
+ * Analytical intent categories for the intent filter chips.
  */
 type AnalyticalIntent =
   | 'compare_groups'
@@ -322,13 +323,13 @@ const INTENT_CHARTS: Record<AnalyticalIntent, { type: ChartType; reason: string 
     { type: 'slope', reason: 'Compare values between two time points' },
   ],
   show_proportions: [
-    { type: 'waffle', reason: 'Each square = 1% — intuitive for non-technical audiences' },
+    { type: 'waffle', reason: 'Each square is 1%: intuitive for non-technical audiences' },
     { type: 'grouped', reason: 'Use 100% stacked mode for proportional composition' },
     { type: 'bar', reason: 'Rank proportions from highest to lowest' },
   ],
   show_effects: [
     { type: 'forest', reason: 'Display effect estimates (OR, RR) with confidence intervals' },
-    { type: 'dot', reason: 'Plot point estimates for comparison' },
+    { type: 'dot', reason: 'Compare a summary value across groups (no intervals)' },
   ],
   cross_tabulate: [
     { type: 'heatmap', reason: 'Cross-tabulate two categorical variables with color intensity' },
@@ -336,7 +337,7 @@ const INTENT_CHARTS: Record<AnalyticalIntent, { type: ChartType; reason: string 
   ],
 };
 
-function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void; reason?: string }) {
+function ChartCard({ chart, onSelect }: { chart: ChartInfo; onSelect: () => void }) {
   const Thumbnail = chart.thumbnail;
   return (
     <button

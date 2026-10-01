@@ -118,6 +118,27 @@ try {
     assert.equal(resolveColumnChoice(ds, 'age', '', true), 'age', 'a numeric choice is kept');
   }
 
+  // 7. Distinct values are counted the way the charts draw them. Untrimmed, a
+  //    two-value column with stray spaces looked like a true grouping variable
+  //    and was preferred over one that really had three values.
+  {
+    const ds = makeDataset(
+      [
+        { key: 'sex', label: 'Sex', type: 'categorical' },
+        { key: 'status', label: 'Status', type: 'categorical' },
+      ],
+      [
+        { id: '1', sex: 'Female', status: 'Confirmed' },
+        { id: '2', sex: ' Female', status: 'Probable' },
+        { id: '3', sex: 'Male ', status: 'Suspected' },
+        { id: '4', sex: 'Male', status: 'Confirmed' },
+        { id: '5', sex: '  ', status: 'Probable' },
+      ],
+    );
+    assert.equal(pickCategoryColumn(ds), 'status',
+      'Sex has two values once trimmed, so the three-value column is the better default');
+  }
+
   console.log('chartDefaults regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

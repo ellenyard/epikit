@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
@@ -6,14 +6,20 @@ import { VisualizationTip } from '../shared/VisualizationTip';
 import {
   getDefaultDimensions,
   svgWrapper,
-  svgTitle,
-  svgSource,
+  svgHeader,
+  svgFooter,
   svgText,
   svgAxisLine,
+  fitText,
+  estimateTextWidth,
+  spreadPositions,
   type ExcelExportData,
 } from '../../../utils/chartExport';
 import { INCREASE_COLOR, DECREASE_COLOR, NEUTRAL_COLOR } from '../../../utils/chartColors';
-import { aggregatePairByCategory, type AggregationMode } from '../../../utils/chartAggregation';
+import { aggregatePairByCategory, crossAggregate, type AggregationMode } from '../../../utils/chartAggregation';
+import { categoryColumns, categoriesInColumn, orderCategories, orderPeriods, recordCount } from '../../../utils/chartCategories';
+import { formatFixed, decimalsForValues } from '../../../utils/chartFormat';
+import { useLocale } from '../../../contexts/LocaleContext';
 
 interface SlopeChartProps {
   dataset: Dataset;
@@ -28,152 +34,178 @@ interface SlopeDataPoint {
 }
 
 export function SlopeChart({ dataset }: SlopeChartProps) {
+  const { config: locale } = useLocale();
   const [categoryCol, setCategoryCol] = useState('');
   const [startCol, setStartCol] = useState('');
   const [endCol, setEndCol] = useState('');
   const [valueCol, setValueCol] = useState('');
   const [groupCol, setGroupCol] = useState('');
+  const [startGroupChoice, setStartGroupChoice] = useState('');
+  const [endGroupChoice, setEndGroupChoice] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('two-columns');
   const [aggMode, setAggMode] = useState<AggregationMode>('mean');
   const [showValues, setShowValues] = useState(true);
-  const [title, setTitle] = useState('');
+  // null means "follow the data"; a string is what the user typed.
+  const [titleOverride, setTitleOverride] = useState<string | null>(null);
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
-  // Detect two unique group values for single-column mode
+  const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  const colLabel = useCallback(
+    (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
+    [dataset.columns]
+  );
+
+  // The values of the group variable, earlier period first: Before then After,
+  // not the alphabetical After then Before.
   const groupValues = useMemo(() => {
-    if (!groupCol) return [];
-    const unique = new Set<string>();
-    for (const record of dataset.records) {
-      const v = record[groupCol];
-      if (v !== null && v !== undefined && v !== '') {
-        unique.add(String(v));
-      }
-    }
-    // Prefer the column's defined value order (e.g., Before/After) over alphabetical
-    const col = dataset.columns.find(c => c.key === groupCol);
-    if (col?.valueOrder && col.valueOrder.length > 0) {
-      const ordered = col.valueOrder.filter(v => unique.has(v));
-      const rest = Array.from(unique).filter(v => !col.valueOrder!.includes(v)).sort();
-      return [...ordered, ...rest];
-    }
-    return Array.from(unique).sort();
+    const column = dataset.columns.find(c => c.key === groupCol);
+    if (!column) return [];
+    return orderPeriods(categoriesInColumn(dataset.records, column), column);
   }, [dataset.records, dataset.columns, groupCol]);
 
-  const hasTwoGroups = groupValues.length === 2;
+  // The two groups compared. Which is the start is the user's to change.
+  const startGroup = groupValues.includes(startGroupChoice) ? startGroupChoice : (groupValues[0] ?? '');
+  const endGroup = groupValues.includes(endGroupChoice) && endGroupChoice !== startGroup
+    ? endGroupChoice
+    : (groupValues.find(v => v !== startGroup) ?? '');
+  const hasTwoGroups = !!startGroup && !!endGroup;
+
+  // Counting needs no value column in Value + Group mode: it counts the records in each group.
+  const needsValueCol = inputMode === 'two-columns' || aggMode !== 'count';
 
   // Build slope data — always aggregates by category
-  const slopeData = useMemo((): SlopeDataPoint[] => {
-    if (!categoryCol) return [];
+  const slope = useMemo((): { points: SlopeDataPoint[]; notes: string[] } => {
+    const empty = { points: [], notes: [] };
+    if (!categoryCol) return empty;
+    const categoryColumn = dataset.columns.find(c => c.key === categoryCol);
+    const allCategories = categoriesInColumn(dataset.records, categoryColumn);
+    const notes: string[] = [];
+    let points: SlopeDataPoint[];
 
     if (inputMode === 'two-columns') {
-      if (!startCol || !endCol) return [];
+      if (!startCol || !endCol) return empty;
       const pairs = aggregatePairByCategory(dataset.records, categoryCol, startCol, endCol, aggMode);
-      return pairs.map(p => ({ category: p.category, startValue: p.valueA, endValue: p.valueB }));
+      points = pairs.map(p => ({ category: p.category, startValue: p.valueA, endValue: p.valueB }));
     } else {
       // single-column mode: pivot on group column
-      if (!valueCol || !groupCol || !hasTwoGroups) return [];
-      const [g1, g2] = groupValues;
-
-      // Split records by group, then aggregate each side by category
-      const g1Records = dataset.records.filter(r => String(r[groupCol]) === g1);
-      const g2Records = dataset.records.filter(r => String(r[groupCol]) === g2);
-
-      // Build maps for each group
-      const buildMap = (recs: Dataset['records']) => {
-        const map = new Map<string, { sum: number; count: number }>();
-        for (const rec of recs) {
-          const cat = rec[categoryCol];
-          const val = rec[valueCol];
-          if (cat == null || cat === '' || val == null || val === '') continue;
-          const num = Number(val);
-          if (isNaN(num)) continue;
-          const key = String(cat);
-          if (!map.has(key)) map.set(key, { sum: 0, count: 0 });
-          const entry = map.get(key)!;
-          entry.sum += num;
-          entry.count++;
-        }
-        return map;
-      };
-
-      const mapStart = buildMap(g1Records);
-      const mapEnd = buildMap(g2Records);
-
-      const categories = new Set([...mapStart.keys(), ...mapEnd.keys()]);
-      const points: SlopeDataPoint[] = [];
-
-      for (const cat of categories) {
-        const s = mapStart.get(cat);
-        const e = mapEnd.get(cat);
-        if (!s || !e) continue;
-
-        const resolveVal = (bucket: { sum: number; count: number }) => {
-          switch (aggMode) {
-            case 'mean': return bucket.count > 0 ? bucket.sum / bucket.count : 0;
-            case 'sum': return bucket.sum;
-            case 'count': return bucket.count;
-            default: return bucket.count > 0 ? bucket.sum / bucket.count : 0;
-          }
-        };
-        points.push({ category: cat, startValue: resolveVal(s), endValue: resolveVal(e) });
+      if (!groupCol || !hasTwoGroups) return empty;
+      const mode = aggMode === 'count' ? 'count' : aggMode === 'sum' ? 'sum' : 'mean';
+      if (mode !== 'count' && !valueCol) return empty;
+      const table = crossAggregate(
+        dataset.records, categoryCol, groupCol, mode === 'count' ? null : valueCol, mode, [startGroup, endGroup]
+      );
+      points = [];
+      for (const category of table.categories) {
+        const s = table.cells.get(category)?.get(startGroup);
+        const e = table.cells.get(category)?.get(endGroup);
+        // A count of nobody is a real zero; a mean of nobody does not exist.
+        if (mode === 'count') points.push({ category, startValue: s?.value ?? 0, endValue: e?.value ?? 0 });
+        else if (s && e) points.push({ category, startValue: s.value, endValue: e.value });
       }
-      return points;
+      if (table.excludedOtherGroup > 0) {
+        const others = groupValues.filter(v => v !== startGroup && v !== endGroup);
+        notes.push(`${recordCount(table.excludedOtherGroup)} with ${colLabel(groupCol)} of ${others.join(', ')} not shown.`);
+      }
     }
-  }, [categoryCol, startCol, endCol, valueCol, groupCol, inputMode, aggMode, dataset.records, groupValues, hasTwoGroups]);
+
+    // A line needs both ends. Say how many categories had only one.
+    const dropped = allCategories.length - points.length;
+    if (dropped > 0) {
+      notes.push(`${dropped} ${dropped === 1 ? 'category is' : 'categories are'} not shown: no value at one of the two ends.`);
+    }
+
+    // Reading order, used for the export and for breaking ties between labels
+    const order = orderCategories(points.map(p => p.category), categoryColumn);
+    const byName = new Map(points.map(p => [p.category, p]));
+    return { points: order.map(c => byName.get(c)!), notes };
+  }, [categoryCol, startCol, endCol, valueCol, groupCol, inputMode, aggMode, dataset.records, dataset.columns, groupValues, startGroup, endGroup, hasTwoGroups, colLabel]);
+
+  const slopeData = slope.points;
+
+  // Column header labels
+  const startLabel = inputMode === 'two-columns' ? (colLabel(startCol) || 'Start') : (startGroup || 'Start');
+  const endLabel = inputMode === 'two-columns' ? (colLabel(endCol) || 'End') : (endGroup || 'End');
+
+  // What a point measures
+  const statistic = useMemo(() => {
+    const word = aggMode[0].toUpperCase() + aggMode.slice(1);
+    if (inputMode === 'two-columns') return aggMode === 'count' ? 'Number of values recorded' : `${word} per ${colLabel(categoryCol)}`;
+    return aggMode === 'count' ? 'Number of records' : `${word} of ${colLabel(valueCol)}`;
+  }, [aggMode, inputMode, categoryCol, valueCol, colLabel]);
+
+  const defaultTitle = !categoryCol || slopeData.length === 0
+    ? 'Slope Chart'
+    : inputMode === 'two-columns'
+      ? `${startLabel} to ${endLabel} by ${colLabel(categoryCol)}`
+      : `${statistic} by ${colLabel(categoryCol)}: ${startLabel} to ${endLabel}`;
+  const title = titleOverride ?? defaultTitle;
 
   // Generate SVG
   const svgContent = useMemo(() => {
     if (slopeData.length === 0) return '';
 
     const dims = getDefaultDimensions('slope');
-    const { width, height, margin } = dims;
-    const plotH = height - margin.top - margin.bottom;
+    const labelFont = 11;
+    const allValues = slopeData.flatMap(d => [d.startValue, d.endValue]);
+    const decimals = decimalsForValues(allValues);
+    const fmt = (v: number) => formatFixed(v, decimals, locale);
+
+    // Each end is labelled with the category and its value. The margins are
+    // sized to the longest label instead of a fixed 120px, which clipped
+    // anything longer than about 18 characters at both edges of the canvas.
+    const names = slopeData.map(d => fitText(d.category, 190, labelFont));
+    const leftTexts = slopeData.map((d, i) => (showValues ? `${names[i]}  ${fmt(d.startValue)}` : names[i]));
+    const rightTexts = slopeData.map((d, i) => (showValues ? `${fmt(d.endValue)}  ${names[i]}` : names[i]));
+    const side = Math.max(...[...leftTexts, ...rightTexts].map(t => estimateTextWidth(t, labelFont)), 60) + 22;
+    const gap = 340; // distance between the two axes
+    const width = Math.ceil(Math.max(dims.width, side * 2 + gap));
+    const leftX = (width - gap) / 2;
+    const rightX = leftX + gap;
+
+    const header = svgHeader(width, title, subtitle || undefined);
+    const plotTop = header.bottom + 48;
+    // Room for every label at a readable spacing
+    const plotH = Math.max(dims.height - 150, slopeData.length * 15);
+    const plotBottom = plotTop + plotH;
 
     // Compute scale
-    const allValues = slopeData.flatMap(d => [d.startValue, d.endValue]);
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
     const valueRange = maxVal - minVal || 1;
-    const padding = valueRange * 0.1;
-    const scaleMin = minVal - padding;
-    const scaleMax = maxVal + padding;
-    const scaleRange = scaleMax - scaleMin;
+    const yScale = (v: number) => plotBottom - 10 - ((v - minVal) / valueRange) * (plotH - 20);
 
-    const yScale = (v: number) => margin.top + plotH - ((v - scaleMin) / scaleRange) * plotH;
+    let svg = header.svg;
 
-    const leftX = margin.left;
-    const rightX = width - margin.right;
-
-    let svg = '';
-
-    // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
+    // Direction legend. Colour repeats what the slope already shows, so it is
+    // never the only cue.
+    const legendY = header.bottom + 12;
+    const legend: [string, string][] = [['Increase', INCREASE_COLOR], ['Decrease', DECREASE_COLOR], ['No change', NEUTRAL_COLOR]];
+    let lx = width / 2 - 150;
+    for (const [text, color] of legend) {
+      svg += `<line x1="${lx}" y1="${legendY}" x2="${lx + 18}" y2="${legendY}" stroke="${color}" stroke-width="2.5" stroke-linecap="round"/>`;
+      svg += svgText(lx + 24, legendY, text, { anchor: 'start', fontSize: 10, fill: '#555', dy: '0.35em' });
+      lx += 100;
     }
 
     // Left and right axis lines
-    svg += svgAxisLine(leftX, margin.top, leftX, margin.top + plotH);
-    svg += svgAxisLine(rightX, margin.top, rightX, margin.top + plotH);
+    svg += svgAxisLine(leftX, plotTop, leftX, plotBottom);
+    svg += svgAxisLine(rightX, plotTop, rightX, plotBottom);
 
-    // Column header labels
-    const startLabel = inputMode === 'two-columns'
-      ? (dataset.columns.find(c => c.key === startCol)?.label || 'Start')
-      : groupValues[0] || 'Start';
-    const endLabel = inputMode === 'two-columns'
-      ? (dataset.columns.find(c => c.key === endCol)?.label || 'End')
-      : groupValues[1] || 'End';
-
-    svg += svgText(leftX, margin.top - 10, startLabel, {
-      anchor: 'middle', fontSize: 13, fontWeight: 'bold', fill: '#555',
+    svg += svgText(leftX, plotTop - 10, fitText(startLabel, gap - 20, 13, true), {
+      anchor: 'middle', fontSize: 13, fontWeight: 'bold', fill: '#444',
     });
-    svg += svgText(rightX, margin.top - 10, endLabel, {
-      anchor: 'middle', fontSize: 13, fontWeight: 'bold', fill: '#555',
+    svg += svgText(rightX, plotTop - 10, fitText(endLabel, gap - 20, 13, true), {
+      anchor: 'middle', fontSize: 13, fontWeight: 'bold', fill: '#444',
     });
 
-    // Draw lines and labels for each category
-    for (const point of slopeData) {
+    // Labels are moved apart where two ends fall close together, each joined
+    // to its point by a short tick so it is still clear which is which.
+    const leftYs = spreadPositions(slopeData.map(d => yScale(d.startValue)), 13, plotTop, plotBottom);
+    const rightYs = spreadPositions(slopeData.map(d => yScale(d.endValue)), 13, plotTop, plotBottom);
+
+    slopeData.forEach((point, i) => {
       const y1 = yScale(point.startValue);
       const y2 = yScale(point.endValue);
 
@@ -188,52 +220,39 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       }
 
       // Slope line
-      svg += `<line x1="${leftX}" y1="${y1}" x2="${rightX}" y2="${y2}" stroke="${color}" stroke-width="2" stroke-opacity="0.8"/>`;
+      svg += `<line x1="${leftX}" y1="${y1}" x2="${rightX}" y2="${y2}" stroke="${color}" stroke-width="2" stroke-opacity="0.85"/>`;
 
       // Dots at endpoints
       svg += `<circle cx="${leftX}" cy="${y1}" r="4" fill="${color}"/>`;
       svg += `<circle cx="${rightX}" cy="${y2}" r="4" fill="${color}"/>`;
 
-      // Category labels
-      svg += svgText(leftX - 8, y1, point.category, {
-        anchor: 'end', fontSize: 11, fill: '#333', dy: '0.35em',
-      });
+      // Leader ticks from each point to its label
+      svg += `<line x1="${leftX - 5}" y1="${y1}" x2="${leftX - 12}" y2="${leftYs[i]}" stroke="#9CA3AF" stroke-width="1"/>`;
+      svg += `<line x1="${rightX + 5}" y1="${y2}" x2="${rightX + 12}" y2="${rightYs[i]}" stroke="#9CA3AF" stroke-width="1"/>`;
 
-      // Value labels
-      if (showValues) {
-        const fmtVal = (v: number) => (Number.isInteger(v) ? String(v) : v.toFixed(1));
-        svg += svgText(leftX + 8, y1, fmtVal(point.startValue), {
-          anchor: 'start', fontSize: 10, fill: '#666', dy: '0.35em',
-        });
-        svg += svgText(rightX - 8, y2, fmtVal(point.endValue), {
-          anchor: 'end', fontSize: 10, fill: '#666', dy: '0.35em',
-        });
-      }
+      svg += svgText(leftX - 15, leftYs[i], leftTexts[i], { anchor: 'end', fontSize: labelFont, fill: '#333', dy: '0.35em' });
+      svg += svgText(rightX + 15, rightYs[i], rightTexts[i], { anchor: 'start', fontSize: labelFont, fill: '#333', dy: '0.35em' });
+    });
 
-      // Right-side category label
-      svg += svgText(rightX + 8, y2, point.category, {
-        anchor: 'start', fontSize: 11, fill: '#333', dy: '0.35em',
-      });
-    }
+    const labelsBottom = Math.max(plotBottom, ...leftYs, ...rightYs);
+    const notes = [
+      inputMode === 'two-columns'
+        ? `Points show the ${aggMode} of each column per ${colLabel(categoryCol)}.`
+        : aggMode === 'count'
+          ? `Points show the number of records per ${colLabel(categoryCol)} at each ${colLabel(groupCol)}.`
+          : `Points show the ${aggMode} of ${colLabel(valueCol)} per ${colLabel(categoryCol)} at each ${colLabel(groupCol)}.`,
+      'The vertical scale covers the range of the values plotted; it does not start at zero.',
+      ...slope.notes,
+    ];
+    const footer = svgFooter(width, labelsBottom + 10, notes, source || undefined);
 
-    // Source
-    if (source) {
-      svg += svgSource(width, height, source);
-    }
-
-    return svgWrapper(width, height, svg);
-  }, [slopeData, showValues, title, subtitle, source, startCol, endCol, inputMode, groupValues, dataset.columns]);
+    return svgWrapper(width, footer.height, svg + footer.svg);
+  }, [slopeData, slope.notes, showValues, title, subtitle, source, startLabel, endLabel, inputMode, aggMode, categoryCol, groupCol, valueCol, locale, colLabel]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
-    const startLabel = inputMode === 'two-columns'
-      ? (dataset.columns.find(c => c.key === startCol)?.label || 'Start')
-      : groupValues[0] || 'Start';
-    const endLabel = inputMode === 'two-columns'
-      ? (dataset.columns.find(c => c.key === endCol)?.label || 'End')
-      : groupValues[1] || 'End';
     const columns = [
-      { header: 'Category', key: 'category' },
+      { header: colLabel(categoryCol) || 'Category', key: 'category' },
       { header: startLabel, key: 'startValue' },
       { header: endLabel, key: 'endValue' },
     ];
@@ -244,14 +263,12 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
     }));
     return {
       title,
-      subtitle: subtitle || undefined,
+      subtitle: subtitle ? `${subtitle} (${statistic})` : statistic,
       source: source || undefined,
       columns,
       rows,
     };
-  }, [slopeData, inputMode, startCol, endCol, groupValues, title, subtitle, source, dataset.columns]);
-
-  const displayTitle = title || 'Slope Chart';
+  }, [slopeData, categoryCol, startLabel, endLabel, statistic, title, subtitle, source, colLabel]);
 
   return (
     <div className="flex gap-6">
@@ -261,7 +278,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
 
           <VisualizationTip
-            tip="Slope charts excel at showing change between exactly two time points. Color-coding by direction (green for increase, red for decrease) makes trends immediately visible across many categories."
+            tip="Slope charts excel at showing change between exactly two time points. Each line is coloured by its direction (blue for an increase, orange for a decrease), so rises and falls stand out across many categories."
             context="Best for comparing before/after or two-period data. If you need more than two time points, use a line chart instead."
           />
 
@@ -330,10 +347,9 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
           <VariableMapper
             label="Category"
             description="Labels for each slope line"
-            columns={dataset.columns}
+            columns={catColumns}
             value={categoryCol}
             onChange={setCategoryCol}
-            filterTypes={['text', 'categorical']}
             required
           />
 
@@ -360,28 +376,53 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
             </>
           ) : (
             <>
-              <VariableMapper
-                label="Value Column"
-                description="Numeric value for each data point"
-                columns={dataset.columns}
-                value={valueCol}
-                onChange={setValueCol}
-                filterTypes={['number']}
-                required
-              />
+              {needsValueCol && (
+                <VariableMapper
+                  label="Value Column"
+                  description="Numeric value for each data point"
+                  columns={dataset.columns}
+                  value={valueCol}
+                  onChange={setValueCol}
+                  filterTypes={['number']}
+                  required
+                />
+              )}
               <VariableMapper
                 label="Group Column"
-                description="Column with exactly 2 groups (e.g., Before/After)"
-                columns={dataset.columns}
+                description="The two periods or conditions compared (e.g., Before/After)"
+                columns={catColumns}
                 value={groupCol}
                 onChange={setGroupCol}
-                filterTypes={['text', 'categorical']}
                 required
               />
-              {groupCol && !hasTwoGroups && groupValues.length > 0 && (
+              {groupCol && groupValues.length < 2 && (
                 <p className="text-xs text-red-600 -mt-1">
-                  Found {groupValues.length} groups. Slope chart requires exactly 2.
+                  Found {groupValues.length} group{groupValues.length === 1 ? '' : 's'}. A slope chart needs two.
                 </p>
+              )}
+              {groupValues.length >= 2 && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start (left)</label>
+                    <select
+                      value={startGroup}
+                      onChange={(e) => setStartGroupChoice(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                    >
+                      {groupValues.map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End (right)</label>
+                    <select
+                      value={endGroup}
+                      onChange={(e) => setEndGroupChoice(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                    >
+                      {groupValues.filter(v => v !== startGroup).map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                </div>
               )}
             </>
           )}
@@ -423,7 +464,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
             <input
               type="text"
               value={title}
-              onChange={e => setTitle(e.target.value)}
+              onChange={e => setTitleOverride(e.target.value)}
               placeholder="Chart title"
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
@@ -455,9 +496,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       <div className="flex-1 min-w-0">
         {svgContent ? (
           <ChartContainer
-            title={displayTitle}
-            subtitle={subtitle || undefined}
-            source={source || undefined}
+            title={title}
             svgContent={svgContent}
             excelData={excelData}
             filename="slope-chart"

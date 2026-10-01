@@ -1,15 +1,24 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { ResultsActions, ExportIcons } from '../../shared';
-import { exportPNG, copyChartToClipboard, exportExcel } from '../../../utils/chartExport';
+import {
+  exportChartPNG,
+  exportChartSVG,
+  copyChartToClipboard,
+  exportExcel,
+  chartFilename,
+} from '../../../utils/chartExport';
 import type { ExcelExportData } from '../../../utils/chartExport';
 
 interface ChartContainerProps {
+  /** The chart's title. Names the downloaded files; the drawing carries its own copy. */
   title: string;
+  /** Accepted for the callers that pass them; the drawing shows both itself. */
   subtitle?: string;
   source?: string;
-  svgContent?: string;  // SVG string used for PNG export and clipboard
+  svgContent?: string;  // SVG string used for PNG and SVG export and the clipboard
   children: ReactNode;
+  /** Filename used when the title is empty or has nothing a file system accepts. */
   filename?: string;
   excelData?: ExcelExportData;  // Structured data for Excel export
 }
@@ -26,13 +35,36 @@ const ExcelIcon = (
   </svg>
 );
 
-export function ChartContainer({ title, subtitle, source, svgContent, children, filename = 'chart', excelData }: ChartContainerProps) {
-  const chartRef = useRef<HTMLDivElement>(null);
+const VectorIcon = (
+  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-4 h-4">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v11m0 0l-4-4m4 4l4-4" />
+  </svg>
+);
+
+export function ChartContainer({ title, svgContent, children, filename = 'chart', excelData }: ChartContainerProps) {
   const [copyLabel, setCopyLabel] = useState('Copy to Clipboard');
+  const [exportError, setExportError] = useState('');
+
+  // Every chart names its files after its title, so a folder of exported
+  // figures can be told apart.
+  const baseName = chartFilename(title, filename);
 
   const handleExportPNG = async () => {
-    if (svgContent) {
-      await exportPNG(svgContent, `${filename}.png`);
+    if (!svgContent) return;
+    const ok = await exportChartPNG(svgContent, `${baseName}.png`);
+    setExportError(ok
+      ? ''
+      : 'The PNG could not be created. Try Export SVG, or shorten any unusually long labels and try again.');
+  };
+
+  const handleExportSVG = () => {
+    if (!svgContent) return;
+    try {
+      exportChartSVG(svgContent, `${baseName}.svg`);
+      setExportError('');
+    } catch (err) {
+      console.error('SVG export failed:', err);
+      setExportError('The SVG could not be created.');
     }
   };
 
@@ -51,39 +83,36 @@ export function ChartContainer({ title, subtitle, source, svgContent, children, 
 
   const handleExportExcel = async () => {
     if (excelData) {
-      await exportExcel(excelData, `${filename}.xlsx`);
+      await exportExcel(excelData, `${baseName}.xlsx`);
     }
   };
 
   const actions = [
     { label: 'Export PNG', onClick: handleExportPNG, icon: ExportIcons.image, disabled: !svgContent },
+    { label: 'Export SVG', onClick: handleExportSVG, icon: VectorIcon, variant: 'secondary' as const, disabled: !svgContent },
     { label: copyLabel, onClick: handleCopyToClipboard, icon: ClipboardIcon, variant: 'secondary' as const, disabled: !svgContent },
     { label: 'Export to Excel', onClick: handleExportExcel, icon: ExcelIcon, variant: 'secondary' as const, disabled: !excelData },
   ];
 
   return (
     <div>
-      <div ref={chartRef} className="bg-white border border-gray-200 rounded-lg p-3 sm:p-6">
-        {/* Chart header */}
-        <div className="mb-4">
-          <h3 className="text-base sm:text-lg font-bold text-gray-900">{title}</h3>
-          {subtitle && <p className="text-xs sm:text-sm text-gray-500 mt-1">{subtitle}</p>}
-        </div>
-
-        {/* Chart content - scales SVGs to fit container on mobile */}
+      {/* The title, subtitle and source are part of the drawing, so what is on
+          screen is what is exported. They used to be repeated here in HTML,
+          which showed each of them twice. */}
+      <div className="bg-white border border-gray-200 rounded-lg p-3 sm:p-6">
+        {/* Chart content - the SVG scales down to fit a narrow container */}
         <div className="overflow-x-auto [&_svg]:max-w-full [&_svg]:h-auto">
           {children}
         </div>
-
-        {/* Source line */}
-        {source && (
-          <p className="text-xs text-gray-400 mt-4 pt-2 border-t border-gray-100">
-            Source: {source}
-          </p>
-        )}
       </div>
 
       <ResultsActions actions={actions} />
+
+      {exportError && (
+        <p role="alert" className="mt-2 text-sm text-red-700">
+          {exportError}
+        </p>
+      )}
     </div>
   );
 }

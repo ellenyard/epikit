@@ -10,14 +10,18 @@ const TYPE_BADGES: Record<string, { label: string; color: string }> = {
   text: { label: 'Text', color: 'bg-gray-100 text-gray-700' },
   categorical: { label: 'Category', color: 'bg-purple-100 text-purple-700' },
   date: { label: 'Date', color: 'bg-green-100 text-green-700' },
-  boolean: { label: 'Boolean', color: 'bg-amber-100 text-amber-700' },
+  boolean: { label: 'Yes/No', color: 'bg-amber-100 text-amber-700' },
 };
 
 export function DatasetSummary({ dataset }: DatasetSummaryProps) {
   const [expanded, setExpanded] = useState(false);
 
   const numericCount = dataset.columns.filter(c => c.type === 'number').length;
-  const categoricalCount = dataset.columns.filter(c => c.type === 'categorical' || c.type === 'text').length;
+  // Yes/No columns are categories too; leaving them out made the three counts
+  // add up to fewer columns than the dataset has.
+  const categoricalCount = dataset.columns.filter(
+    c => c.type === 'categorical' || c.type === 'text' || c.type === 'boolean'
+  ).length;
   const dateCount = dataset.columns.filter(c => c.type === 'date').length;
 
   return (
@@ -66,8 +70,8 @@ export function DatasetSummary({ dataset }: DatasetSummaryProps) {
             })}
           </div>
           <p className="text-xs text-gray-400 mt-3">
-            Choose a chart type below. Numeric columns work with bar, line, slope, bullet, and dot plots.
-            Categorical columns pair well with heatmaps, waffle charts, and paired bar charts.
+            Choose a chart type below. Category and Yes/No columns can be counted in any chart.
+            Numeric columns can be summarised (mean, sum or median) in bar, dot, line, slope, dumbbell and bullet charts.
           </p>
         </div>
       )}

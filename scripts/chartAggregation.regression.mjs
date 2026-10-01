@@ -26,7 +26,7 @@ try {
     outfile: bundled, logLevel: 'silent',
   });
 
-  const { aggregateByCategory, aggregatePairByCategory, countByCategoryAndGroup } =
+  const { aggregateByCategory, aggregatePairByCategory, countByCategoryAndGroup, crossAggregate } =
     await import(pathToFileURL(bundled).href);
 
   // North: values 10, 20, 30 plus two records with no value at all.
@@ -118,6 +118,72 @@ try {
     const total = rows.reduce((s, r) =>
       s + Object.values(r).filter(v => typeof v === 'number').reduce((a, b) => a + b, 0), 0);
     assert.equal(total, 4, 'every record counted exactly once, none twice');
+  }
+
+  // 7. Stray whitespace does not split a category, a whitespace-only cell is
+  //    missing rather than a category with a blank name, and a boolean stored by
+  //    an older import reads Yes or No. Each chart used to test `=== ''` and
+  //    call String(), which made " Female" and "Female" two bars and labelled a
+  //    Yes/No column "true" and "false".
+  {
+    const messy = [
+      { id: '1', sex: 'Female', hosp: true, v: 1 },
+      { id: '2', sex: ' Female', hosp: true, v: 2 },
+      { id: '3', sex: 'Female ', hosp: false, v: 3 },
+      { id: '4', sex: '   ', hosp: false, v: 4 },
+      { id: '5', sex: null, hosp: null, v: 5 },
+    ];
+    const rows = aggregateByCategory(messy, 'sex', 'v', 'count');
+    assert.deepEqual(rows.map(r => r.category), ['Female'], 'three spellings of Female are one category');
+    assert.equal(by(rows, 'Female').value, 3);
+
+    const hosp = aggregateByCategory(messy, 'hosp', 'v', 'count');
+    assert.deepEqual(hosp.map(r => r.category).sort(), ['No', 'Yes'], 'booleans are labelled Yes and No');
+    assert.equal(by(hosp, 'Yes').value, 2);
+  }
+
+  // 8. The cross table behind the grouped bar, the pyramid, the heatmap and the
+  //    two-group slope. It reports what it left out, which none of those charts
+  //    used to: a figure of percentages gave no hint it was a percentage of the
+  //    records that happened to have both answers.
+  {
+    const records = [
+      { id: '1', age: '0-4', sex: 'F', w: 10 },
+      { id: '2', age: '0-4', sex: 'F', w: 20 },
+      { id: '3', age: '0-4', sex: 'M', w: 30 },
+      { id: '4', age: '5-9', sex: 'M', w: '' },      // no value
+      { id: '5', age: '5-9', sex: 'Unknown', w: 5 }, // a third group
+      { id: '6', age: '', sex: 'F', w: 1 },          // no category
+      { id: '7', age: '5-9', sex: null, w: 1 },      // no group
+    ];
+
+    const counts = crossAggregate(records, 'age', 'sex', null, 'count');
+    assert.equal(counts.cells.get('0-4').get('F').value, 2);
+    assert.equal(counts.cells.get('5-9').get('M').value, 1,
+      'counting does not read the value column, so a record with no value still counts');
+    assert.equal(crossAggregate(records, 'age', 'sex', 'w', 'count').cells.get('5-9').get('M').value, 1,
+      'nor does naming a value column make counting depend on it');
+    assert.equal(counts.excludedMissing, 2, 'the two records with no category or no group');
+    assert.equal(counts.excludedOtherGroup, 0);
+
+    // A pyramid draws two groups and must say how many records were in a third.
+    const pyramid = crossAggregate(records, 'age', 'sex', null, 'count', ['F', 'M']);
+    assert.equal(pyramid.excludedOtherGroup, 1, 'the Unknown record is reported, not silently dropped');
+    assert.deepEqual(pyramid.groups.sort(), ['F', 'M']);
+
+    const means = crossAggregate(records, 'age', 'sex', 'w', 'mean');
+    assert.equal(means.cells.get('0-4').get('F').value, 15, 'mean of 10 and 20');
+    assert.equal(means.cells.get('0-4').get('F').n, 2);
+    assert.equal(means.cells.get('5-9')?.get('M'), undefined, 'a cell with no value has no mean, not a mean of zero');
+    assert.equal(means.excludedMissing, 3, 'no category, no group, and no value');
+
+    const sums = crossAggregate(records, 'age', 'sex', 'w', 'sum');
+    assert.equal(sums.cells.get('0-4').get('F').value, 30);
+
+    // Every record is either in a cell or counted as excluded: none vanish.
+    const inCells = [...counts.cells.values()].reduce(
+      (s, row) => s + [...row.values()].reduce((a, c) => a + c.n, 0), 0);
+    assert.equal(inCells + counts.excludedMissing + counts.excludedOtherGroup, records.length);
   }
 
   console.log('chartAggregation regression: all checks passed');
