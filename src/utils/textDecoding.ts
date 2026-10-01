@@ -65,5 +65,38 @@ export function decodeText(buffer: ArrayBuffer, fallback: string = 'windows-1252
     // Not UTF-8; fall through.
   }
 
-  return { text: new TextDecoder(fallback).decode(bytes), encoding: fallback, assumed: true };
+  const text = fallback === 'windows-1252'
+    ? decodeWindows1252(bytes)
+    : new TextDecoder(fallback).decode(bytes);
+  return { text, encoding: fallback, assumed: true };
+}
+
+/**
+ * The characters Windows-1252 puts at 0x80-0x9F, where Latin-1 has control
+ * codes: the euro sign, curly quotes, dashes and a few letters. The five
+ * unassigned bytes map to the control code of the same value, as browsers do.
+ */
+const WINDOWS_1252_HIGH = [
+  0x20ac, 0x0081, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021,
+  0x02c6, 0x2030, 0x0160, 0x2039, 0x0152, 0x008d, 0x017d, 0x008f,
+  0x0090, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022, 0x2013, 0x2014,
+  0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x009d, 0x017e, 0x0178,
+];
+
+/**
+ * Decode Windows-1252 without relying on the runtime's own table. Some
+ * runtimes treat the label as Latin-1 and return control codes for the euro
+ * sign and curly quotes; this is the default fallback, so it has to be right
+ * everywhere. Every other byte is the code point of the same value.
+ */
+function decodeWindows1252(bytes: Uint8Array): string {
+  const CHUNK = 8192;
+  let text = '';
+  for (let start = 0; start < bytes.length; start += CHUNK) {
+    const codes = Array.from(bytes.subarray(start, start + CHUNK), byte =>
+      byte >= 0x80 && byte <= 0x9f ? WINDOWS_1252_HIGH[byte - 0x80] : byte
+    );
+    text += String.fromCharCode(...codes);
+  }
+  return text;
 }

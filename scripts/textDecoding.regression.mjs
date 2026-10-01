@@ -41,6 +41,23 @@ try {
   // Characters Windows-1252 has and Latin-1 does not: the euro and curly quotes.
   d = decodeText(bytes(Buffer.from([0x80, 0x20, 0x93, 0x61, 0x94, 0x20, 0xe9])));
   assert.equal(d.text, '€ “a” é');
+  // Every byte, against the published Windows-1252 table, so the result does
+  // not depend on which runtime decodes it.
+  {
+    const all = decodeText(bytes(Buffer.from([0xe9, ...Array.from({ length: 256 }, (_, i) => i)]))).text.slice(1);
+    assert.equal(all.length, 256);
+    const high = '\u20ac\u0081\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u008d\u017d\u008f'
+      + '\u0090\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u009d\u017e\u0178';
+    assert.equal(all.slice(0x80, 0xa0), high, 'the 0x80-0x9F block follows the Windows-1252 table');
+    for (let i = 0; i < 256; i++) {
+      if (i >= 0x80 && i <= 0x9f) continue;
+      assert.equal(all.charCodeAt(i), i, `byte ${i} keeps its own code point`);
+    }
+    // A file larger than one decoding chunk keeps its length and its last character.
+    const big = decodeText(bytes(Buffer.concat([Buffer.alloc(20000, 0x61), Buffer.from([0xe9, 0x80])]))).text;
+    assert.equal(big.length, 20002);
+    assert.equal(big.slice(-2), 'é€');
+  }
 
   // Another single-byte encoding when the caller names one: Cyrillic.
   d = decodeText(bytes(Buffer.from([0xc8, 0xe2, 0xe0, 0xed])), 'windows-1251');
