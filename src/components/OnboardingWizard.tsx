@@ -130,7 +130,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 </div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-4">Welcome to LineList!</h3>
                 <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                  Your complete toolkit for outbreak investigation and epidemiological analysis
+                  An outbreak and surveillance data toolkit that runs in your browser
                 </p>
               </div>
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDialog } from '../hooks/useDialog';
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO, FEEDBACK_PRIVACY_NOTE } from '../utils/contact';
+import { APP_VERSION, RELEASE_DATE } from '../utils/release';
 
 interface HelpCenterProps {
   isOpen: boolean;
@@ -388,7 +389,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <h4 className="text-lg font-semibold text-gray-800 mb-4">About LineList</h4>
                   <div className="space-y-3 text-sm text-gray-700">
                     <p>
-                      LineList is a web application designed for outbreak investigation and epidemiological analysis.
+                      LineList is an outbreak and surveillance data toolkit that runs in your web browser.
                       Built for junior epidemiologists and public health professionals, it provides essential tools for data
                       quality assurance and statistical analysis, all without requiring coding skills.
                     </p>
@@ -406,11 +407,11 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <div className="grid md:grid-cols-2 gap-4 mt-4">
                       <div className="border border-gray-200 rounded-lg p-4">
                         <h5 className="font-medium text-gray-800 mb-1">Version</h5>
-                        <p className="text-gray-600">1.0.0</p>
+                        <p className="text-gray-600">{APP_VERSION}</p>
                       </div>
                       <div className="border border-gray-200 rounded-lg p-4">
                         <h5 className="font-medium text-gray-800 mb-1">Release Date</h5>
-                        <p className="text-gray-600">January 2026</p>
+                        <p className="text-gray-600">{RELEASE_DATE}</p>
                       </div>
                     </div>
                   </div>
@@ -493,7 +494,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     </p>
 
                     <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 font-mono text-xs">
-                      Data analysis was conducted using LineList (version 1.0.0), a web-based epidemiological analysis tool designed for outbreak investigation. Available at: https://linelist.org
+                      Data analysis was conducted using LineList (version {APP_VERSION}), a browser-based outbreak and surveillance data toolkit. Available at: https://linelist.org
                     </div>
                   </div>
                 </section>
