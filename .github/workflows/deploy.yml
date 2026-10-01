@@ -55,9 +55,9 @@ jobs:
 
       - name: Tests
         run: |
+          npm run test:area-map
           npm run test:csv
           npm run test:locale
-          npm run test:area-map
           npm run test:labels
           npm run test:chart-defaults
           npm run test:statistics
@@ -75,6 +75,18 @@ jobs:
           npm run test:record-filter
           npm run test:focus-trap
           npm run test:case-definition
+          npm run test:epicurve-dates
+          npm run test:epicurve-svg
+          npm run test:date-detection
+          npm run test:text-decoding
+          npm run test:edit-log
+          npm run test:two-by-two-setup
+          npm run test:two-by-two-interpretation
+          npm run test:stat-format
+          npm run test:chart-format
+          npm run test:chart-categories
+          npm run test:chart-export
+          npm run test:coordinates
         timeout-minutes: 10
 
       - name: Build
