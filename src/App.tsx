@@ -62,7 +62,7 @@ const [DEMO_DATASET_ID, DEMO_NUTRITION_DATASET_ID, DEMO_SURVEILLANCE_DATASET_ID]
   SAMPLE_DATASET_IDS;
 // Bump this version whenever demo data in demoData.ts changes.
 // Existing users with stale demo data will get the updated version automatically.
-const DEMO_DATA_VERSION = 7;
+const DEMO_DATA_VERSION = 8;
 
 interface InitialAppEntry {
   activeModule: Module;
@@ -112,7 +112,7 @@ function getInitialAppEntry(): InitialAppEntry {
 /** Creates the demo dataset with sample outbreak investigation data */
 const createDemoDataset = (): Dataset => ({
   id: DEMO_DATASET_ID,
-  name: 'Foodborne Outbreak Investigation - Submissions',
+  name: 'Foodborne Outbreak Investigation',
   source: 'form',
   columns: demoColumns,
   records: demoCaseRecords,
@@ -903,7 +903,11 @@ function App() {
             <select
               value={activeDatasetId || ''}
               onChange={(e) => setActiveDatasetId(e.target.value || null)}
-              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white min-w-0 w-full sm:w-auto sm:min-w-[200px]"
+              // Truncated, with a zero basis on narrow screens: Safari counts a
+              // long dataset name inside the control as page overflow
+              // otherwise, and the whole app could be dragged sideways on a
+              // phone.
+              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white truncate min-w-0 w-0 flex-1 sm:flex-none sm:w-auto sm:min-w-[200px] sm:max-w-xl"
             >
               <option value="">Select a dataset...</option>
               {datasets.map(d => (

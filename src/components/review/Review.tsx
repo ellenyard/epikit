@@ -516,6 +516,9 @@ export function Review({
                   {/* Mobile Filter Panel */}
                   {showFilters && (
                     <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-2">
+                        These filters change what this table shows. The Epi Curve, Maps and Analysis tools have their own Filter and start from the full dataset.
+                      </p>
                       <div className="space-y-2">
                         {filters.map((filter, index) => (
                           <div key={index} className="space-y-2">
@@ -637,6 +640,11 @@ export function Review({
               {/* Filter Panel */}
               {showFilters && (
                 <div className="p-3 bg-gray-50 rounded-lg">
+                  {/* A filter set here used to look as if it carried into the
+                      analysis tools; it never did, so say so where it is set. */}
+                  <p className="text-xs text-gray-600 mb-2">
+                    These filters change what this table shows. The Epi Curve, Maps and Analysis tools have their own Filter and start from the full dataset.
+                  </p>
                   <div className="space-y-2">
                     {filters.map((filter, index) => (
                       <div key={index} className="space-y-2">
