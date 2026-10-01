@@ -141,6 +141,47 @@ try {
     assert.ok(ms < 2000, `binning 200k values should not take ${Math.round(ms)}ms`);
   }
 
+  // 13. Decimal data on bin edges. 0.6 / 0.2 is 2.9999999999999996 in binary
+  //     floating point, so a value exactly on a bin's lower edge was counted
+  //     in the bin below. Temperatures recorded every 0.2 degrees, one reading
+  //     each, came out as 2, 1, 0, 2, 0, 2, ... instead of one per bin.
+  {
+    const temps = [36.6, 36.8, 37.0, 37.2, 37.4, 37.6, 37.8, 38.0, 38.2, 38.4, 38.6, 38.8, 39.0, 39.2, 39.4];
+    const r = computeHistogram(temps, 0.2);
+    assert.equal(total(r), temps.length);
+    // Fifteen readings span fourteen bins; each holds one, and the last holds
+    // two because the maximum sits on the closed top edge (test 2).
+    assert.deepEqual(r.bins.map(b => b.count), [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2],
+      'each reading belongs to the bin it starts');
+
+    // 0.0 to 0.9 in tenths, three of each, at width 0.2: six per bin.
+    const tenths = [];
+    for (let i = 0; i < 30; i++) tenths.push((i % 10) / 10);
+    assert.deepEqual(computeHistogram(tenths, 0.2).bins.map(b => b.count), [6, 6, 6, 6, 6],
+      'values on decimal bin edges are not pushed into the bin below');
+
+    // The first bin starts at the minimum when the minimum is on an edge,
+    // rather than one bin lower.
+    const fromSix = computeHistogram([0.6, 0.7, 0.8, 0.9], 0.2);
+    assert.ok(Math.abs(fromSix.bins[0].binStart - 0.6) < 1e-9,
+      `the first bin should start at 0.6, got ${fromSix.bins[0].binStart}`);
+
+    // A value genuinely inside a bin is not moved by the edge tolerance.
+    const inside = computeHistogram([0, 0.1999, 0.2, 0.3999, 0.4], 0.2);
+    assert.deepEqual(inside.bins.map(b => b.count), [2, 3], '0.1999 stays below 0.2; 0.2 and 0.3999 share a bin with the maximum');
+  }
+
+  // 14. Axis tick labels carry the decimals the width needs. Rounded to whole
+  //     numbers, bins of width 0.2 were labelled 0, 0, 0, 1, 1.
+  {
+    assert.deepEqual(computeHistogram([0, 0.9], 0.2).bins.map(b => b.startLabel),
+      ['0.0', '0.2', '0.4', '0.6', '0.8']);
+    assert.deepEqual(computeHistogram([0, 19], 5).bins.map(b => b.startLabel), ['0', '5', '10', '15'],
+      'whole-number widths keep whole-number ticks');
+    assert.deepEqual(computeHistogram([1, 1.9], 0.25).bins.map(b => b.startLabel),
+      ['1.00', '1.25', '1.50', '1.75']);
+  }
+
   console.log('histogram bins regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

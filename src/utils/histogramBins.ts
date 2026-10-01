@@ -17,6 +17,8 @@ export interface HistogramBin {
   binEnd: number;
   count: number;
   label: string;
+  /** The lower edge alone, for an axis tick, with as many decimals as the width needs. */
+  startLabel: string;
 }
 
 export interface HistogramResult {
@@ -39,6 +41,28 @@ function labelPrecision(binWidth: number): number {
   if (!Number.isFinite(binWidth) || binWidth <= 0) return 1;
   if (binWidth >= 1) return 1;
   return Math.min(6, Math.ceil(-Math.log10(binWidth)) + 1);
+}
+
+/** Decimals needed to write the bin width itself: 0 for 5, 1 for 0.2, 2 for 0.25. */
+function widthDecimals(binWidth: number): number {
+  for (let d = 0; d <= 6; d++) {
+    if (Math.abs(binWidth - Number(binWidth.toFixed(d))) < 1e-9 * Math.max(1, Math.abs(binWidth))) return d;
+  }
+  return 6;
+}
+
+/**
+ * A quotient that should be a whole number but is not quite, because the
+ * operands are decimal fractions: 0.6 / 0.2 is 2.9999999999999996 and
+ * 38.4 - 36 over 0.2 is 11.999999999999993. Floored as they stand, a value
+ * sitting exactly on a bin's lower edge is counted in the bin below, so
+ * temperatures recorded to 0.2 came out as 2, 1, 0, 2, 0 instead of one per
+ * bin. Snapping to the nearest integer when within rounding error fixes that
+ * without moving any value that is genuinely inside a bin.
+ */
+function snap(quotient: number): number {
+  const nearest = Math.round(quotient);
+  return Math.abs(quotient - nearest) < 1e-9 * Math.max(1, Math.abs(nearest)) ? nearest : quotient;
 }
 
 export function computeHistogram(
@@ -65,8 +89,8 @@ export function computeHistogram(
 
   const limit = Math.max(1, Math.floor(maxBins));
   let binWidth = requestedBinWidth;
-  let binStart = Math.floor(min / binWidth) * binWidth;
-  let binEnd = Math.ceil(max / binWidth) * binWidth;
+  let binStart = Math.floor(snap(min / binWidth)) * binWidth;
+  let binEnd = Math.ceil(snap(max / binWidth)) * binWidth;
   let binCount = Math.max(1, Math.round((binEnd - binStart) / binWidth));
 
   // Widen until the histogram is drawable. Recomputing the edges each time
@@ -75,8 +99,8 @@ export function computeHistogram(
   let guard = 0;
   while (binCount > limit && guard < 64) {
     binWidth *= Math.max(2, Math.ceil(binCount / limit));
-    binStart = Math.floor(min / binWidth) * binWidth;
-    binEnd = Math.ceil(max / binWidth) * binWidth;
+    binStart = Math.floor(snap(min / binWidth)) * binWidth;
+    binEnd = Math.ceil(snap(max / binWidth)) * binWidth;
     binCount = Math.max(1, Math.round((binEnd - binStart) / binWidth));
     widened = true;
     guard++;
@@ -87,13 +111,14 @@ export function computeHistogram(
     // Clamping covers both ends: float drift below binStart, and the maximum
     // value landing exactly on the final edge, which would otherwise fall out
     // of the histogram entirely.
-    let index = Math.floor((v - binStart) / binWidth);
+    let index = Math.floor(snap((v - binStart) / binWidth));
     if (index < 0) index = 0;
     if (index >= binCount) index = binCount - 1;
     counts[index]++;
   }
 
   const decimals = labelPrecision(binWidth);
+  const tickDecimals = widthDecimals(binWidth);
   const bins: HistogramBin[] = [];
   for (let i = 0; i < binCount; i++) {
     const start = binStart + i * binWidth;
@@ -103,6 +128,7 @@ export function computeHistogram(
       binEnd: end,
       count: counts[i],
       label: `${start.toFixed(decimals)} - ${end.toFixed(decimals)}`,
+      startLabel: start.toFixed(tickDecimals),
     });
   }
 

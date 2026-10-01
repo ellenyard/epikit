@@ -14,7 +14,8 @@
  *    - Attributable Risk Percent
  *    - Chi-square test (Yates' correction, clamped at zero so the correction
  *      never inflates the statistic when |O-E| < 0.5)
- *    - Fisher's exact test (for small samples, n≤100)
+ *    - Fisher's exact test (two-sided), with the smallest expected count
+ *      reported so callers can tell when it is the test to quote
  *
  * 2. CONFIDENCE INTERVAL CALCULATIONS (lines ~98-151)
  *    - Log-based methods for ratio measures (RR, OR)
@@ -82,10 +83,25 @@ export interface TwoByTwoResults {
   riskDifferenceCI: [number, number];
   attributableRiskPercent: number;
 
+  /**
+   * True when a cell is zero and the odds ratio and its interval were
+   * calculated after adding 0.5 to every cell. The uncorrected ratio is 0 or
+   * undefined, so a caller showing this number has to say what it is.
+   */
+  oddsRatioCorrected: boolean;
+
   // Statistical tests
+  /** Chi-square with Yates' continuity correction. */
   chiSquare: number;
   chiSquarePValue: number;
+  /** Two-sided. Null when a whole row or column of the table is empty. */
   fisherExactPValue: number | null;
+  /**
+   * Smallest expected cell count; NaN when a whole row or column is empty.
+   * Below 5 the chi-square approximation is unreliable and Fisher's exact test
+   * is the one to quote.
+   */
+  minExpectedCount: number;
 }
 
 export function calculateTwoByTwo(table: TwoByTwoTable): TwoByTwoResults {
@@ -135,8 +151,15 @@ export function calculateTwoByTwo(table: TwoByTwoTable): TwoByTwoResults {
   // Chi-square test
   const chiSquareResult = calculateChiSquare(a, b, c, d, total);
 
-  // Fisher's exact test (only for small samples)
-  const fisherExactPValue = total <= 100 ? calculateFisherExact(a, b, c, d) : null;
+  // Fisher's exact test. It used to be computed only for n <= 100, which left
+  // nothing exact to quote for a large table with one sparse cell (a rare
+  // exposure in a big cohort), exactly where chi-square is least reliable.
+  // The sum runs over every table with these margins, so it is skipped only
+  // for margins in the millions, where it would stall the page.
+  const fisherExactPValue =
+    hasZeroMarginal || Math.min(totalExposed, totalUnexposed, totalDisease, totalNoDisease) > 1_000_000
+      ? null
+      : calculateFisherExact(a, b, c, d);
 
   return {
     table,
@@ -155,9 +178,11 @@ export function calculateTwoByTwo(table: TwoByTwoTable): TwoByTwoResults {
     riskDifference,
     riskDifferenceCI,
     attributableRiskPercent,
+    oddsRatioCorrected: hasZeroCell && !hasZeroMarginal,
     chiSquare: chiSquareResult.chiSquare,
     chiSquarePValue: chiSquareResult.pValue,
     fisherExactPValue,
+    minExpectedCount: chiSquareResult.minExpectedCount,
   };
 }
 
@@ -226,7 +251,7 @@ function calculateRiskDifferenceCI(a: number, b: number, c: number, d: number): 
   return [rd - 1.96 * se, rd + 1.96 * se];
 }
 
-function calculateChiSquare(a: number, b: number, c: number, d: number, n: number): { chiSquare: number; pValue: number } {
+function calculateChiSquare(a: number, b: number, c: number, d: number, n: number): { chiSquare: number; pValue: number; minExpectedCount: number } {
   const totalExposed = a + b;
   const totalUnexposed = c + d;
   const totalDisease = a + c;
@@ -235,7 +260,7 @@ function calculateChiSquare(a: number, b: number, c: number, d: number, n: numbe
   // Undefined when the table is empty or an entire marginal total is zero
   // (expected counts would be 0/NaN); callers must treat NaN as "not computable"
   if (n === 0 || totalExposed === 0 || totalUnexposed === 0 || totalDisease === 0 || totalNoDisease === 0) {
-    return { chiSquare: NaN, pValue: NaN };
+    return { chiSquare: NaN, pValue: NaN, minExpectedCount: NaN };
   }
 
   // Expected values
@@ -260,7 +285,7 @@ function calculateChiSquare(a: number, b: number, c: number, d: number, n: numbe
   // P-value from chi-square distribution with 1 df
   const pValue = 1 - chiSquareCDF(chiSquare, 1);
 
-  return { chiSquare, pValue };
+  return { chiSquare, pValue, minExpectedCount: Math.min(expA, expB, expC, expD) };
 }
 
 // =============================================================================
@@ -348,7 +373,8 @@ function logGamma(x: number): number {
 // =============================================================================
 // FISHER'S EXACT TEST
 // Exact test for 2×2 tables using hypergeometric distribution
-// Recommended when any expected cell count < 5 or total n ≤ 100
+// Two-sided: sums the probability of every table as likely as, or less likely
+// than, the one observed. Recommended when any expected cell count is below 5.
 // =============================================================================
 
 function calculateFisherExact(a: number, b: number, c: number, d: number): number {
@@ -366,7 +392,10 @@ function calculateFisherExact(a: number, b: number, c: number, d: number): numbe
 
   for (let i = minA; i <= maxA; i++) {
     const p = hypergeometricPMF(i, rowTotals[0], colTotals[0], n);
-    if (p <= pObserved + 1e-10) {
+    // Relative tolerance, as R's fisher.test uses. The absolute 1e-10 it
+    // replaces swept in every table once the observed probability itself fell
+    // below 1e-10, flooring the p-value there.
+    if (p <= pObserved * (1 + 1e-7)) {
       pValue += p;
     }
   }
@@ -403,8 +432,17 @@ export interface DescriptiveStats {
   missing: number;
   mean: number;
   median: number;
+  /** The first mode in ascending order; null when no value repeats. */
   mode: number | null;
+  /**
+   * Every value tied for most frequent, ascending. Empty when no value repeats.
+   * `mode` alone named whichever tied value came first in the file, so the
+   * same data in a different row order reported a different mode.
+   */
+  modes: number[];
+  /** Sample standard deviation (n - 1). NaN for a single observation. */
   stdDev: number;
+  /** Sample variance (n - 1). NaN for a single observation. */
   variance: number;
   min: number;
   max: number;
@@ -427,6 +465,7 @@ export function calculateDescriptiveStats(values: number[]): DescriptiveStats {
       mean: NaN,
       median: NaN,
       mode: null,
+      modes: [],
       stdDev: NaN,
       variance: NaN,
       min: NaN,
@@ -443,9 +482,11 @@ export function calculateDescriptiveStats(values: number[]): DescriptiveStats {
   const sum = validValues.reduce((acc, v) => acc + v, 0);
   const mean = sum / n;
 
-  // Variance and standard deviation
+  // Sample variance and standard deviation (n - 1). One observation has no
+  // spread to estimate: reporting 0 says the data do not vary, which is a
+  // different claim from not knowing.
   const squaredDiffs = validValues.map(v => Math.pow(v - mean, 2));
-  const variance = squaredDiffs.reduce((acc, v) => acc + v, 0) / (n - 1 || 1);
+  const variance = n > 1 ? squaredDiffs.reduce((acc, v) => acc + v, 0) / (n - 1) : NaN;
   const stdDev = Math.sqrt(variance);
 
   // Median
@@ -453,12 +494,15 @@ export function calculateDescriptiveStats(values: number[]): DescriptiveStats {
     ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
     : sorted[Math.floor(n / 2)];
 
-  // Quartiles
+  // Quartiles by linear interpolation between order statistics (R type 7,
+  // Excel QUARTILE.INC). Other packages use other rules, so small samples can
+  // differ slightly from a hand calculation by the (n + 1) method.
   const q1 = percentile(sorted, 25);
   const q3 = percentile(sorted, 75);
 
   // Mode
-  const mode = calculateMode(validValues);
+  const modes = calculateModes(validValues);
+  const mode = modes.length > 0 ? modes[0] : null;
 
   return {
     count: n,
@@ -466,6 +510,7 @@ export function calculateDescriptiveStats(values: number[]): DescriptiveStats {
     mean,
     median,
     mode,
+    modes,
     stdDev,
     variance,
     min: sorted[0],
@@ -489,22 +534,22 @@ function percentile(sorted: number[], p: number): number {
   return sorted[lower] * (1 - weight) + sorted[upper] * weight;
 }
 
-function calculateMode(values: number[]): number | null {
+function calculateModes(values: number[]): number[] {
   const counts = new Map<number, number>();
   let maxCount = 0;
-  let mode: number | null = null;
 
   for (const v of values) {
     const count = (counts.get(v) || 0) + 1;
     counts.set(v, count);
-    if (count > maxCount) {
-      maxCount = count;
-      mode = v;
-    }
+    if (count > maxCount) maxCount = count;
   }
 
-  // Return null if no value appears more than once
-  return maxCount > 1 ? mode : null;
+  // No mode if no value appears more than once
+  if (maxCount <= 1) return [];
+  return [...counts.entries()]
+    .filter(([, count]) => count === maxCount)
+    .map(([value]) => value)
+    .sort((a, b) => a - b);
 }
 
 // =============================================================================
@@ -578,6 +623,12 @@ export interface ChiSquareResult {
   minExpectedCount: number;
   /** How many cells have an expected count below 5. */
   cellsBelowFive: number;
+  /**
+   * True when Yates' continuity correction was applied, which it is for a
+   * 2×2 table only. Callers name the test from this, so the cross-tab and the
+   * 2×2 analysis cannot report different p-values for one table unlabelled.
+   */
+  yatesCorrected: boolean;
 }
 
 export interface GroupComparisonRow {
@@ -664,7 +715,7 @@ function calculateChiSquareRC(
   grandTotal: number
 ): ChiSquareResult {
   if (grandTotal === 0 || rows.length < 2) {
-    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1, minExpectedCount: 0, cellsBelowFive: 0 };
+    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1, minExpectedCount: 0, cellsBelowFive: 0, yatesCorrected: false };
   }
 
   let chiSquare = 0;
@@ -702,6 +753,7 @@ function calculateChiSquareRC(
     pValue,
     minExpectedCount: Number.isFinite(minExpectedCount) ? minExpectedCount : 0,
     cellsBelowFive,
+    yatesCorrected: false,
   };
 }
 
@@ -787,8 +839,13 @@ function calculateChiSquareRxC(
   grandTotal: number
 ): ChiSquareResult {
   if (grandTotal === 0 || rows.length < 2 || columnValues.length < 2) {
-    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1, minExpectedCount: 0, cellsBelowFive: 0 };
+    return { chiSquare: 0, degreesOfFreedom: 0, pValue: 1, minExpectedCount: 0, cellsBelowFive: 0, yatesCorrected: false };
   }
+
+  // A 2×2 table gets Yates' continuity correction, as in the 2×2 analysis
+  // (and R's chisq.test). Uncorrected here and corrected there, the same table
+  // was "significant" in one tab and "not significant" in the other.
+  const yatesCorrected = rows.length === 2 && columnValues.length === 2;
 
   let chiSquare = 0;
   let minExpectedCount = Infinity;
@@ -803,7 +860,10 @@ function calculateChiSquareRxC(
       if (expected < 5) cellsBelowFive++;
 
       if (expected > 0) {
-        chiSquare += Math.pow(observed - expected, 2) / expected;
+        const difference = yatesCorrected
+          ? Math.max(Math.abs(observed - expected) - 0.5, 0)
+          : observed - expected;
+        chiSquare += Math.pow(difference, 2) / expected;
       }
     }
   }
@@ -820,5 +880,6 @@ function calculateChiSquareRxC(
     pValue,
     minExpectedCount: Number.isFinite(minExpectedCount) ? minExpectedCount : 0,
     cellsBelowFive,
+    yatesCorrected,
   };
 }

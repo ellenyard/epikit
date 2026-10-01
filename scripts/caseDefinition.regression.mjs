@@ -25,7 +25,9 @@ try {
     outfile: bundled, logLevel: 'silent',
   });
 
-  const { detectCaseValues, readsAsNonCase } = await import(pathToFileURL(bundled).href);
+  const {
+    detectCaseValues, readsAsNonCase, looksLikeOutcomeColumn, pickOutcomeColumn,
+  } = await import(pathToFileURL(bundled).href);
 
   // 1. The bundled outbreak data, which is exactly where this was found.
   {
@@ -90,6 +92,100 @@ try {
   {
     assert.deepEqual(detectCaseValues(['Group A', 'Group B']), [],
       'nothing recognisable yields no default selection');
+  }
+
+  // 8. A case word inside a longer word is not a case word. "Unconfirmed"
+  //    contains "confirmed" and "Improbable" contains "probable"; both were
+  //    ticked, so a Confirmed/Unconfirmed column made every record a case.
+  {
+    for (const value of [
+      'Unconfirmed', 'Improbable', 'Still well', 'Illness absent', 'Hillside',
+      'Greenville', 'Brazzaville', 'Libreville', 'Unconfirmed case', 'Killed',
+    ]) {
+      assert.deepEqual(detectCaseValues([value]), [], `${value} must not be selected`);
+    }
+    assert.deepEqual(detectCaseValues(['Confirmed', 'Unconfirmed']), ['Confirmed']);
+  }
+
+  // 9. Bare affirmatives, including a 1/0 or true/false coded outcome.
+  {
+    assert.deepEqual(detectCaseValues(['1', '0']), ['1']);
+    assert.deepEqual(detectCaseValues(['true', 'false']), ['true']);
+    assert.deepEqual(detectCaseValues(['Y', 'N']), ['Y']);
+    // "y" and "si" are only trusted as the whole value: "Fiebre y tos" is not a yes.
+    assert.deepEqual(detectCaseValues(['Fiebre y tos']), []);
+  }
+
+  // 10. French, Spanish and Portuguese, with and without accents. Negations in
+  //     each language win, as in English.
+  {
+    for (const value of [
+      'Confirmé', 'Confirmée', 'Cas confirmé', 'Cas probable', 'Suspect', 'Positif',
+      'Malade', 'Oui', 'Confirmado', 'Caso confirmado', 'Caso sospechoso', 'Positivo',
+      'Enfermo', 'Sí', 'Si', 'Caso suspeito', 'Provável', 'Doente', 'Sim',
+    ]) {
+      assert.deepEqual(detectCaseValues([value]), [value], `${value} must be selected`);
+    }
+    for (const value of [
+      'Non', 'Non-cas', 'Pas un cas', 'Cas non confirmé', 'Négatif', 'Écarté', 'Témoin',
+      'No', 'No es caso', 'Negativo', 'Descartado', 'Caso descartado', 'Não', 'Sem caso',
+      'Sain', 'Sano',
+    ]) {
+      assert.deepEqual(detectCaseValues([value]), [], `${value} must not be selected`);
+    }
+  }
+
+  // 11. Which column is the outcome. The name is matched on whole words: the
+  //     previous substring test chose "ville" and "village" (both contain
+  //     "ill") and "vaccination_status" (contains "status").
+  {
+    for (const name of ['ill', 'Ill', 'case_status', 'Case Status', 'caseStatus', 'is_case',
+      'sick', 'malade', 'cas', 'caso', 'enfermo', 'status', 'outcome', 'illness']) {
+      assert.equal(looksLikeOutcomeColumn(name), true, `${name} names an outcome`);
+    }
+    for (const name of ['ville', 'village', 'grilled_chicken', 'chilli', 'still_birth',
+      'vaccination_status', 'marital_status', 'pregnancy_outcome', 'skilled_birth_attendant',
+      'contact_with_case', 'case_id', 'illness_onset', 'ill_family_member', 'milk']) {
+      assert.equal(looksLikeOutcomeColumn(name), false, `${name} is not the outcome`);
+    }
+  }
+
+  // 12. Pre-selection needs both the name and values that split into cases and
+  //     non-cases. Otherwise nothing is chosen and the interface asks.
+  {
+    // The French file that exposed this: "ville" was chosen and two cities ticked.
+    assert.deepEqual(
+      pickOutcomeColumn([
+        { key: 'ville', label: 'ville', values: ['Brazzaville', 'Pointe-Noire', 'Dolisie', 'Libreville'] },
+        { key: 'riz', label: 'riz', values: ['Oui', 'Non'] },
+        { key: 'malade', label: 'malade', values: ['Oui', 'Non'] },
+      ]),
+      { key: 'malade', caseValues: ['Oui'] },
+      'the outcome is "malade", not "ville"'
+    );
+    assert.equal(
+      pickOutcomeColumn([
+        { key: 'village', label: 'village', values: ['Greenville', 'Hillside', 'Oak Park'] },
+        { key: 'grilled_chicken', label: 'Grilled chicken', values: ['Yes', 'No', 'Unknown'] },
+        { key: 'vaccination_status', label: 'Vaccination status', values: ['Yes', 'No'] },
+      ]),
+      null,
+      'no column here names the outcome, so none is chosen'
+    );
+    assert.deepEqual(
+      pickOutcomeColumn([{ key: 'ill', label: 'Ill', values: ['1', '0'] }]),
+      { key: 'ill', caseValues: ['1'] },
+      'a 1/0 outcome is recognised'
+    );
+    assert.deepEqual(
+      pickOutcomeColumn([
+        { key: 'case_status', label: 'Case Status', values: ['Confirmed', 'Probable', 'Suspected', 'Not a case'] },
+      ]),
+      { key: 'case_status', caseValues: ['Confirmed', 'Probable', 'Suspected'] }
+    );
+    // Every value a case, or none: no usable split, so nothing is pre-selected.
+    assert.equal(pickOutcomeColumn([{ key: 'case_status', label: 'Case status', values: ['Confirmed', 'Probable'] }]), null);
+    assert.equal(pickOutcomeColumn([{ key: 'status', label: 'Status', values: ['Recovered', 'Died'] }]), null);
   }
 
   console.log('case definition regression: all checks passed');

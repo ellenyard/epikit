@@ -1,12 +1,29 @@
-import { detectCaseValues } from '../../utils/caseDefinition';
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import type { Dataset, CaseRecord } from '../../types/analysis';
 import { calculateTwoByTwo } from '../../utils/statistics';
 import type { TwoByTwoResults } from '../../utils/statistics';
 import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
+import { formatPValue } from '../../utils/statFormat';
+import {
+  caseKeySet,
+  collectLevels,
+  levelKey,
+  outcomeCandidateColumns,
+  resolveExposureSetup,
+  suggestOutcome,
+  tabulateTwoByTwo,
+} from '../../utils/twoByTwoSetup';
+import type { ExposureSetup } from '../../utils/twoByTwoSetup';
+import {
+  chooseTwoByTwoTest,
+  interpretCaseControl,
+  interpretCohort,
+} from '../../utils/twoByTwoInterpretation';
+import type { TwoByTwoTest } from '../../utils/twoByTwoInterpretation';
 import { TwoByTwoTutorial } from '../tutorials/TwoByTwoTutorial';
 import { TabHeader, HelpPanel, ResultsActions, ExportIcons, StatTooltip, statDefinitions } from '../shared';
-import { collectCategoryValues, countInCategory, filterByCategoryValues } from '../../utils/recordFilter';
+import { collectCategoryValues, countInCategory, filterByCategoryValues, isMissingValue } from '../../utils/recordFilter';
+
 
 interface TwoByTwoAnalysisProps {
   dataset: Dataset;
@@ -19,7 +36,60 @@ interface ExposureResult {
   exposureVar: string;
   exposureLabel: string;
   exposedValue: string;
+  /** The comparison ("unexposed") level, named so the reader can see what the exposed were compared with. */
+  referenceValue: string;
   results: TwoByTwoResults;
+  /** The test whose p-value is shown; null when the table has an empty row or column. */
+  test: TwoByTwoTest | null;
+  /** Records left out because their exposure is a third category, neither exposed nor the comparison group. */
+  otherLevels: number;
+}
+
+interface TwoByTwoSettings {
+  studyDesign: StudyDesign;
+  outcomeVar: string;
+  caseValues: string[];
+  selectedExposures: string[];
+  exposurePositiveValues: Record<string, string>;
+  exposureReferenceValues: Record<string, string>;
+  filterBy: string;
+  selectedFilterValues: string[];
+}
+
+/**
+ * The settings saved for a dataset. When no outcome was saved, one is
+ * pre-selected only if a column's name says it is the outcome and its values
+ * split into cases and non-cases; otherwise the choice is left to the user.
+ */
+function loadSettings(dataset: Dataset): TwoByTwoSettings {
+  let saved: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(`epikit_twobytwo_${dataset.id}`);
+    saved = raw ? JSON.parse(raw) : {};
+  } catch {
+    saved = {};
+  }
+
+  let outcomeVar = (saved.outcomeVar as string) || '';
+  let caseValues = Array.isArray(saved.caseValues) ? saved.caseValues as string[] : [];
+  if (!outcomeVar) {
+    const found = suggestOutcome(dataset.columns, dataset.records);
+    if (found) {
+      outcomeVar = found.key;
+      caseValues = found.caseValues;
+    }
+  }
+
+  return {
+    studyDesign: (saved.studyDesign as StudyDesign) || 'cohort',
+    outcomeVar,
+    caseValues,
+    selectedExposures: Array.isArray(saved.selectedExposures) ? saved.selectedExposures as string[] : [],
+    exposurePositiveValues: (saved.exposurePositiveValues as Record<string, string>) || {},
+    exposureReferenceValues: (saved.exposureReferenceValues as Record<string, string>) || {},
+    filterBy: (saved.filterBy as string) ?? '',
+    selectedFilterValues: Array.isArray(saved.selectedFilterValues) ? saved.selectedFilterValues as string[] : [],
+  };
 }
 
 export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisProps) {
@@ -27,87 +97,48 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   const persistenceKey = `epikit_twobytwo_${dataset.id}`;
 
   // Load persisted state once during initialization
-  const [saved] = useState<Record<string, unknown>>(() => {
-    try {
-      const raw = localStorage.getItem(persistenceKey);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  });
+  const [initial] = useState<TwoByTwoSettings>(() => loadSettings(dataset));
 
   // Study design
-  const [studyDesign, setStudyDesign] = useState<StudyDesign>(() => (saved.studyDesign as StudyDesign) || 'cohort');
+  const [studyDesign, setStudyDesign] = useState<StudyDesign>(initial.studyDesign);
 
   // Outcome/case definition (like Attack Rates pattern)
-  const [outcomeVar, setOutcomeVar] = useState<string>(() => (saved.outcomeVar as string) || '');
-  const [caseValues, setCaseValues] = useState<Set<string>>(() => {
-    const arr = saved.caseValues;
-    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
-  });
+  const [outcomeVar, setOutcomeVar] = useState<string>(initial.outcomeVar);
+  const [caseValues, setCaseValues] = useState<Set<string>>(() => new Set(initial.caseValues));
 
   // Multi-exposure selection (for cohort/case-control)
-  const [selectedExposures, setSelectedExposures] = useState<string[]>(() => {
-    const arr = saved.selectedExposures;
-    return Array.isArray(arr) ? arr as string[] : [];
-  });
-  // For each exposure, store which value means "exposed" (default to "Yes")
-  const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>(() => {
-    return (saved.exposurePositiveValues as Record<string, string>) || {};
-  });
-  // For each exposure with >2 levels, store the reference group value
-  const [exposureReferenceValues, setExposureReferenceValues] = useState<Record<string, string>>(() => {
-    return (saved.exposureReferenceValues as Record<string, string>) || {};
-  });
+  const [selectedExposures, setSelectedExposures] = useState<string[]>(initial.selectedExposures);
+  // For each exposure, the value the user chose as "exposed". Unset means it
+  // is recognised from the values, or asked for when it cannot be.
+  const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>(initial.exposurePositiveValues);
+  // For each exposure, the comparison group the user chose
+  const [exposureReferenceValues, setExposureReferenceValues] = useState<Record<string, string>>(initial.exposureReferenceValues);
 
   // Filter state
-  const [filterBy, setFilterBy] = useState<string>(() => (saved.filterBy as string) ?? '');
-  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
-    const arr = saved.selectedFilterValues;
-    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
-  });
+  const [filterBy, setFilterBy] = useState<string>(initial.filterBy);
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => new Set(initial.selectedFilterValues));
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
-  // Track previous dataset ID to detect actual changes (vs re-renders)
-  const prevDatasetIdRef = useRef<string>(dataset.id);
-  // Skip the save effect once after a dataset switch so stale state from the
-  // previous dataset is never written into the new dataset's storage key
-  const skipNextSaveRef = useRef(false);
-  // Skip the filter-reset effect when the filter change came from a dataset switch
-  const skipFilterResetRef = useRef(false);
-
-  // Reload persisted state when the dataset actually changes
-  useEffect(() => {
-    if (prevDatasetIdRef.current !== dataset.id) {
-      prevDatasetIdRef.current = dataset.id;
-      skipNextSaveRef.current = true;
-      let next: Record<string, unknown> = {};
-      try {
-        const raw = localStorage.getItem(persistenceKey);
-        next = raw ? JSON.parse(raw) : {};
-      } catch {
-        next = {};
-      }
-      const nextFilterBy = (next.filterBy as string) ?? '';
-      skipFilterResetRef.current = nextFilterBy !== filterBy;
-      setStudyDesign((next.studyDesign as StudyDesign) || 'cohort');
-      setOutcomeVar((next.outcomeVar as string) || '');
-      setCaseValues(Array.isArray(next.caseValues) ? new Set(next.caseValues as string[]) : new Set());
-      setSelectedExposures(Array.isArray(next.selectedExposures) ? next.selectedExposures as string[] : []);
-      setExposurePositiveValues((next.exposurePositiveValues as Record<string, string>) || {});
-      setExposureReferenceValues((next.exposureReferenceValues as Record<string, string>) || {});
-      setFilterBy(nextFilterBy);
-      setSelectedFilterValues(Array.isArray(next.selectedFilterValues) ? new Set(next.selectedFilterValues as string[]) : new Set());
-      setShowAllFilterValues(false);
-    }
-  }, [dataset.id, persistenceKey, filterBy]);
+  // Reload persisted state when the dataset actually changes. Done while
+  // rendering rather than in an effect, so the save effect below never runs
+  // with the previous dataset's state under the new dataset's storage key.
+  const [loadedDatasetId, setLoadedDatasetId] = useState(dataset.id);
+  if (loadedDatasetId !== dataset.id) {
+    const next = loadSettings(dataset);
+    setLoadedDatasetId(dataset.id);
+    setStudyDesign(next.studyDesign);
+    setOutcomeVar(next.outcomeVar);
+    setCaseValues(new Set(next.caseValues));
+    setSelectedExposures(next.selectedExposures);
+    setExposurePositiveValues(next.exposurePositiveValues);
+    setExposureReferenceValues(next.exposureReferenceValues);
+    setFilterBy(next.filterBy);
+    setSelectedFilterValues(new Set(next.selectedFilterValues));
+    setShowAllFilterValues(false);
+  }
 
   // Save state to localStorage when it changes
   useEffect(() => {
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false;
-      return;
-    }
     try {
       const toSave = {
         studyDesign,
@@ -126,27 +157,23 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
   }, [persistenceKey, studyDesign, outcomeVar, caseValues, selectedExposures,
     exposurePositiveValues, exposureReferenceValues, filterBy, selectedFilterValues]);
 
+  // Get columns suitable for case definition (categorical columns, and
+  // numeric ones with few distinct values so a 1/0-coded outcome can be used)
+  const caseDefinitionColumns = useMemo(
+    () => outcomeCandidateColumns(dataset.columns, dataset.records),
+    [dataset]
+  );
 
-  // Get columns suitable for case definition (categorical columns)
-  const caseDefinitionColumns = useMemo(() => {
-    return dataset.columns.filter(col => {
-      if (col.type === 'number' && !col.key.toLowerCase().includes('age')) return false;
-      if (col.type === 'date') return false;
-      if (col.key === 'id' || col.key === 'case_id' || col.key === 'participant_id') return false;
-      if (col.key.includes('latitude') || col.key.includes('longitude')) return false;
-
-      // Check number of unique values
-      const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
-      return uniqueValues >= 2 && uniqueValues <= 20;
-    });
-  }, [dataset]);
-
-  // Get unique values for the selected outcome variable
-  const outcomeValues = useMemo(() => {
+  // Distinct values of the selected outcome variable. Trimmed and
+  // case-folded, so "Yes" and "yes " are one choice rather than two.
+  const outcomeLevels = useMemo(() => {
     if (!outcomeVar) return [];
-    const values = new Set(dataset.records.map(r => String(r[outcomeVar] ?? '')));
-    return Array.from(values).filter(v => v !== '').sort();
+    return collectLevels(dataset.records, outcomeVar);
   }, [dataset.records, outcomeVar]);
+
+  // The chosen case values in the form records are compared against
+  const caseKeys = useMemo(() => caseKeySet(caseValues), [caseValues]);
+
 
   // Get columns suitable for exposure variables
   const exposureColumns = useMemo(() => {
@@ -168,129 +195,47 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
     return collectCategoryValues(dataset.records, filterBy);
   }, [dataset.records, filterBy]);
 
-  // Reset selected filter values when filter variable changes
-  useEffect(() => {
-    if (skipFilterResetRef.current) {
-      skipFilterResetRef.current = false;
-      return;
-    }
-    setSelectedFilterValues(new Set());
-    setShowAllFilterValues(false);
-  }, [filterBy]);
-
   // Apply filter to records
   const filteredRecords = useMemo(
     () => filterByCategoryValues(dataset.records, filterBy, selectedFilterValues),
     [dataset.records, filterBy, selectedFilterValues]
   );
 
-  // Auto-detect outcome variable on mount
-  useEffect(() => {
-    if (!outcomeVar && caseDefinitionColumns.length > 0) {
-      // Try to find common case-related columns
-      const commonCaseColumns = ['ill', 'case_status', 'case', 'status', 'outcome'];
-      const found = caseDefinitionColumns.find(col =>
-        commonCaseColumns.some(name => col.key.toLowerCase().includes(name))
+  // For every candidate exposure: its levels, which one counts as exposed and
+  // which it is compared with. A saved choice wins; otherwise the levels are
+  // recognised from their wording, and left unset when they cannot be.
+  const exposureSetups = useMemo(() => {
+    const setups = new Map<string, ExposureSetup>();
+    for (const col of exposureColumns) {
+      setups.set(
+        col.key,
+        resolveExposureSetup(
+          dataset.records,
+          col.key,
+          exposurePositiveValues[col.key],
+          exposureReferenceValues[col.key]
+        )
       );
-      if (found) {
-        setOutcomeVar(found.key);
-        // Auto-select likely case values
-        const values = Array.from(new Set(dataset.records.map(r => String(r[found.key] ?? ''))));
-        const autoSelected = detectCaseValues(values);
-        if (autoSelected.length > 0) {
-          setCaseValues(new Set(autoSelected));
-        }
-      }
     }
-  }, [caseDefinitionColumns, dataset.records, outcomeVar]);
-
-  // Get unique values for a specific exposure variable
-  const getExposureValues = useCallback((expVar: string): string[] => {
-    const values = new Set<string>();
-    dataset.records.forEach(r => {
-      const v = r[expVar];
-      if (v !== null && v !== undefined && String(v).trim() !== '') {
-        values.add(String(v));
-      }
-    });
-    return Array.from(values).sort();
-  }, [dataset.records]);
-
-  // Auto-detect "Yes" as exposed value for an exposure
-  const detectExposedValue = useCallback((expVar: string): string => {
-    const values = getExposureValues(expVar);
-    // Try common positive indicators
-    const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
-    const found = values.find(v =>
-      positiveKeywords.some(kw => v.toLowerCase() === kw)
-    );
-    return found || values[0] || '';
-  }, [getExposureValues]);
-
-  // Auto-detect reference value for a multi-level exposure (e.g., "No", "None", or most common value)
-  const detectReferenceValue = useCallback((expVar: string, excludeValue?: string): string => {
-    const values = getExposureValues(expVar);
-    const candidates = excludeValue ? values.filter(v => v !== excludeValue) : values;
-    // Try common reference/unexposed indicators
-    const refKeywords = ['no', 'none', 'unexposed', 'false', '0', 'negative', 'not exposed', 'neither'];
-    const found = candidates.find(v =>
-      refKeywords.some(kw => v.toLowerCase() === kw)
-    );
-    if (found) return found;
-    // Fall back to the most common value among candidates
-    const counts: Record<string, number> = {};
-    dataset.records.forEach(r => {
-      const v = r[expVar];
-      if (v !== null && v !== undefined && v !== '') {
-        const s = String(v);
-        if (candidates.includes(s)) {
-          counts[s] = (counts[s] || 0) + 1;
-        }
-      }
-    });
-    let maxCount = 0;
-    let mostCommon = candidates[0] || '';
-    for (const [val, count] of Object.entries(counts)) {
-      if (count > maxCount) {
-        maxCount = count;
-        mostCommon = val;
-      }
-    }
-    return mostCommon;
-  }, [dataset.records, getExposureValues]);
+    return setups;
+  }, [dataset.records, exposureColumns, exposurePositiveValues, exposureReferenceValues]);
 
   // Check if a record is a case
   const isCase = useCallback((record: CaseRecord): boolean => {
-    if (!outcomeVar || caseValues.size === 0) return false;
-    const value = String(record[outcomeVar] ?? '');
-    return caseValues.has(value);
-  }, [caseValues, outcomeVar]);
+    if (!outcomeVar || caseKeys.size === 0) return false;
+    return caseKeys.has(levelKey(record[outcomeVar]));
+  }, [caseKeys, outcomeVar]);
 
-  // Auto-select initial exposure when provided from parent (e.g., from Variable Explorer)
-  useEffect(() => {
-    if (initialExposure && exposureColumns.some(col => col.key === initialExposure)) {
-      if (!selectedExposures.includes(initialExposure)) {
-        setSelectedExposures(prev => [...prev, initialExposure]);
-        // Set default exposed value
-        if (!exposurePositiveValues[initialExposure]) {
-          const values = getExposureValues(initialExposure);
-          const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
-          const found = values.find(v =>
-            positiveKeywords.some(kw => v.toLowerCase() === kw)
-          );
-          const defaultValue = found || values[0] || '';
-          if (defaultValue) {
-            setExposurePositiveValues(prev => ({ ...prev, [initialExposure]: defaultValue }));
-            // Set default reference value for multi-level variables
-            if (values.length > 2) {
-              const refValue = detectReferenceValue(initialExposure, defaultValue);
-              setExposureReferenceValues(prev => ({ ...prev, [initialExposure]: refValue }));
-            }
-          }
-        }
-      }
+  // Auto-select initial exposure when provided from parent (e.g., from Variable
+  // Explorer). Applied once per value, so the exposure can be deselected again.
+  const [appliedInitialExposure, setAppliedInitialExposure] = useState<string | undefined>(undefined);
+  if (initialExposure && initialExposure !== appliedInitialExposure
+    && exposureColumns.some(col => col.key === initialExposure)) {
+    setAppliedInitialExposure(initialExposure);
+    if (!selectedExposures.includes(initialExposure)) {
+      setSelectedExposures([...selectedExposures, initialExposure]);
     }
-  }, [initialExposure, exposureColumns, selectedExposures, exposurePositiveValues, getExposureValues, detectReferenceValue]);
+  }
 
   // Export dataset with only the records used in the current analysis
   const exportDatasetCSV = useCallback(() => {
@@ -341,62 +286,38 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
   // Calculate 2x2 results for each selected exposure
   const exposureResults: ExposureResult[] = useMemo(() => {
-    if (!outcomeVar || caseValues.size === 0 || selectedExposures.length === 0) {
+    if (!outcomeVar || caseKeys.size === 0 || selectedExposures.length === 0) {
       return [];
     }
 
-    const results = selectedExposures.map(expVar => {
-      const exposedValue = exposurePositiveValues[expVar] || detectExposedValue(expVar);
-      const values = getExposureValues(expVar);
-      const isMultiLevel = values.length > 2;
-      const referenceValue = isMultiLevel
-        ? (exposureReferenceValues[expVar] || detectReferenceValue(expVar, exposedValue))
-        : null;
-      let a = 0, b = 0, c = 0, d = 0;
+    const results: ExposureResult[] = [];
+    for (const expVar of selectedExposures) {
+      const setup = exposureSetups.get(expVar);
+      // No result until both groups are known: a guessed "exposed" value
+      // produces a clean, inverted estimate rather than an obvious error.
+      if (!setup || !setup.exposed || !setup.reference) continue;
 
-      filteredRecords.forEach((record: CaseRecord) => {
-        const expValue = record[expVar];
-
-        // Skip records with missing exposure values. Trimmed, to match the
-        // outcome check below: a whitespace-only cell is missing data, not a
-        // category. Untrimmed it became a phantom unexposed group, inflating
-        // the denominator and biasing the risk ratio toward the null.
-        if (expValue === null || expValue === undefined || String(expValue).trim() === '') {
-          return;
-        }
-
-        // Skip records with missing outcome values
-        const outcomeValue = record[outcomeVar];
-        if (outcomeValue === null || outcomeValue === undefined || String(outcomeValue).trim() === '') {
-          return;
-        }
-
-        const strValue = String(expValue);
-
-        // For multi-level variables, only include exposed and reference values
-        if (isMultiLevel && strValue !== exposedValue && strValue !== referenceValue) {
-          return;
-        }
-
-        const exposed = strValue === exposedValue;
-        const diseased = isCase(record);
-
-        if (exposed && diseased) a++;
-        else if (exposed && !diseased) b++;
-        else if (!exposed && diseased) c++;
-        else if (!exposed && !diseased) d++;
-      });
-
-      const results = calculateTwoByTwo({ a, b, c, d });
+      const counts = tabulateTwoByTwo(
+        filteredRecords,
+        expVar,
+        setup.exposed.key,
+        setup.reference.key,
+        outcomeVar,
+        caseKeys
+      );
+      const twoByTwo = calculateTwoByTwo(counts.table);
       const col = dataset.columns.find(c => c.key === expVar);
 
-      return {
+      results.push({
         exposureVar: expVar,
         exposureLabel: col?.label || expVar,
-        exposedValue,
-        results,
-      };
-    });
+        exposedValue: setup.exposed.label,
+        referenceValue: setup.reference.label,
+        results: twoByTwo,
+        test: chooseTwoByTwoTest(twoByTwo),
+        otherLevels: counts.otherLevels,
+      });
+    }
 
     // Sort by proportion of cases exposed (for case-control) or attack rate among exposed (for cohort)
     // Both in descending order (highest first)
@@ -411,7 +332,20 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         return propB - propA;
       }
     });
-  }, [filteredRecords, dataset.columns, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, exposureReferenceValues, studyDesign, detectExposedValue, detectReferenceValue, getExposureValues, isCase]);
+  }, [filteredRecords, dataset.columns, outcomeVar, caseKeys, selectedExposures, exposureSetups, studyDesign]);
+
+  // Selected exposures that cannot be analysed until the user says which
+  // value means exposed, or what to compare it with
+  const exposuresNeedingChoice = useMemo(() => {
+    return selectedExposures
+      .map(expVar => {
+        const setup = exposureSetups.get(expVar);
+        if (!setup || (setup.exposed && setup.reference)) return null;
+        const col = dataset.columns.find(c => c.key === expVar);
+        return { key: expVar, label: col?.label || expVar, needs: setup.exposed ? 'reference' : 'exposed' };
+      })
+      .filter((item): item is { key: string; label: string; needs: string } => item !== null);
+  }, [selectedExposures, exposureSetups, dataset.columns]);
 
   // Count total cases
   const totalCases = useMemo(() => {
@@ -420,13 +354,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
   // Count total non-cases (records with a valid outcome value that is not a case)
   const totalNonCases = useMemo(() => {
-    if (!outcomeVar || caseValues.size === 0) return 0;
+    if (!outcomeVar || caseKeys.size === 0) return 0;
     return filteredRecords.filter(record => {
-      const v = record[outcomeVar];
-      if (v === null || v === undefined || String(v).trim() === '') return false;
+      if (isMissingValue(record[outcomeVar])) return false;
       return !isCase(record);
     }).length;
-  }, [filteredRecords, outcomeVar, caseValues, isCase]);
+  }, [filteredRecords, outcomeVar, caseKeys, isCase]);
+
 
   const formatMeasure = (n: number): string => {
     if (!isFinite(n)) return 'Undefined';
@@ -440,39 +374,25 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
   // Toggle exposure selection
   const toggleExposure = (expVar: string) => {
-    setSelectedExposures(prev => {
-      if (prev.includes(expVar)) {
-        return prev.filter(v => v !== expVar);
-      } else {
-        // Set default exposed value when adding
-        if (!exposurePositiveValues[expVar]) {
-          const defaultValue = detectExposedValue(expVar);
-          setExposurePositiveValues(p => ({ ...p, [expVar]: defaultValue }));
-          // Set default reference value for multi-level variables
-          const values = getExposureValues(expVar);
-          if (values.length > 2 && !exposureReferenceValues[expVar]) {
-            const refValue = detectReferenceValue(expVar, defaultValue);
-            setExposureReferenceValues(p => ({ ...p, [expVar]: refValue }));
-          }
-        }
-        return [...prev, expVar];
-      }
-    });
+    setSelectedExposures(prev =>
+      prev.includes(expVar) ? prev.filter(v => v !== expVar) : [...prev, expVar]
+    );
   };
 
   // Update exposed value for a specific exposure
   const updateExposedValue = (expVar: string, value: string) => {
     setExposurePositiveValues(prev => ({ ...prev, [expVar]: value }));
-    // If the new exposed value matches the current reference, auto-pick a new reference
-    const values = getExposureValues(expVar);
-    if (values.length > 2) {
-      const currentRef = exposureReferenceValues[expVar] || detectReferenceValue(expVar, value);
-      if (currentRef === value) {
-        const newRef = detectReferenceValue(expVar, value);
-        setExposureReferenceValues(prev => ({ ...prev, [expVar]: newRef }));
-      }
+    // A saved reference equal to the new exposed value is dropped, so a new
+    // one is worked out rather than comparing a group with itself
+    if (levelKey(exposureReferenceValues[expVar]) === levelKey(value)) {
+      setExposureReferenceValues(prev => {
+        const next = { ...prev };
+        delete next[expVar];
+        return next;
+      });
     }
   };
+
 
   // Update reference value for a specific exposure
   const updateReferenceValue = (expVar: string, value: string) => {
@@ -481,6 +401,10 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
 
   // Render summary table for multiple exposures
   const renderSummaryTable = () => {
+    const anyFisher = exposureResults.some(r => r.test?.test === 'fisher');
+    const anyCorrectedOR = studyDesign === 'case-control' && exposureResults.some(r => r.results.oddsRatioCorrected);
+    const headerCell = 'px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider';
+
     return (
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
@@ -493,49 +417,55 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                     <th rowSpan={2} className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
                       Exposure
                     </th>
-                    <th colSpan={3} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                    <th colSpan={3} className={`${headerCell} border-r border-gray-200`}>
                       Exposed
                     </th>
-                    <th colSpan={3} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
-                      Not Exposed
+                    <th colSpan={3} className={`${headerCell} border-r border-gray-200`}>
+                      Comparison group
                     </th>
-                    <th colSpan={2} className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Attack rate ratio
+                    <th colSpan={2} className={`${headerCell} border-r border-gray-200`}>
+                      Risk ratio
+                    </th>
+                    <th rowSpan={2} className={headerCell}>
+                      <div className="flex items-center justify-center gap-1">
+                        <span>p-value</span>
+                        <StatTooltip {...statDefinitions.pValue} />
+                      </div>
                     </th>
                   </tr>
                   {/* Second header row - individual columns */}
                   <tr>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className={headerCell}>
                       # Ill
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className={headerCell}>
                       Total
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                    <th className={`${headerCell} border-r border-gray-200`}>
                       <div className="flex items-center justify-center gap-1">
                         <span>Attack Rate</span>
                         <StatTooltip {...statDefinitions.attackRate} />
                       </div>
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className={headerCell}>
                       # Ill
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className={headerCell}>
                       Total
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-r border-gray-200">
+                    <th className={`${headerCell} border-r border-gray-200`}>
                       <div className="flex items-center justify-center gap-1">
                         <span>Attack Rate</span>
                         <StatTooltip {...statDefinitions.attackRate} />
                       </div>
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className={headerCell}>
                       <div className="flex items-center justify-center gap-1">
-                        <span>ARR</span>
+                        <span>RR</span>
                         <StatTooltip {...statDefinitions.riskRatio} />
                       </div>
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className={`${headerCell} border-r border-gray-200`}>
                       <div className="flex items-center justify-center gap-1">
                         <span>95% CI</span>
                         <StatTooltip {...statDefinitions.confidenceInterval} />
@@ -550,19 +480,19 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
-                      <span>CASES (n={totalCases})</span>
+                      <span>Cases exposed (of {totalCases} cases)</span>
                       <StatTooltip
-                        term="Cases"
-                        definition="The number and percentage of cases with each exposure level. The percentage represents the proportion of all cases that were exposed."
+                        term="Cases exposed"
+                        definition="The number of cases who were exposed, and the percentage of cases with a recorded exposure that this represents."
                       />
                     </div>
                   </th>
                   <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     <div className="flex items-center justify-center gap-1">
-                      <span>CONTROLS (n={totalNonCases})</span>
+                      <span>Controls exposed (of {totalNonCases} controls)</span>
                       <StatTooltip
-                        term="Controls"
-                        definition="The number and percentage of controls with each exposure level. The percentage represents the proportion of all controls that were exposed."
+                        term="Controls exposed"
+                        definition="The number of controls who were exposed, and the percentage of controls with a recorded exposure that this represents."
                       />
                     </div>
                   </th>
@@ -578,21 +508,41 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                       <StatTooltip {...statDefinitions.confidenceInterval} />
                     </div>
                   </th>
+                  <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <div className="flex items-center justify-center gap-1">
+                      <span>p-value</span>
+                      <StatTooltip {...statDefinitions.pValue} />
+                    </div>
+                  </th>
                 </tr>
               )}
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {exposureResults.map((result) => {
                 const r = result.results;
-                const isSignificant = r.chiSquarePValue < 0.05;
                 const measure = studyDesign === 'cohort' ? r.riskRatio : r.oddsRatio;
                 const ci = studyDesign === 'cohort' ? r.riskRatioCI : r.oddsRatioCI;
+                const corrected = studyDesign === 'case-control' && r.oddsRatioCorrected;
+                const pValueCell = (
+                  <td className="px-3 py-2 text-sm text-center text-gray-900 whitespace-nowrap">
+                    {result.test
+                      ? `${formatPValue(result.test.pValue)}${result.test.test === 'fisher' ? ' \u2021' : ''}`
+                      : '\u2014'}
+                  </td>
+                );
 
                 return (
                   <tr key={result.exposureVar}>
                     <td className="px-3 py-2 text-sm font-medium text-gray-900">
                       {result.exposureLabel}
-                      <span className="text-xs text-gray-500 ml-1">({result.exposedValue})</span>
+                      <span className="block text-xs font-normal text-gray-500">
+                        {result.exposedValue} vs. {result.referenceValue}
+                      </span>
+                      {result.otherLevels > 0 && (
+                        <span className="block text-xs font-normal text-amber-700">
+                          {result.otherLevels} in other categories not included
+                        </span>
+                      )}
                     </td>
                     {studyDesign === 'cohort' ? (
                       <>
@@ -606,12 +556,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                         <td className="px-3 py-2 text-sm text-center text-gray-900 border-r border-gray-200">
                           {formatStatPercent(r.attackRateUnexposed * 100, r.total)}%
                         </td>
-                        <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
+                        <td className="px-3 py-2 text-sm text-center font-semibold text-gray-900">
                           {formatMeasure(measure)}
                         </td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-500">
+                        <td className="px-3 py-2 text-sm text-center text-gray-500 border-r border-gray-200 whitespace-nowrap">
                           {formatCI(ci)}
                         </td>
+                        {pValueCell}
                       </>
                     ) : (
                       <>
@@ -621,12 +572,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                         <td className="px-3 py-2 text-sm text-center text-gray-900">
                           {r.table.b} ({r.totalNoDisease > 0 ? `${formatStatPercent((r.table.b / r.totalNoDisease) * 100, r.total)}%` : '—'})
                         </td>
-                        <td className={`px-3 py-2 text-sm text-center font-semibold ${isSignificant ? 'text-gray-900' : 'text-gray-900'}`}>
-                          {formatMeasure(measure)}
+                        <td className="px-3 py-2 text-sm text-center font-semibold text-gray-900 whitespace-nowrap">
+                          {formatMeasure(measure)}{corrected ? ' \u2020' : ''}
                         </td>
-                        <td className="px-3 py-2 text-sm text-center text-gray-500">
+                        <td className="px-3 py-2 text-sm text-center text-gray-500 whitespace-nowrap">
                           {formatCI(ci)}
                         </td>
+                        {pValueCell}
                       </>
                     )}
                   </tr>
@@ -635,14 +587,29 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500">
-          {studyDesign === 'cohort'
-            ? 'AR = Attack Rate (Row %), RR = Risk Ratio. These are bivariate risk ratios (associations were run one at a time).'
-            : 'Percentages are column percentages; per-exposure denominators may be smaller than the totals above due to missing exposure values. OR = Odds Ratio. These are bivariate odds ratios (associations were run one at a time).'}
+        <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500 space-y-1">
+          <p>
+            {studyDesign === 'cohort'
+              ? 'Attack rate = number ill ÷ total in that group. RR = risk ratio: the attack rate in the exposed divided by the attack rate in the comparison group, with a 95% confidence interval (log method).'
+              : 'Percentages are of the cases, and of the controls, with a recorded exposure, so their denominators can be smaller than the totals in the headings. OR = odds ratio, with a 95% confidence interval (Woolf method).'}
+          </p>
+          {anyCorrectedOR && (
+            <p>
+              † A cell of this 2×2 table is zero, so the odds ratio cannot be calculated directly. The OR and CI shown add 0.5 to every cell (Haldane-Anscombe correction) and are approximate.
+            </p>
+          )}
+          <p>
+            p-values are from the chi-square test with Yates’ continuity correction{anyFisher ? ', except where marked ‡' : ''}.
+            {anyFisher && ' ‡ Fisher’s exact test (two-sided), shown instead because at least one expected cell count is below 5, where chi-square is unreliable.'}
+          </p>
+          <p>
+            Each exposure is analysed on its own (unadjusted). Records with a missing exposure or outcome, or in a category other than the two being compared, are left out of that row.
+          </p>
         </div>
       </div>
     );
   };
+
 
   return (
     <div className="h-full overflow-auto p-6 space-y-6">
@@ -659,7 +626,12 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           <label className="block text-xs text-gray-500 mb-1">Filter by</label>
           <select
             value={filterBy}
-            onChange={(e) => setFilterBy(e.target.value)}
+            onChange={(e) => {
+              // A new filter variable starts with nothing selected
+              setFilterBy(e.target.value);
+              setSelectedFilterValues(new Set());
+              setShowAllFilterValues(false);
+            }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
           >
             <option value="">None (show all)</option>
@@ -789,61 +761,65 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                 ))}
               </select>
             </div>
-            {outcomeVar && outcomeValues.length > 0 && (
+            {outcomeVar && outcomeLevels.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Values that count as a case
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {outcomeValues.map(value => (
-                    <label
-                      key={value}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
-                        caseValues.has(value)
-                          ? 'bg-gray-700 text-white'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={caseValues.has(value)}
-                        onChange={(e) => {
-                          const newSet = new Set(caseValues);
-                          if (e.target.checked) {
-                            newSet.add(value);
-                          } else {
-                            newSet.delete(value);
-                          }
-                          setCaseValues(newSet);
-                        }}
-                        className="sr-only"
-                      />
-                      {value}
-                    </label>
-                  ))}
+                  {outcomeLevels.map(level => {
+                    const checked = caseKeys.has(level.key);
+                    return (
+                      <label
+                        key={level.key}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm cursor-pointer transition-colors ${
+                          checked
+                            ? 'bg-gray-700 text-white'
+                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            // Compared by level, so a saved "yes" unticks "Yes"
+                            const newSet = new Set(
+                              Array.from(caseValues).filter(v => levelKey(v) !== level.key)
+                            );
+                            if (e.target.checked) newSet.add(level.label);
+                            setCaseValues(newSet);
+                          }}
+                          className="sr-only"
+                        />
+                        {level.label}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             )}
           </div>
-          {outcomeVar && caseValues.size > 0 && (
+          {outcomeVar && caseKeys.size > 0 && (
             <div className="mt-3 space-y-2">
               <div className="text-sm text-gray-700">
                 <strong>{totalCases}</strong> cases identified out of <strong>{filteredRecords.length}</strong> records
                 ({formatStatPercent((totalCases / filteredRecords.length) * 100, filteredRecords.length)}%)
               </div>
               {/* Case/Control mapping display */}
-              {outcomeValues.length > 0 && (
+              {outcomeLevels.length > 0 && (
                 <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
                   <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Value Mapping</div>
                   <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Case:' : 'Ill:'}</span>
-                      <span className="text-gray-600">{Array.from(caseValues).join(', ')}</span>
+                      <span className="text-gray-600">
+                        {outcomeLevels.filter(l => caseKeys.has(l.key)).map(l => l.label).join(', ') || '(none)'}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-700">{studyDesign === 'case-control' ? 'Control:' : 'Not Ill:'}</span>
                       <span className="text-gray-600">
-                        {outcomeValues.filter(v => !caseValues.has(v)).join(', ') || '(none)'}
+                        {outcomeLevels.filter(l => !caseKeys.has(l.key)).map(l => l.label).join(', ') || '(none)'}
                       </span>
                     </div>
                   </div>
@@ -851,30 +827,38 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
               )}
             </div>
           )}
-          {outcomeVar && caseValues.size === 0 && (
+          {outcomeVar && caseKeys.size === 0 && (
             <div className="mt-3 text-sm text-gray-600">
               Please select which values count as cases
           </div>
         )}
+          {!outcomeVar && caseDefinitionColumns.length > 0 && (
+            <div className="mt-3 text-sm text-gray-600">
+              Choose the variable that records who became ill (or who is a case). LineList only pre-selects one when a column&rsquo;s name and values make it clear.
+            </div>
+          )}
       </div>
 
       {/* Exposure Selection */}
-      {outcomeVar && caseValues.size > 0 && (
+      {outcomeVar && caseKeys.size > 0 && (
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-900 mb-3">Exposure Variables</h4>
           <p className="text-xs text-gray-600 mb-3">
-            <strong>Select one or more exposure variables to analyze.</strong> For each selected variable, use the dropdown to specify which value should be treated as the <strong>"exposed"</strong> group. For variables with more than two levels, a second dropdown lets you choose the <strong>reference group</strong> — only these two groups will be compared. For binary variables, the non-exposed value is used automatically.
+            <strong>Select one or more exposure variables to analyze.</strong> For each selected variable, check the dropdown that says which value is the <strong>&ldquo;exposed&rdquo;</strong> group. Common codings (Yes/No, Y/N, Oui/Non, Sí/No, 1/0, True/False) are recognised; anything else you choose yourself. For variables with more than two values, a second dropdown sets the <strong>comparison group</strong> &mdash; only those two groups are compared, and both are named in the results.
           </p>
           <div className="flex flex-wrap gap-2">
             {exposureColumns.map(col => {
               const isSelected = selectedExposures.includes(col.key);
-              const exposedValue = exposurePositiveValues[col.key] || detectExposedValue(col.key);
-              const values = getExposureValues(col.key);
+              const setup = exposureSetups.get(col.key);
+              const levels = setup?.levels ?? [];
+              const exposed = setup?.exposed ?? null;
+              const reference = setup?.reference ?? null;
 
               return (
                 <div key={col.key} className="relative group">
                   <button
                     onClick={() => toggleExposure(col.key)}
+                    aria-pressed={isSelected}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
                       isSelected
                         ? 'bg-gray-700 text-white'
@@ -893,24 +877,32 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
                   {isSelected && (
                     <div className="mt-1 flex flex-col gap-1">
                       <select
-                        value={exposedValue}
+                        value={exposed?.label ?? ''}
                         onChange={(e) => updateExposedValue(col.key, e.target.value)}
                         onClick={(e) => e.stopPropagation()}
-                        className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-gray-500"
+                        aria-label={`Exposed value for ${col.label}`}
+                        className={`text-xs px-2 py-1 border rounded focus:ring-1 focus:ring-gray-500 ${
+                          exposed ? 'border-gray-300' : 'border-amber-500 bg-amber-50'
+                        }`}
                       >
-                        {values.map(v => (
-                          <option key={v} value={v}>{v} = Exposed</option>
+                        {!exposed && <option value="">Choose exposed value…</option>}
+                        {levels.map(level => (
+                          <option key={level.key} value={level.label}>{level.label} = Exposed</option>
                         ))}
                       </select>
-                      {values.length > 2 && (
+                      {exposed && (levels.length > 2 || !reference) && (
                         <select
-                          value={exposureReferenceValues[col.key] || detectReferenceValue(col.key, exposedValue)}
+                          value={reference?.label ?? ''}
                           onChange={(e) => updateReferenceValue(col.key, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
-                          className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-gray-500"
+                          aria-label={`Comparison group for ${col.label}`}
+                          className={`text-xs px-2 py-1 border rounded focus:ring-1 focus:ring-gray-500 ${
+                            reference ? 'border-gray-300' : 'border-amber-500 bg-amber-50'
+                          }`}
                         >
-                          {values.filter(v => v !== exposedValue).map(v => (
-                            <option key={v} value={v}>{v} = Reference</option>
+                          {!reference && <option value="">Choose comparison group…</option>}
+                          {levels.filter(level => level.key !== exposed.key).map(level => (
+                            <option key={level.key} value={level.label}>{level.label} = Comparison</option>
                           ))}
                         </select>
                       )}
@@ -925,6 +917,16 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
               {selectedExposures.length} exposure{selectedExposures.length !== 1 ? 's' : ''} selected
             </div>
           )}
+          {exposuresNeedingChoice.length > 0 && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900" role="status">
+              <p className="font-medium">
+                No result is shown yet for: {exposuresNeedingChoice.map(e => e.label).join(', ')}
+              </p>
+              <p className="mt-1 text-xs">
+                LineList could not tell from the values which one means &ldquo;exposed&rdquo; (or which group to compare it with). Choose it in the dropdown under the variable; guessing could turn the result upside down.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
@@ -934,62 +936,27 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
           <h4 className="text-sm font-semibold text-gray-900">Summary Table</h4>
           {renderSummaryTable()}
 
-          {/* Interpretation Example for Cohort Studies */}
-          {studyDesign === 'cohort' && exposureResults.length > 0 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
-              {(() => {
-                const firstResult = exposureResults[0];
-                const arr = firstResult.results.riskRatio;
-                const ci = firstResult.results.riskRatioCI;
-                const exposureName = firstResult.exposureLabel.toLowerCase();
-                const exposedValue = firstResult.exposedValue;
-                const isSignificant = firstResult.results.chiSquarePValue < 0.05;
-                const testNotComputable = !isFinite(firstResult.results.chiSquarePValue);
-                const ciIncludesOne = ci[0] <= 1.0 && ci[1] >= 1.0;
+          {/* Interpretation of the first row, in the terms of what the table shows */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
+            {(() => {
+              const firstResult = exposureResults[0];
+              const labels = {
+                exposure: firstResult.exposureLabel,
+                exposed: firstResult.exposedValue,
+                reference: firstResult.referenceValue,
+              };
+              const sentences = studyDesign === 'cohort'
+                ? interpretCohort(firstResult.results, labels)
+                : interpretCaseControl(firstResult.results, labels);
 
-                return (
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The attack rate ratio (ARR) for {exposureName} is {formatMeasure(arr)} with a 95% CI of {formatCI(ci)}.
-                    This means that people who were exposed to {exposureName} ({exposedValue}) were {formatMeasure(arr)} times {arr > 1 ? 'more' : 'less'} likely to become ill compared to those who were not exposed.
-                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {testNotComputable ? 'not assessable (insufficient data: the table has an empty row or column)' : isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
-                    This suggests a {arr > 2 ? 'strong' : arr > 1.5 ? 'moderate' : arr > 1 ? 'weak' : ''} {arr > 1 ? 'positive association' : arr < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
-                    An ARR greater than 1.0 indicates increased risk, while an ARR less than 1.0 suggests the exposure may be protective.
-                    The confidence interval tells us the range of plausible values for the true ARR in the population.
-                  </p>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* Interpretation Example for Case-Control Studies */}
-          {studyDesign === 'case-control' && exposureResults.length > 0 && (
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-              <h5 className="text-sm font-semibold text-gray-900 mb-2">How to Interpret Your Results</h5>
-              {(() => {
-                const firstResult = exposureResults[0];
-                const or = firstResult.results.oddsRatio;
-                const ci = firstResult.results.oddsRatioCI;
-                const exposureName = firstResult.exposureLabel.toLowerCase();
-                const exposedValue = firstResult.exposedValue;
-                const isSignificant = firstResult.results.chiSquarePValue < 0.05;
-                const testNotComputable = !isFinite(firstResult.results.chiSquarePValue);
-                const ciIncludesOne = ci[0] <= 1.0 && ci[1] >= 1.0;
-
-                return (
-                  <p className="text-sm text-gray-700 leading-relaxed">
-                    <strong>Example interpretation using {firstResult.exposureLabel}:</strong> The odds ratio (OR) for {exposureName} is {formatMeasure(or)} with a 95% CI of {formatCI(ci)}.
-                    This means that cases had {formatMeasure(or)} times the odds of being exposed to {exposureName} ({exposedValue}) compared to controls.
-                    The 95% confidence interval {formatCI(ci)} {ciIncludesOne ? 'includes' : 'does not include'} 1.0, indicating this association is {testNotComputable ? 'not assessable (insufficient data: the table has an empty row or column)' : isSignificant ? 'statistically significant (p < 0.05)' : 'not statistically significant (p ≥ 0.05)'}.
-                    This suggests a {or > 3 ? 'strong' : or > 2 ? 'moderate' : or > 1 ? 'weak' : ''} {or > 1 ? 'positive association' : or < 1 ? 'protective effect' : 'no association'} between the exposure and illness.
-                    An OR greater than 1.0 indicates that cases had higher odds of exposure (suggesting the exposure may increase risk),
-                    while an OR less than 1.0 suggests cases had lower odds of exposure (suggesting the exposure may be protective).
-                    The confidence interval tells us the range of plausible values for the true OR in the population.
-                  </p>
-                );
-              })()}
-            </div>
-          )}
+              return (
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  <strong>Example interpretation using {firstResult.exposureLabel}:</strong> {sentences.join(' ')}
+                </p>
+              );
+            })()}
+          </div>
 
           {/* Results Actions */}
           <ResultsActions
@@ -1005,13 +972,13 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         </div>
       )}
 
-      {outcomeVar && caseValues.size > 0 && selectedExposures.length === 0 && (
+      {outcomeVar && caseKeys.size > 0 && selectedExposures.length === 0 && (
         <div className="text-center py-8 text-gray-400">
           Select one or more exposure variables to see the analysis
         </div>
       )}
 
-      {(!outcomeVar || caseValues.size === 0) && (
+      {(!outcomeVar || caseKeys.size === 0) && (
         <div className="text-center py-8 text-gray-400">
           Define the outcome variable above to begin analysis
         </div>

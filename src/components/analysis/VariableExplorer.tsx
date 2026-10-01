@@ -3,6 +3,7 @@ import type { Dataset, VariableConfig } from '../../types/analysis';
 import { calculateDescriptiveStats, calculateFrequency } from '../../utils/statistics';
 import type { DescriptiveStats, FrequencyItem } from '../../utils/statistics';
 import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
+import { dataDecimals, formatExact, formatSummary } from '../../utils/statFormat';
 import { MAX_HISTOGRAM_BINS, computeHistogram } from '../../utils/histogramBins';
 import type { HistogramBin } from '../../utils/histogramBins';
 import { CreateVariableModal } from '../review/CreateVariableModal';
@@ -81,6 +82,12 @@ export function VariableExplorer({
     if (!selectedColumn || selectedColumn.type !== 'number') return null;
     return calculateDescriptiveStats(numericValues);
   }, [numericValues, selectedColumn]);
+
+  // Derived statistics (mean, SD, median, quartiles) are shown to one more
+  // decimal place than the data were recorded to. Values read straight off the
+  // data (min, max, mode, sum) are shown exactly: rounded to three significant
+  // figures, a minimum of 1005 was displayed as 1010.
+  const summaryDecimals = useMemo(() => dataDecimals(numericValues) + 1, [numericValues]);
 
   // Missing count for numeric variables: everything excluded from numericValues
   // (empty cells AND non-numeric junk). numericStats.missing is always 0 here
@@ -406,7 +413,7 @@ export function VariableExplorer({
                               className="text-xs text-gray-600 block truncate"
                               title={bin.label}
                             >
-                              {bin.binStart.toFixed(0)}
+                              {bin.startLabel}
                             </span>
                           </div>
                         ))}
@@ -532,22 +539,27 @@ export function VariableExplorer({
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">Central Tendency</h4>
                 <div className="grid grid-cols-3 gap-2">
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
-                    <p className="text-xl font-bold text-blue-900">{formatSigFigs(numericStats.mean, 3)}</p>
+                    <p className="text-xl font-bold text-blue-900">{formatSummary(numericStats.mean, summaryDecimals)}</p>
                     <div className="flex items-center justify-center gap-1">
                       <p className="text-xs text-blue-700">Mean</p>
                       <StatTooltip {...statDefinitions.mean} />
                     </div>
                   </div>
                   <div className="text-center p-3 bg-green-50 rounded-lg">
-                    <p className="text-xl font-bold text-green-900">{formatSigFigs(numericStats.median, 3)}</p>
+                    <p className="text-xl font-bold text-green-900">{formatSummary(numericStats.median, summaryDecimals)}</p>
                     <div className="flex items-center justify-center gap-1">
                       <p className="text-xs text-green-700">Median</p>
                       <StatTooltip {...statDefinitions.median} />
                     </div>
                   </div>
                   <div className="text-center p-3 bg-purple-50 rounded-lg">
+                    {/* Every tied mode is listed; with many ties the count is given instead */}
                     <p className="text-xl font-bold text-purple-900">
-                      {numericStats.mode !== null ? formatSigFigs(numericStats.mode, 3) : '-'}
+                      {numericStats.modes.length === 0
+                        ? '-'
+                        : numericStats.modes.length <= 3
+                        ? numericStats.modes.map(formatExact).join(', ')
+                        : `${numericStats.modes.length} values tie`}
                     </p>
                     <div className="flex items-center justify-center gap-1">
                       <p className="text-xs text-purple-700">Mode</p>
@@ -562,35 +574,35 @@ export function VariableExplorer({
                 <h4 className="text-sm font-semibold text-gray-900 mb-3">5-Number Summary</h4>
                 <div className="flex justify-between text-sm mb-3">
                   <div className="text-center">
-                    <p className="font-semibold text-gray-900">{formatSigFigs(numericStats.min, 3)}</p>
+                    <p className="font-semibold text-gray-900">{formatExact(numericStats.min)}</p>
                     <div className="flex items-center justify-center gap-0.5">
                       <p className="text-xs text-gray-500">Min</p>
                       <StatTooltip {...statDefinitions.min} />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="font-semibold text-gray-900">{formatSigFigs(numericStats.q1, 3)}</p>
+                    <p className="font-semibold text-gray-900">{formatSummary(numericStats.q1, summaryDecimals)}</p>
                     <div className="flex items-center justify-center gap-0.5">
                       <p className="text-xs text-gray-500">Q1</p>
                       <StatTooltip {...statDefinitions.q1} />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="font-semibold text-blue-600">{formatSigFigs(numericStats.median, 3)}</p>
+                    <p className="font-semibold text-blue-600">{formatSummary(numericStats.median, summaryDecimals)}</p>
                     <div className="flex items-center justify-center gap-0.5">
                       <p className="text-xs text-gray-500">Median</p>
                       <StatTooltip {...statDefinitions.median} />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="font-semibold text-gray-900">{formatSigFigs(numericStats.q3, 3)}</p>
+                    <p className="font-semibold text-gray-900">{formatSummary(numericStats.q3, summaryDecimals)}</p>
                     <div className="flex items-center justify-center gap-0.5">
                       <p className="text-xs text-gray-500">Q3</p>
                       <StatTooltip {...statDefinitions.q3} />
                     </div>
                   </div>
                   <div className="text-center">
-                    <p className="font-semibold text-gray-900">{formatSigFigs(numericStats.max, 3)}</p>
+                    <p className="font-semibold text-gray-900">{formatExact(numericStats.max)}</p>
                     <div className="flex items-center justify-center gap-0.5">
                       <p className="text-xs text-gray-500">Max</p>
                       <StatTooltip {...statDefinitions.max} />
@@ -636,31 +648,31 @@ export function VariableExplorer({
                 <div className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <div className="flex items-center gap-1">
-                      <p className="text-gray-500">Std Dev</p>
+                      <p className="text-gray-500">Std Dev (sample)</p>
                       <StatTooltip {...statDefinitions.stdDev} />
                     </div>
-                    <p className="text-lg font-semibold text-gray-900">{formatSigFigs(numericStats.stdDev, 3)}</p>
+                    <p className="text-lg font-semibold text-gray-900">{formatSummary(numericStats.stdDev, summaryDecimals)}</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-1">
                       <p className="text-gray-500">Variance</p>
                       <StatTooltip {...statDefinitions.variance} />
                     </div>
-                    <p className="text-lg font-semibold text-gray-900">{formatSigFigs(numericStats.variance, 3)}</p>
+                    <p className="text-lg font-semibold text-gray-900">{formatSummary(numericStats.variance, summaryDecimals)}</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-1">
                       <p className="text-gray-500">Range</p>
                       <StatTooltip {...statDefinitions.range} />
                     </div>
-                    <p className="text-lg font-semibold text-gray-900">{formatSigFigs(numericStats.range, 3)}</p>
+                    <p className="text-lg font-semibold text-gray-900">{formatExact(numericStats.range)}</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-1">
                       <p className="text-gray-500">IQR</p>
                       <StatTooltip {...statDefinitions.iqr} />
                     </div>
-                    <p className="text-lg font-semibold text-gray-900">{formatSigFigs(numericStats.iqr, 3)}</p>
+                    <p className="text-lg font-semibold text-gray-900">{formatSummary(numericStats.iqr, summaryDecimals)}</p>
                   </div>
                 </div>
               </div>
@@ -677,7 +689,7 @@ export function VariableExplorer({
                     <p className="text-xs text-gray-500">Missing</p>
                   </div>
                   <div>
-                    <p className="text-xl font-bold text-gray-900">{formatSigFigs(numericStats.sum, 3)}</p>
+                    <p className="text-xl font-bold text-gray-900">{formatExact(numericStats.sum)}</p>
                     <p className="text-xs text-gray-500">Sum</p>
                   </div>
                 </div>

@@ -33,45 +33,51 @@ export const TwoByTwoTutorial: React.FC = () => {
             <h4 className="font-semibold text-gray-800 mb-3">What are 2×2 Tables & Attack Rates?</h4>
             <p className="text-sm text-gray-700 mb-3">
               A 2×2 contingency table (also called a two-by-two table) is a fundamental tool in outbreak investigation
-              that helps you identify risk factors. It compares illness rates between exposed and unexposed groups to
-              determine if an exposure is associated with disease.
+              that helps you identify risk factors. It cross-classifies people by exposure (exposed or not) and
+              outcome (ill or not) so the two groups can be compared.
             </p>
             <p className="text-sm text-gray-700">
-              <strong>Attack rate</strong> is the proportion of exposed people who became ill. Comparing attack rates
-              between exposed and unexposed groups reveals whether an exposure increases disease risk.
+              <strong>Attack rate</strong> is the proportion of a group who became ill. Comparing the attack rate
+              in the exposed with the attack rate in the unexposed shows whether an exposure is associated with
+              illness.
             </p>
           </div>
 
           <div className="mt-4">
-            <h4 className="font-semibold text-gray-800 mb-3">Creating Your 2×2 Table</h4>
+            <h4 className="font-semibold text-gray-800 mb-3">Running the Analysis</h4>
             <ol className="space-y-2 text-sm text-gray-700">
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">1.</span>
                 <div>
-                  <strong>Select Exposure Variable:</strong> Choose the variable representing a potential risk factor
-                  (e.g., "ate potato salad", "swam in pool", "attended event"). This should be a Yes/No or binary
-                  variable.
+                  <strong>Choose the analysis type:</strong> Cohort (attack rates and risk ratios) when you have
+                  everyone who was at risk, such as all guests at an event. Case-control (odds ratios) when you
+                  have cases and a sample of non-cases.
                 </div>
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">2.</span>
                 <div>
-                  <strong>Select Outcome Variable:</strong> Choose the variable indicating illness status (e.g., "case
-                  status", "became ill"). This should also be binary (Ill/Not Ill, Case/Control, etc.).
+                  <strong>Define the outcome:</strong> Choose the variable that records illness or case status,
+                  then tick the values that count as a case. Every other recorded value is treated as not ill (or
+                  as a control), so check the Value Mapping box. Blank outcomes are left out.
                 </div>
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">3.</span>
                 <div>
-                  <strong>Review the Table:</strong> The 2×2 table will display four cells showing counts of
-                  exposed-ill, exposed-not ill, unexposed-ill, and unexposed-not ill.
+                  <strong>Select exposures:</strong> Choose one or more potential risk factors (e.g., "ate potato
+                  salad"). Under each one, check which value means "exposed". Common codings such as Yes/No, Y/N,
+                  Oui/Non or 1/0 are recognised; otherwise you are asked to choose. For a variable with more than
+                  two values, also choose the comparison group.
                 </div>
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">4.</span>
                 <div>
-                  <strong>Interpret Results:</strong> Review attack rates, risk ratio, confidence intervals, and
-                  p-values to assess the strength and significance of the association.
+                  <strong>Read the summary table:</strong> Each exposure is one row, showing the two groups being
+                  compared, the counts and attack rates (or the cases and controls exposed), the risk ratio or
+                  odds ratio with its 95% confidence interval, and a p-value. You can work out the four cells of
+                  the 2×2 table from the counts and totals shown.
                 </div>
               </li>
             </ol>
@@ -83,42 +89,46 @@ export const TwoByTwoTutorial: React.FC = () => {
               <div className="flex items-start">
                 <div className="w-2 h-2 bg-orange-500 rounded-full mr-2 mt-2"></div>
                 <div>
-                  <strong className="text-orange-900">Attack Rate:</strong> Proportion of exposed (or unexposed) who
-                  became ill. Formula: (Number ill) ÷ (Total exposed). Expressed as percentage. Example: "60% of people
-                  who ate potato salad became ill."
+                  <strong className="text-orange-900">Attack Rate:</strong> (Number ill in a group) ÷ (Total in that
+                  group), expressed as a percentage. Example: "60% of people who ate potato salad became ill."
                 </div>
               </div>
               <div className="flex items-start">
                 <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 mt-2"></div>
                 <div>
                   <strong className="text-blue-900">Risk Ratio (RR):</strong> Attack rate in exposed ÷ attack rate in
-                  unexposed. RR = 1 means no association; RR &gt; 1 means exposure increases risk; RR &lt; 1 means
-                  exposure is protective. Example: "RR = 3.5 means exposed people were 3.5 times more likely to become
-                  ill."
+                  unexposed. RR = 1 means the same risk in both groups; RR &gt; 1 means higher risk in the exposed;
+                  RR &lt; 1 means lower risk in the exposed. Example: "RR = 3.5 means exposed people were 3.5 times
+                  as likely to become ill as unexposed people." If no one in the unexposed group became ill, the RR
+                  cannot be calculated and is shown as Undefined.
                 </div>
               </div>
               <div className="flex items-start">
                 <div className="w-2 h-2 bg-green-500 rounded-full mr-2 mt-2"></div>
                 <div>
-                  <strong className="text-green-900">95% Confidence Interval (CI):</strong> Range of plausible values
-                  for the true RR. If the CI includes 1.0, the association may not be statistically significant.
-                  Example: "RR = 3.5 (95% CI: 1.8-6.8)" suggests a real association.
+                  <strong className="text-green-900">95% Confidence Interval (CI):</strong> A range of values for
+                  the true RR (or OR) that is compatible with your data. A wide interval means the estimate is
+                  imprecise. If the CI includes 1.0, the data are also compatible with no association.
+                  Example: "RR = 3.5 (95% CI 1.8-6.8)".
                 </div>
               </div>
               <div className="flex items-start">
                 <div className="w-2 h-2 bg-purple-500 rounded-full mr-2 mt-2"></div>
                 <div>
-                  <strong className="text-purple-900">Chi-square Test & P-value:</strong> Tests whether the association
-                  is statistically significant. P &lt; 0.05 conventionally indicates significance. However, statistical
-                  significance doesn't always equal public health importance.
+                  <strong className="text-purple-900">p-value:</strong> From the chi-square test with Yates'
+                  continuity correction. When any expected cell count is below 5 the chi-square test is unreliable,
+                  so Fisher's exact test (two-sided) is shown instead and marked ‡. p &lt; 0.05 is conventionally
+                  called statistically significant, but statistical significance is not the same as public health
+                  importance.
                 </div>
               </div>
               <div className="flex items-start">
                 <div className="w-2 h-2 bg-red-500 rounded-full mr-2 mt-2"></div>
                 <div>
-                  <strong className="text-red-900">Odds Ratio (OR):</strong> Alternative measure of association, more
-                  appropriate for case-control studies. Interpretation similar to RR: OR &gt; 1 indicates increased
-                  odds with exposure.
+                  <strong className="text-red-900">Odds Ratio (OR):</strong> The measure of association for
+                  case-control studies: the odds of exposure among cases ÷ the odds of exposure among controls.
+                  OR &gt; 1 means exposure was more common among cases. If a cell of the table is zero the OR
+                  cannot be calculated directly; the value shown then adds 0.5 to every cell and is marked †.
                 </div>
               </div>
             </div>
@@ -128,31 +138,31 @@ export const TwoByTwoTutorial: React.FC = () => {
             <h4 className="font-semibold text-gray-800 mb-3">Interpreting Results</h4>
             <div className="space-y-3 text-sm text-gray-700">
               <div className="bg-green-50 border border-green-200 rounded p-3">
-                <h5 className="font-medium text-green-900 mb-2">Strong Positive Association</h5>
+                <h5 className="font-medium text-green-900 mb-2">Evidence of an Association</h5>
                 <ul className="text-sm text-green-800 space-y-1 ml-4">
-                  <li>• High RR (&gt; 2.0) with CI that doesn't include 1.0</li>
+                  <li>• RR (or OR) well above 1.0 with a CI that doesn't include 1.0</li>
                   <li>• Low p-value (&lt; 0.05)</li>
                   <li>• Large difference in attack rates between exposed and unexposed</li>
-                  <li>• Likely a significant risk factor—investigate further!</li>
+                  <li>• Most cases can be accounted for by the exposure: a suspect vehicle worth investigating further</li>
                 </ul>
               </div>
 
               <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                <h5 className="font-medium text-yellow-900 mb-2">Weak or Non-significant Association</h5>
+                <h5 className="font-medium text-yellow-900 mb-2">No Clear Association</h5>
                 <ul className="text-sm text-yellow-800 space-y-1 ml-4">
-                  <li>• RR close to 1.0</li>
-                  <li>• CI includes 1.0</li>
-                  <li>• High p-value (&gt; 0.05)</li>
-                  <li>• Exposure probably not a risk factor</li>
+                  <li>• RR close to 1.0, or a CI that includes 1.0</li>
+                  <li>• p-value of 0.05 or more</li>
+                  <li>• This does not prove there is no effect: with small numbers a real association can be missed</li>
                 </ul>
               </div>
 
               <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                <h5 className="font-medium text-blue-900 mb-2">Protective Effect</h5>
+                <h5 className="font-medium text-blue-900 mb-2">Lower Risk in the Exposed</h5>
                 <ul className="text-sm text-blue-800 space-y-1 ml-4">
-                  <li>• RR &lt; 1.0 with CI that doesn't include 1.0</li>
+                  <li>• RR &lt; 1.0 with a CI that doesn't include 1.0</li>
                   <li>• Lower attack rate in exposed than unexposed</li>
-                  <li>• Suggests exposure may be protective (e.g., vaccination, avoiding contaminated food)</li>
+                  <li>• May reflect a protective exposure (e.g., vaccination), or simply that people who ate one
+                    item did not eat the contaminated one</li>
                 </ul>
               </div>
             </div>
@@ -167,7 +177,8 @@ export const TwoByTwoTutorial: React.FC = () => {
                 <h5 className="font-semibold text-gray-900 mb-1">Pro Tips</h5>
                 <ul className="text-sm text-gray-700 space-y-1">
                   <li>• Test multiple exposures to identify all potential risk factors</li>
-                  <li>• Be cautious with small cell counts (&lt; 5)—results may be unreliable</li>
+                  <li>• Check that the "exposed" value and comparison group named in each row are the ones you intend</li>
+                  <li>• Be cautious with small cell counts (&lt; 5)—estimates are imprecise and intervals are wide</li>
                   <li>• Statistical significance doesn't prove causation—consider biological plausibility</li>
                   <li>• Document all tested associations, not just significant ones, to avoid reporting bias</li>
                   <li>• Consider dose-response relationships (low/medium/high exposure) for stronger evidence</li>

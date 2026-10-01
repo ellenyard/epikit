@@ -1,12 +1,23 @@
-import { detectCaseValues } from '../../../utils/caseDefinition';
-import { useState, useMemo, useEffect, useCallback } from 'react';
-import type { Dataset, CaseRecord } from '../../../types/analysis';
+import { useState, useMemo, useEffect } from 'react';
+import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { calculateTwoByTwo } from '../../../utils/statistics';
+import type { TwoByTwoResults } from '../../../utils/statistics';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
-import { isMissingValue } from '../../../utils/recordFilter';
+import { filterByCategoryValues } from '../../../utils/recordFilter';
+import { formatSigFigs } from '../../../utils/localeNumbers';
+import {
+  caseKeySet,
+  collectLevels,
+  levelKey,
+  outcomeCandidateColumns,
+  resolveExposureSetup,
+  suggestOutcome,
+  tabulateTwoByTwo,
+} from '../../../utils/twoByTwoSetup';
+import type { ExposureSetup } from '../../../utils/twoByTwoSetup';
 import {
   getDefaultDimensions,
   svgWrapper,
@@ -25,23 +36,80 @@ interface ForestRow {
   upper: number;
   weight: number;
   isPooled: boolean;
-  /** True when the 2×2 table had a zero cell and the estimate used a continuity correction */
+  /** True when the 2×2 table had a zero cell and the odds ratio used a continuity correction */
   zeroCell?: boolean;
+  /**
+   * Set when the measure cannot be estimated for this row. The row is still
+   * drawn, with this text in place of a marker: dropping it removed exactly
+   * the exposures an investigator most needs to see, such as the food nobody
+   * in the unexposed group fell ill after.
+   */
+  note?: string;
 }
 
 type DataMode = 'manual' | 'calculate';
 type MeasureType = 'oddsRatio' | 'riskRatio' | 'riskDifference';
 
+/** The settings this chart shares with the 2×2 analysis, as saved for one dataset. */
+interface SharedSettings {
+  outcomeVar: string;
+  caseValues: string[];
+  selectedExposures: string[];
+  exposurePositiveValues: Record<string, string>;
+  exposureReferenceValues: Record<string, string>;
+  filterBy: string;
+  selectedFilterValues: string[];
+}
+
+function loadSharedSettings(dataset: Dataset): SharedSettings {
+  let saved: Record<string, unknown> = {};
+  try {
+    const raw = localStorage.getItem(`epikit_twobytwo_${dataset.id}`);
+    saved = raw ? JSON.parse(raw) : {};
+  } catch {
+    saved = {};
+  }
+
+  let outcomeVar = (saved.outcomeVar as string) || '';
+  let caseValues = Array.isArray(saved.caseValues) ? saved.caseValues as string[] : [];
+  // Nothing saved: pre-select an outcome only when the data make it clear
+  if (!outcomeVar) {
+    const found = suggestOutcome(dataset.columns, dataset.records);
+    if (found) {
+      outcomeVar = found.key;
+      caseValues = found.caseValues;
+    }
+  }
+
+  return {
+    outcomeVar,
+    caseValues,
+    selectedExposures: Array.isArray(saved.selectedExposures) ? saved.selectedExposures as string[] : [],
+    exposurePositiveValues: (saved.exposurePositiveValues as Record<string, string>) || {},
+    exposureReferenceValues: (saved.exposureReferenceValues as Record<string, string>) || {},
+    filterBy: (saved.filterBy as string) ?? '',
+    selectedFilterValues: Array.isArray(saved.selectedFilterValues) ? saved.selectedFilterValues as string[] : [],
+  };
+}
+
+/** Why a measure cannot be plotted for a table, or null when it can. */
+function notEstimableReason(measure: MeasureType, r: TwoByTwoResults): string | null {
+  const { a, c } = r.table;
+  if (r.totalExposed === 0) return 'Not estimable: no one in the exposed group';
+  if (r.totalUnexposed === 0) return 'Not estimable: no one in the comparison group';
+  if (measure === 'riskDifference') return null;
+  if (r.totalDisease === 0) return 'Not estimable: no cases in either group';
+  if (measure === 'oddsRatio') {
+    return r.totalNoDisease === 0 ? 'Not estimable: no non-cases in either group' : null;
+  }
+  if (c === 0) return `Not estimable: 0 of ${r.totalUnexposed} ill in the comparison group`;
+  if (a === 0) return `RR = 0 (0 of ${r.totalExposed} exposed ill); no confidence interval`;
+  return null;
+}
+
 export function ForestPlot({ dataset }: { dataset: Dataset }) {
   // --- Load saved 2×2 analysis settings so forest plot matches ---
-  const twoByTwoSaved = useMemo(() => {
-    try {
-      const raw = localStorage.getItem(`epikit_twobytwo_${dataset.id}`);
-      return raw ? JSON.parse(raw) : {};
-    } catch {
-      return {};
-    }
-  }, [dataset.id]);
+  const [initial] = useState<SharedSettings>(() => loadSharedSettings(dataset));
 
   // --- Data mode toggle ---
   const [dataMode, setDataMode] = useState<DataMode>('calculate');
@@ -54,20 +122,15 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   const [weightCol, setWeightCol] = useState('');
 
   // --- Calculate mode state (initialized from 2×2 analysis if available) ---
-  const [outcomeVar, setOutcomeVar] = useState<string>(() =>
-    (twoByTwoSaved.outcomeVar as string) || ''
-  );
-  const [caseValues, setCaseValues] = useState<Set<string>>(() => {
-    const arr = twoByTwoSaved.caseValues;
-    return Array.isArray(arr) ? new Set(arr as string[]) : new Set();
-  });
-  const [selectedExposures, setSelectedExposures] = useState<string[]>(() => {
-    const arr = twoByTwoSaved.selectedExposures;
-    return Array.isArray(arr) ? arr as string[] : [];
-  });
-  const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>(() =>
-    (twoByTwoSaved.exposurePositiveValues as Record<string, string>) || {}
-  );
+  const [outcomeVar, setOutcomeVar] = useState<string>(initial.outcomeVar);
+  const [caseValues, setCaseValues] = useState<Set<string>>(() => new Set(initial.caseValues));
+  const [selectedExposures, setSelectedExposures] = useState<string[]>(initial.selectedExposures);
+  const [exposurePositiveValues, setExposurePositiveValues] = useState<Record<string, string>>(initial.exposurePositiveValues);
+  const [exposureReferenceValues, setExposureReferenceValues] = useState<Record<string, string>>(initial.exposureReferenceValues);
+  // The 2×2 tab's record filter. Read here, changed there: applying it keeps
+  // the two tabs on the same records.
+  const [filterBy, setFilterBy] = useState<string>(initial.filterBy);
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => new Set(initial.selectedFilterValues));
   const [measureType, setMeasureType] = useState<MeasureType>('oddsRatio');
   // Custom labels for forest plot rows (keyed by exposure variable key)
   const [customLabels, setCustomLabels] = useState<Record<string, string>>({});
@@ -82,26 +145,50 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
 
+  // This component is not remounted when the dataset changes, so its state
+  // has to be reloaded for the new dataset. Without this the sync below wrote
+  // the previous dataset's outcome and exposures into the new dataset's saved
+  // 2×2 setup. Done while rendering, so no effect ever sees one dataset's
+  // state alongside another dataset's id.
+  const [loadedDatasetId, setLoadedDatasetId] = useState(dataset.id);
+  if (loadedDatasetId !== dataset.id) {
+    const next = loadSharedSettings(dataset);
+    setLoadedDatasetId(dataset.id);
+    setOutcomeVar(next.outcomeVar);
+    setCaseValues(new Set(next.caseValues));
+    setSelectedExposures(next.selectedExposures);
+    setExposurePositiveValues(next.exposurePositiveValues);
+    setExposureReferenceValues(next.exposureReferenceValues);
+    setFilterBy(next.filterBy);
+    setSelectedFilterValues(new Set(next.selectedFilterValues));
+    setCustomLabels({});
+    setLabelCol('');
+    setEstimateCol('');
+    setLowerCICol('');
+    setUpperCICol('');
+    setWeightCol('');
+  }
+
+  // In calculate mode the scale follows the measure; in manual mode the user sets it
+  const scaleType: 'ratio' | 'difference' = dataMode === 'calculate'
+    ? (measureType === 'riskDifference' ? 'difference' : 'ratio')
+    : effectMeasure;
+
   // --- Calculate mode helpers ---
 
   // Get columns suitable for case definition
-  const caseDefinitionColumns = useMemo(() => {
-    return dataset.columns.filter(col => {
-      if (col.type === 'number' && !col.key.toLowerCase().includes('age')) return false;
-      if (col.type === 'date') return false;
-      if (col.key === 'id' || col.key === 'case_id' || col.key === 'participant_id') return false;
-      if (col.key.includes('latitude') || col.key.includes('longitude')) return false;
-      const uniqueValues = new Set(dataset.records.map(r => r[col.key])).size;
-      return uniqueValues >= 2 && uniqueValues <= 20;
-    });
-  }, [dataset]);
+  const caseDefinitionColumns = useMemo(
+    () => outcomeCandidateColumns(dataset.columns, dataset.records),
+    [dataset]
+  );
 
-  // Get unique values for the selected outcome variable
-  const outcomeValues = useMemo(() => {
+  // Distinct values of the selected outcome variable
+  const outcomeLevels = useMemo(() => {
     if (!outcomeVar) return [];
-    const values = new Set(dataset.records.map(r => String(r[outcomeVar] ?? '')));
-    return Array.from(values).filter(v => v !== '').sort();
+    return collectLevels(dataset.records, outcomeVar);
   }, [dataset.records, outcomeVar]);
+
+  const caseKeys = useMemo(() => caseKeySet(caseValues), [caseValues]);
 
   // Get columns suitable for exposure variables
   const exposureColumns = useMemo(() => {
@@ -137,94 +224,73 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
         caseValues: Array.from(caseValues),
         selectedExposures,
         exposurePositiveValues,
+        exposureReferenceValues,
       };
       localStorage.setItem(persistenceKey, JSON.stringify(toSave));
     } catch (e) {
       console.error('Failed to sync forest plot settings:', e);
     }
-  }, [dataMode, dataset.id, outcomeVar, caseValues, selectedExposures, exposurePositiveValues]);
+  }, [dataMode, dataset.id, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, exposureReferenceValues]);
 
-  // Auto-detect outcome variable (only if nothing was loaded from 2×2 settings)
-  useEffect(() => {
-    if (dataMode !== 'calculate' || outcomeVar) return;
-    const commonCaseColumns = ['ill', 'case_status', 'case', 'status', 'outcome'];
-    const found = caseDefinitionColumns.find(col =>
-      commonCaseColumns.some(name => col.key.toLowerCase().includes(name))
-    );
-    if (found) {
-      setOutcomeVar(found.key);
-      const values = Array.from(new Set(dataset.records.map(r => String(r[found.key] ?? ''))));
-      const autoSelected = detectCaseValues(values);
-      if (autoSelected.length > 0) {
-        setCaseValues(new Set(autoSelected));
-      }
+  // For every candidate exposure: its levels, the exposed level and the
+  // comparison level, by the same rules as the 2×2 analysis
+  const exposureSetups = useMemo(() => {
+    const setups = new Map<string, ExposureSetup>();
+    for (const col of exposureColumns) {
+      setups.set(
+        col.key,
+        resolveExposureSetup(
+          dataset.records,
+          col.key,
+          exposurePositiveValues[col.key],
+          exposureReferenceValues[col.key]
+        )
+      );
     }
-  }, [dataMode, caseDefinitionColumns, dataset.records, outcomeVar]);
+    return setups;
+  }, [dataset.records, exposureColumns, exposurePositiveValues, exposureReferenceValues]);
 
-  // Get unique values for a specific exposure variable
-  const getExposureValues = useCallback((expVar: string): string[] => {
-    const values = new Set<string>();
-    dataset.records.forEach(r => {
-      const v = r[expVar];
-      if (v !== null && v !== undefined && v !== '') {
-        values.add(String(v));
-      }
-    });
-    return Array.from(values).sort();
-  }, [dataset.records]);
-
-  // Auto-detect "Yes" as exposed value
-  const detectExposedValue = useCallback((expVar: string): string => {
-    const values = getExposureValues(expVar);
-    const positiveKeywords = ['yes', 'true', '1', 'positive', 'exposed'];
-    const found = values.find(v =>
-      positiveKeywords.some(kw => v.toLowerCase() === kw)
-    );
-    return found || values[0] || '';
-  }, [getExposureValues]);
-
-  // Check if a record is a case
-  const isCase = useCallback((record: CaseRecord): boolean => {
-    if (!outcomeVar || caseValues.size === 0) return false;
-    const value = String(record[outcomeVar] ?? '');
-    return caseValues.has(value);
-  }, [caseValues, outcomeVar]);
-
-  // Sync effectMeasure when measureType changes
-  useEffect(() => {
-    if (dataMode === 'calculate') {
-      setEffectMeasure(measureType === 'riskDifference' ? 'difference' : 'ratio');
-    }
-  }, [dataMode, measureType]);
+  // The records the 2×2 tab is analysing
+  const filteredRecords = useMemo(
+    () => filterByCategoryValues(dataset.records, filterBy, selectedFilterValues),
+    [dataset.records, filterBy, selectedFilterValues]
+  );
+  const filterDescription = useMemo(() => {
+    if (!filterBy || selectedFilterValues.size === 0) return '';
+    const col = dataset.columns.find(c => c.key === filterBy);
+    return `${col?.label || filterBy} = ${Array.from(selectedFilterValues).join(', ')}`;
+  }, [dataset.columns, filterBy, selectedFilterValues]);
 
   // --- Calculate forest data from 2x2 analysis ---
-  const calculatedForestData = useMemo((): ForestRow[] => {
-    if (dataMode !== 'calculate') return [];
-    if (!outcomeVar || caseValues.size === 0 || selectedExposures.length === 0) return [];
-
+  const calculated = useMemo((): { rows: ForestRow[]; needsChoice: string[] } => {
     const rows: ForestRow[] = [];
+    const needsChoice: string[] = [];
+    if (dataMode !== 'calculate') return { rows, needsChoice };
+    if (!outcomeVar || caseKeys.size === 0 || selectedExposures.length === 0) return { rows, needsChoice };
 
     for (const expVar of selectedExposures) {
-      const exposedValue = exposurePositiveValues[expVar] || detectExposedValue(expVar);
-      let a = 0, b = 0, c = 0, d = 0;
+      const col = dataset.columns.find(c => c.key === expVar);
+      const colLabel = col ? col.label : expVar;
+      const setup = exposureSetups.get(expVar);
+      if (!setup) continue;
+      // Nothing is drawn until both groups are known: a guessed "exposed"
+      // value gives a clean, inverted estimate rather than an obvious error.
+      if (!setup.exposed || !setup.reference) {
+        needsChoice.push(colLabel);
+        continue;
+      }
 
-      dataset.records.forEach((record: CaseRecord) => {
-        const expValue = record[expVar];
-        // Trimmed, so a whitespace-only cell is missing rather than its own
-        // exposure group. The same fault was fixed in the 2x2 panel and the
-        // record filter; this copy computes its own table and still had it.
-        if (isMissingValue(expValue)) return;
-
-        const exposed = String(expValue) === exposedValue;
-        const diseased = isCase(record);
-
-        if (exposed && diseased) a++;
-        else if (exposed && !diseased) b++;
-        else if (!exposed && diseased) c++;
-        else if (!exposed && !diseased) d++;
-      });
-
-      const results = calculateTwoByTwo({ a, b, c, d });
+      // Same table as the 2×2 tab: missing exposure or outcome left out, and
+      // the exposed compared with the named comparison group only.
+      const counts = tabulateTwoByTwo(
+        filteredRecords,
+        expVar,
+        setup.exposed.key,
+        setup.reference.key,
+        outcomeVar,
+        caseKeys
+      );
+      const results = calculateTwoByTwo(counts.table);
 
       let estimate: number;
       let lower: number;
@@ -241,17 +307,25 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
         [lower, upper] = results.riskDifferenceCI;
       }
 
-      // Skip if result is not usable
-      if (!isFinite(estimate) || isNaN(estimate)) continue;
-      if (!isFinite(lower) || !isFinite(upper)) continue;
-      // For ratio measures, skip non-positive
-      if (measureType !== 'riskDifference' && (estimate <= 0 || lower <= 0 || upper <= 0)) continue;
-
       // Use custom label if set, otherwise show comparison
-      const col = dataset.columns.find(c => c.key === expVar);
-      const colLabel = col ? col.label : expVar;
       const label = customLabels[expVar]
-        || `${colLabel} (${exposedValue} vs. rest)`;
+        || `${colLabel} (${setup.exposed.label} vs. ${setup.reference.label})`;
+
+      const usable = isFinite(estimate) && isFinite(lower) && isFinite(upper)
+        && (measureType === 'riskDifference' || (estimate > 0 && lower > 0 && upper > 0));
+      const reason = notEstimableReason(measureType, results) ?? (usable ? null : 'Not estimable');
+      if (reason) {
+        rows.push({
+          label,
+          estimate: NaN,
+          lower: NaN,
+          upper: NaN,
+          weight: results.total,
+          isPooled: false,
+          note: reason,
+        });
+        continue;
+      }
 
       rows.push({
         label,
@@ -260,12 +334,15 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
         upper: Math.max(lower, upper),
         weight: results.total, // weight by total sample size
         isPooled: false,
-        zeroCell: a === 0 || b === 0 || c === 0 || d === 0,
+        // Only the odds ratio is corrected for a zero cell; the risk ratio and
+        // risk difference are plotted as calculated
+        zeroCell: measureType === 'oddsRatio' && results.oddsRatioCorrected,
       });
     }
 
-    return rows;
-  }, [dataMode, dataset, outcomeVar, caseValues, selectedExposures, exposurePositiveValues, customLabels, measureType, detectExposedValue, isCase]);
+    return { rows, needsChoice };
+  }, [dataMode, dataset.columns, filteredRecords, outcomeVar, caseKeys, selectedExposures, exposureSetups, customLabels, measureType]);
+
 
   // --- Manual mode: process data from columns ---
   const manualForestData = useMemo((): ForestRow[] => {
@@ -306,30 +383,61 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     return [...nonPooled, ...pooled];
   }, [dataMode, dataset.records, labelCol, estimateCol, lowerCICol, upperCICol, weightCol, effectMeasure]);
 
+
   // Combined forest data
-  const forestData = dataMode === 'calculate' ? calculatedForestData : manualForestData;
+  const forestData = dataMode === 'calculate' ? calculated.rows : manualForestData;
 
   // Generate SVG
   const svgContent = useMemo(() => {
     if (forestData.length === 0) return '';
 
-    const useLog = effectMeasure === 'ratio';
+    const useLog = scaleType === 'ratio';
     const toScale = (v: number) => useLog ? Math.log(v) : v;
     const nullValue = useLog ? 0 : 0; // log(1)=0 for ratio, 0 for difference
+
+    const plotted = forestData.filter(r => !r.note);
+
+    // Notes under the axis. Each gets its own line, above the source, so the
+    // two can no longer be drawn on top of each other.
+    const notes: string[] = [];
+    if (forestData.some(r => r.zeroCell)) {
+      notes.push('† Zero cell in the 2×2 table: OR and CI add 0.5 to every cell (continuity correction)');
+    }
+    if (dataMode === 'calculate' && filterDescription) {
+      notes.push(`Records restricted to ${filterDescription}`);
+    }
+
+    // Row labels are right-aligned against the plot, so the left margin has
+    // to be wide enough for the longest one or its start is cut off.
+    const maxLabelChars = 48;
+    const shownLabel = (row: ForestRow) =>
+      (row.label.length > maxLabelChars ? row.label.slice(0, maxLabelChars - 1) + '\u2026' : row.label)
+      + (row.zeroCell ? ' †' : '');
+    const longestLabel = Math.max(...forestData.map(r => shownLabel(r).length));
 
     const dims = getDefaultDimensions('forest');
     const rowHeight = 30;
     const minPlotHeight = forestData.length * rowHeight;
     const width = dims.width;
-    const height = Math.max(dims.height, minPlotHeight + dims.margin.top + dims.margin.bottom);
-    const margin = { ...dims.margin, right: showLabels ? 180 : 60 };
+    const margin = {
+      ...dims.margin,
+      left: Math.min(330, Math.max(120, Math.round(longestLabel * 6.3) + 20)),
+      right: showLabels ? 180 : 60,
+      bottom: dims.margin.bottom + notes.length * 14 + (source ? 16 : 0),
+    };
+    const height = Math.max(dims.height, minPlotHeight + margin.top + margin.bottom);
     const plotW = width - margin.left - margin.right;
     const plotH = height - margin.top - margin.bottom;
 
     // Compute scale range from all CI bounds
-    const allScaled = forestData.flatMap(r => [toScale(r.lower), toScale(r.estimate), toScale(r.upper)]);
+    const allScaled = plotted.flatMap(r => [toScale(r.lower), toScale(r.estimate), toScale(r.upper)]);
     let minVal = Math.min(...allScaled, nullValue);
     let maxVal = Math.max(...allScaled, nullValue);
+    if (plotted.length === 0) {
+      // Nothing estimable: draw an empty axis so the rows can still say why
+      minVal = useLog ? Math.log(0.1) : -1;
+      maxVal = useLog ? Math.log(10) : 1;
+    }
     const range = maxVal - minVal || 1;
     minVal -= range * 0.1;
     maxVal += range * 0.1;
@@ -418,12 +526,19 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       const row = forestData[i];
       const y = yScale(i);
 
-      // Label on left († marks rows computed with the zero-cell continuity correction)
-      const labelText = (row.label.length > 32 ? row.label.slice(0, 30) + '\u2026' : row.label) + (row.zeroCell ? ' †' : '');
-      svg += svgText(margin.left - 8, y, labelText, {
+      // Label on left († marks odds ratios computed with the zero-cell continuity correction)
+      svg += svgText(margin.left - 8, y, shownLabel(row), {
         anchor: 'end', fontSize: 11, fill: row.isPooled ? '#000' : '#333',
         fontWeight: row.isPooled ? 'bold' : 'normal', dy: '0.35em',
       });
+
+      // A row that cannot be estimated says so where its marker would be
+      if (row.note) {
+        svg += svgText(margin.left + plotW / 2, y, row.note, {
+          anchor: 'middle', fontSize: 10, fill: '#777', dy: '0.35em',
+        });
+        continue;
+      }
 
       const xLo = xScale(toScale(row.lower));
       const xHi = xScale(toScale(row.upper));
@@ -446,24 +561,22 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
         svg += `<rect x="${xEst - markerSize}" y="${y - markerSize}" width="${markerSize * 2}" height="${markerSize * 2}" fill="${colors[0]}" stroke="white" stroke-width="1"/>`;
       }
 
-      // Value label
+      // Value label. Three significant figures, as in the 2×2 analysis: two
+      // fixed decimals printed a lower bound of 0.004 as "0.00" on a log axis.
       if (showLabels) {
-        const estDisplay = row.estimate.toFixed(2);
-        const loDisplay = row.lower.toFixed(2);
-        const hiDisplay = row.upper.toFixed(2);
-        const valText = `${estDisplay} (${loDisplay}, ${hiDisplay})`;
+        const valText = `${formatSigFigs(row.estimate, 3)} (${formatSigFigs(row.lower, 3)}, ${formatSigFigs(row.upper, 3)})`;
         svg += svgText(margin.left + plotW + 8, y, valText, {
           anchor: 'start', fontSize: 10, fill: '#555', dy: '0.35em',
         });
       }
     }
 
-    // Footnote for zero-cell continuity correction
-    if (forestData.some(r => r.zeroCell)) {
-      svg += svgText(margin.left, margin.top + plotH + 55, '† Zero cell in 2×2 table — estimate and CI use a 0.5 continuity correction', {
+    // Footnotes, one line each
+    notes.forEach((note, i) => {
+      svg += svgText(margin.left, margin.top + plotH + 58 + i * 14, note, {
         anchor: 'start', fontSize: 10, fill: '#888',
       });
-    }
+    });
 
     // Source
     if (source) {
@@ -471,7 +584,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [forestData, effectMeasure, showNullLine, showLabels, colorScheme, title, subtitle, source, dataMode, measureType]);
+  }, [forestData, scaleType, showNullLine, showLabels, colorScheme, title, subtitle, source, dataMode, measureType, filterDescription]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -484,13 +597,15 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       { header: 'Lower 95% CI', key: 'lower' },
       { header: 'Upper 95% CI', key: 'upper' },
       { header: 'Weight (N)', key: 'weight' },
+      { header: 'Note', key: 'note' },
     ];
     const rows = forestData.map(r => ({
       label: r.label,
-      estimate: r.estimate,
-      lower: r.lower,
-      upper: r.upper,
+      estimate: r.note ? null : r.estimate,
+      lower: r.note ? null : r.lower,
+      upper: r.note ? null : r.upper,
       weight: r.weight,
+      note: r.note ?? (r.zeroCell ? 'Zero cell: OR and CI add 0.5 to every cell' : ''),
     }));
     return {
       title,
@@ -505,33 +620,28 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
 
   // --- Toggle exposure selection ---
   const toggleExposure = (expKey: string) => {
-    setSelectedExposures(prev => {
-      if (prev.includes(expKey)) {
-        return prev.filter(k => k !== expKey);
-      }
-      // Auto-detect exposed value when adding
-      if (!exposurePositiveValues[expKey]) {
-        const detected = detectExposedValue(expKey);
-        if (detected) {
-          setExposurePositiveValues(p => ({ ...p, [expKey]: detected }));
-        }
-      }
-      return [...prev, expKey];
-    });
+    setSelectedExposures(prev =>
+      prev.includes(expKey) ? prev.filter(k => k !== expKey) : [...prev, expKey]
+    );
+  };
+
+  const updateExposedValue = (expKey: string, value: string) => {
+    setExposurePositiveValues(prev => ({ ...prev, [expKey]: value }));
+    // Drop a saved comparison group equal to the new exposed value
+    if (levelKey(exposureReferenceValues[expKey]) === levelKey(value)) {
+      setExposureReferenceValues(prev => {
+        const next = { ...prev };
+        delete next[expKey];
+        return next;
+      });
+    }
   };
 
   // Select all food/exposure-like columns
   const selectAllExposures = () => {
-    const allKeys = exposureColumns.map(c => c.key);
-    const newPositiveValues = { ...exposurePositiveValues };
-    allKeys.forEach(key => {
-      if (!newPositiveValues[key]) {
-        newPositiveValues[key] = detectExposedValue(key);
-      }
-    });
-    setExposurePositiveValues(newPositiveValues);
-    setSelectedExposures(allKeys);
+    setSelectedExposures(exposureColumns.map(c => c.key));
   };
+
 
   const clearAllExposures = () => {
     setSelectedExposures([]);
@@ -563,9 +673,9 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
               <div className="px-3 py-2 text-xs text-blue-700 space-y-1.5 bg-white">
                 <p>{'\u2022'} Displaying effect estimates (odds ratios, relative risks) with confidence intervals</p>
                 <p>{'\u2022'} Comparing results across multiple studies, subgroups, or strata</p>
-                <p>{'\u2022'} Showing which factors are statistically significant (CI crossing the null line)</p>
+                <p>{'\u2022'} Showing which factors are statistically significant (those whose CI does not cross the null line)</p>
                 <p>{'\u2022'} Meta-analyses or systematic reviews of epidemiological studies</p>
-                <p className="text-blue-500 italic mt-2">CDC provides forest plot templates. The gold standard for displaying pooled epidemiological evidence.</p>
+                <p className="text-blue-500 italic mt-2">The standard way to show several effect estimates and their uncertainty side by side.</p>
               </div>
             )}
           </div>
@@ -630,28 +740,34 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                   </select>
                 </div>
 
-                {outcomeVar && outcomeValues.length > 0 && (
+                {!outcomeVar && (
+                  <p className="text-xs text-gray-500">
+                    Choose the variable that records who became ill or who is a case.
+                  </p>
+                )}
+
+                {outcomeVar && outcomeLevels.length > 0 && (
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">
                       Which values mean "case"? <span className="text-red-500">*</span>
                     </label>
                     <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {outcomeValues.map(val => (
-                        <label key={val} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                      {outcomeLevels.map(level => (
+                        <label key={level.key} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={caseValues.has(val)}
-                            onChange={() => {
-                              setCaseValues(prev => {
-                                const next = new Set(prev);
-                                if (next.has(val)) next.delete(val);
-                                else next.add(val);
-                                return next;
-                              });
+                            checked={caseKeys.has(level.key)}
+                            onChange={(e) => {
+                              // Compared by level, so a saved "yes" unticks "Yes"
+                              const next = new Set(
+                                Array.from(caseValues).filter(v => levelKey(v) !== level.key)
+                              );
+                              if (e.target.checked) next.add(level.label);
+                              setCaseValues(next);
                             }}
                             className="rounded border-gray-300"
                           />
-                          {val}
+                          {level.label}
                         </label>
                       ))}
                     </div>
@@ -697,6 +813,10 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                 <div className="space-y-1.5 max-h-48 overflow-y-auto">
                   {exposureColumns.map(col => {
                     const isSelected = selectedExposures.includes(col.key);
+                    const setup = exposureSetups.get(col.key);
+                    const levels = setup?.levels ?? [];
+                    const exposed = setup?.exposed ?? null;
+                    const reference = setup?.reference ?? null;
                     return (
                       <div key={col.key}>
                         <label className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
@@ -711,24 +831,43 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                         {isSelected && (
                           <div className="ml-6 mt-1 space-y-1">
                             <select
-                              value={exposurePositiveValues[col.key] || ''}
-                              onChange={e => setExposurePositiveValues(prev => ({
-                                ...prev, [col.key]: e.target.value,
-                              }))}
-                              className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500"
+                              value={exposed?.label ?? ''}
+                              onChange={e => updateExposedValue(col.key, e.target.value)}
+                              aria-label={`Exposed value for ${col.label}`}
+                              className={`w-full px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-blue-500 ${
+                                exposed ? 'border-gray-200 bg-gray-50' : 'border-amber-500 bg-amber-50'
+                              }`}
                             >
-                              <option value="">Exposed value...</option>
-                              {getExposureValues(col.key).map(v => (
-                                <option key={v} value={v}>{v}</option>
+                              {!exposed && <option value="">Choose exposed value…</option>}
+                              {levels.map(level => (
+                                <option key={level.key} value={level.label}>{level.label} = Exposed</option>
                               ))}
                             </select>
+                            {exposed && (levels.length > 2 || !reference) && (
+                              <select
+                                value={reference?.label ?? ''}
+                                onChange={e => setExposureReferenceValues(prev => ({
+                                  ...prev, [col.key]: e.target.value,
+                                }))}
+                                aria-label={`Comparison group for ${col.label}`}
+                                className={`w-full px-2 py-1 border rounded text-xs focus:ring-1 focus:ring-blue-500 ${
+                                  reference ? 'border-gray-200 bg-gray-50' : 'border-amber-500 bg-amber-50'
+                                }`}
+                              >
+                                {!reference && <option value="">Choose comparison group…</option>}
+                                {levels.filter(level => level.key !== exposed.key).map(level => (
+                                  <option key={level.key} value={level.label}>{level.label} = Comparison</option>
+                                ))}
+                              </select>
+                            )}
                             <input
                               type="text"
                               value={customLabels[col.key] || ''}
                               onChange={e => setCustomLabels(prev => ({
                                 ...prev, [col.key]: e.target.value,
                               }))}
-                              placeholder={`${col.label} (${exposurePositiveValues[col.key] || '...'} vs. rest)`}
+                              aria-label={`Row label for ${col.label}`}
+                              placeholder={`${col.label} (${exposed?.label ?? '...'} vs. ${reference?.label ?? '...'})`}
                               className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 focus:ring-1 focus:ring-blue-500"
                             />
                           </div>
@@ -741,6 +880,19 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                 {selectedExposures.length > 0 && (
                   <p className="text-xs text-gray-500">
                     {selectedExposures.length} exposure{selectedExposures.length !== 1 ? 's' : ''} selected
+                  </p>
+                )}
+
+                {calculated.needsChoice.length > 0 && (
+                  <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded p-2" role="status">
+                    Not drawn yet: {calculated.needsChoice.join(', ')}. Choose which value means
+                    &ldquo;exposed&rdquo; (and the comparison group) above; LineList could not tell from the values.
+                  </p>
+                )}
+
+                {filterDescription && (
+                  <p className="text-xs text-gray-500">
+                    Using the 2×2 tab&rsquo;s filter: {filterDescription} ({filteredRecords.length} of {dataset.records.length} records).
                   </p>
                 )}
               </div>

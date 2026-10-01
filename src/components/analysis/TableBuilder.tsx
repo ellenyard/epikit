@@ -1,9 +1,9 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import type { Dataset } from '../../types/analysis';
 import { calculateCrossTabulation } from '../../utils/statistics';
 import type { CrossTabResults } from '../../utils/statistics';
 import { formatSigFigs, formatStatPercent } from '../../utils/localeNumbers';
-import { collectCategoryValues, countInCategory, filterByCategoryValues } from '../../utils/recordFilter';
+import { collectCategoryValues, countInCategory, filterByCategoryValues, normalizedText, sortCategoryValues } from '../../utils/recordFilter';
 
 interface TableBuilderProps {
   dataset: Dataset;
@@ -33,6 +33,10 @@ interface FrequencyRow {
   cumPercent: number;
   isVariableHeader: boolean;
   isMissing: boolean;
+  /** What this variable's percentages are out of */
+  denominator: number;
+  /** Records with no value for this variable */
+  missingCount: number;
 }
 
 interface CrossTabCell {
@@ -53,8 +57,28 @@ interface SingleCrossTab {
   excludedCount: number;
 }
 
+/** A value quoted for CSV, with any quote inside it doubled. */
+function csvCell(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 /**
- * TableBuilder: Drag-and-drop table builder for frequency tables and cross-tabulations
+ * True when a set of category values has an order of its own: numbers, age
+ * bands such as "5-9" and "10-14", or month names. A plain alphabetical sort
+ * puts "10-14" before "5-9" and "10" before "2".
+ */
+function hasNaturalOrder(values: string[]): boolean {
+  if (values.length === 0) return false;
+  if (values.every(v => /^[<>~≤≥]?\s*-?\d/.test(v.trim()))) return true;
+  const natural = sortCategoryValues(values);
+  const alphabetical = [...values].sort((a, b) => a.localeCompare(b));
+  return natural.some((v, i) => v !== alphabetical[i]);
+}
+
+/**
+ * TableBuilder: table builder for frequency tables and cross-tabulations.
+ * Variables are placed by dragging, or with the Row / Column buttons beside
+ * each one, which also work from the keyboard and on touch screens.
  */
 export function TableBuilder({
   dataset,
@@ -109,48 +133,34 @@ export function TableBuilder({
   });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
 
-  // Track previous dataset ID to detect actual changes (vs re-renders)
-  const prevDatasetIdRef = useRef<string>(dataset.id);
-  // Skip the save effect once after a dataset switch so stale state from the
-  // previous dataset is never written into the new dataset's storage key
-  const skipNextSaveRef = useRef(false);
-  // Skip the filter-reset effect when the filter change came from a dataset switch
-  const skipFilterResetRef = useRef(false);
-
-  // Reload persisted state when the dataset actually changes
-  useEffect(() => {
-    if (prevDatasetIdRef.current !== dataset.id) {
-      prevDatasetIdRef.current = dataset.id;
-      skipNextSaveRef.current = true;
-      let next: Record<string, unknown> = {};
-      try {
-        const raw = localStorage.getItem(persistenceKey);
-        next = raw ? JSON.parse(raw) : {};
-      } catch {
-        next = {};
-      }
-      const savedOpts = next.tableOptions as Record<string, unknown> | undefined;
-      const nextFilterBy = (next.filterBy as string) ?? '';
-      skipFilterResetRef.current = nextFilterBy !== filterBy;
-      setTableOptions(savedOpts
-        ? {
-            percentType: (savedOpts.percentType as PercentType) || 'column',
-            showCumPercent: savedOpts.showCumPercent !== undefined ? savedOpts.showCumPercent as boolean : false,
-            includeMissing: savedOpts.includeMissing !== undefined ? savedOpts.includeMissing as boolean : true,
-          }
-        : { percentType: 'column', showCumPercent: false, includeMissing: true });
-      setFilterBy(nextFilterBy);
-      setSelectedFilterValues(Array.isArray(next.selectedFilterValues) ? new Set(next.selectedFilterValues as string[]) : new Set());
-      setShowAllFilterValues(false);
+  // Reload persisted state when the dataset actually changes. Done while
+  // rendering, so the save effect below never writes the previous dataset's
+  // options under the new dataset's storage key.
+  const [loadedDatasetId, setLoadedDatasetId] = useState(dataset.id);
+  if (loadedDatasetId !== dataset.id) {
+    let next: Record<string, unknown> = {};
+    try {
+      const raw = localStorage.getItem(persistenceKey);
+      next = raw ? JSON.parse(raw) : {};
+    } catch {
+      next = {};
     }
-  }, [dataset.id, persistenceKey, filterBy]);
+    const savedOpts = next.tableOptions as Record<string, unknown> | undefined;
+    setLoadedDatasetId(dataset.id);
+    setTableOptions(savedOpts
+      ? {
+          percentType: (savedOpts.percentType as PercentType) || 'column',
+          showCumPercent: savedOpts.showCumPercent !== undefined ? savedOpts.showCumPercent as boolean : false,
+          includeMissing: savedOpts.includeMissing !== undefined ? savedOpts.includeMissing as boolean : true,
+        }
+      : { percentType: 'column', showCumPercent: false, includeMissing: true });
+    setFilterBy((next.filterBy as string) ?? '');
+    setSelectedFilterValues(Array.isArray(next.selectedFilterValues) ? new Set(next.selectedFilterValues as string[]) : new Set());
+    setShowAllFilterValues(false);
+  }
 
   // Save state to localStorage when it changes
   useEffect(() => {
-    if (skipNextSaveRef.current) {
-      skipNextSaveRef.current = false;
-      return;
-    }
     try {
       const toSave = {
         tableOptions,
@@ -171,33 +181,25 @@ export function TableBuilder({
     }
   }, [initialRowVars, onRowVarsUsed, setRowVars]);
 
-  // Get unique values for a variable
+  // Get unique values for a variable, in the order a reader expects: the
+  // column's own order if it has one, numbers and age bands numerically,
+  // months chronologically, anything else alphabetically. Values are trimmed,
+  // so "Yes " and "Yes" are one category.
   const getUniqueValues = useCallback((varKey: string): string[] => {
     const values = new Set<string>();
     for (const record of dataset.records) {
-      const val = record[varKey];
-      if (val !== null && val !== undefined && String(val).trim() !== '') {
-        values.add(String(val));
-      }
+      const text = normalizedText(record[varKey]);
+      if (text !== '') values.add(text);
     }
-    return Array.from(values).sort();
-  }, [dataset.records]);
+    const column = dataset.columns.find(c => c.key === varKey);
+    return sortCategoryValues(Array.from(values), column?.valueOrder);
+  }, [dataset.records, dataset.columns]);
 
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
     if (!filterBy) return [];
     return collectCategoryValues(dataset.records, filterBy);
   }, [dataset.records, filterBy]);
-
-  // Reset selected filter values when filter variable changes
-  useEffect(() => {
-    if (skipFilterResetRef.current) {
-      skipFilterResetRef.current = false;
-      return;
-    }
-    setSelectedFilterValues(new Set());
-    setShowAllFilterValues(false);
-  }, [filterBy]);
 
   // Apply filter to records
   const filteredRecords = useMemo(
@@ -214,23 +216,31 @@ export function TableBuilder({
     setDraggedVar(null);
   };
 
-  const handleDropOnRows = () => {
-    if (draggedVar && !rowVars.includes(draggedVar)) {
-      // If it was in column, remove it from there
-      if (colVar === draggedVar) {
-        setColVar('');
-      }
-      setRowVars([...rowVars, draggedVar]);
+  // Placing a variable. Shared by drag-and-drop and by the Row / Column
+  // buttons, which are the only route on a touch screen or from the keyboard:
+  // native HTML drag events do not fire for either.
+  const addToRows = (varKey: string) => {
+    if (rowVars.includes(varKey)) return;
+    // If it was in column, remove it from there
+    if (colVar === varKey) {
+      setColVar('');
     }
+    setRowVars([...rowVars, varKey]);
+  };
+
+  const setAsColumn = (varKey: string) => {
+    // If it was in rows, remove it from there
+    setRowVars(rowVars.filter(v => v !== varKey));
+    setColVar(varKey);
+  };
+
+  const handleDropOnRows = () => {
+    if (draggedVar) addToRows(draggedVar);
     setDraggedVar(null);
   };
 
   const handleDropOnCols = () => {
-    if (draggedVar) {
-      // If it was in rows, remove it from there
-      setRowVars(rowVars.filter(v => v !== draggedVar));
-      setColVar(draggedVar);
-    }
+    if (draggedVar) setAsColumn(draggedVar);
     setDraggedVar(null);
   };
 
@@ -259,16 +269,25 @@ export function TableBuilder({
 
       for (const record of filteredRecords) {
         const val = record[varKey];
-        if (val === null || val === undefined || String(val).trim() === '') {
+        const strVal = normalizedText(val);
+        if (strVal === '') {
           missingCount++;
         } else {
-          const strVal = String(val);
           valueCounts.set(strVal, (valueCounts.get(strVal) || 0) + 1);
         }
       }
 
       const denominator = tableOptions.includeMissing ? totalRecords : totalRecords - missingCount;
-      const sortedValues = Array.from(valueCounts.entries()).sort((a, b) => b[1] - a[1]);
+      // Ordered categories (a defined order, numbers, age bands, months) keep
+      // their order, so the cumulative percent means something. Unordered
+      // ones are listed most frequent first.
+      const present = Array.from(valueCounts.keys());
+      const ordered = (column.valueOrder && column.valueOrder.length > 0)
+        || column.type === 'number'
+        || hasNaturalOrder(present);
+      const sortedValues: [string, number][] = ordered
+        ? sortCategoryValues(present, column.valueOrder).map(v => [v, valueCounts.get(v) || 0])
+        : Array.from(valueCounts.entries()).sort((a, b) => b[1] - a[1]);
 
       let cumCount = 0;
       sortedValues.forEach(([value, count], index) => {
@@ -282,6 +301,8 @@ export function TableBuilder({
           cumPercent: denominator > 0 ? (cumCount / denominator) * 100 : 0,
           isVariableHeader: index === 0,
           isMissing: false,
+          denominator,
+          missingCount,
         });
       });
 
@@ -296,6 +317,8 @@ export function TableBuilder({
           cumPercent: 100,
           isVariableHeader: sortedValues.length === 0,
           isMissing: true,
+          denominator,
+          missingCount,
         });
       }
     }
@@ -339,17 +362,17 @@ export function TableBuilder({
         const rowVal = record[rowVar];
         const colVal = record[colVar];
 
-        if (rowVal === null || rowVal === undefined || String(rowVal).trim() === '') {
+        const rv = normalizedText(rowVal);
+        const cv = normalizedText(colVal);
+
+        if (rv === '') {
           rowMissingCount++;
           continue;
         }
-        if (colVal === null || colVal === undefined || String(colVal).trim() === '') {
+        if (cv === '') {
           colMissingCount++;
           continue;
         }
-
-        const rv = String(rowVal);
-        const cv = String(colVal);
 
         if (table.has(rv) && table.get(rv)!.has(cv)) {
           const cell = table.get(rv)!.get(cv)!;
@@ -406,13 +429,11 @@ export function TableBuilder({
         const rowVal = record[ct.rowVar];
         const colVal = record[colVar];
 
-        if (rowVal === null || rowVal === undefined || String(rowVal).trim() === '') continue;
-        if (colVal === null || colVal === undefined || String(colVal).trim() === '') continue;
+        const rowValue = normalizedText(rowVal);
+        const colValue = normalizedText(colVal);
+        if (rowValue === '' || colValue === '') continue;
 
-        data.push({
-          rowValue: String(rowVal),
-          colValue: String(colVal),
-        });
+        data.push({ rowValue, colValue });
       }
 
       if (data.length > 0) {
@@ -437,13 +458,13 @@ export function TableBuilder({
     }
   }, [tableOptions.percentType]);
 
-  const getPercentLabel = (): string => {
+  const getPercentLabel = useCallback((): string => {
     switch (tableOptions.percentType) {
       case 'row': return 'Row %';
       case 'column': return 'Column %';
       case 'total': return 'Total %';
     }
-  };
+  }, [tableOptions.percentType]);
 
   // Export to CSV
   const exportToCSV = useCallback(() => {
@@ -455,19 +476,19 @@ export function TableBuilder({
         if (index > 0) csv += '\n'; // Blank line between tables
 
         // Table title
-        csv += `"${ct.rowLabel} by ${crossTabData.colLabel}"\n`;
+        csv += csvCell(`${ct.rowLabel} by ${crossTabData.colLabel} (${getPercentLabel()})`) + '\n';
 
         // Headers
         const headers = ['', ...crossTabData.colValues, 'Total'];
-        csv += headers.map(h => `"${h}"`).join(',') + '\n';
+        csv += headers.map(csvCell).join(',') + '\n';
 
         ct.rowValues.forEach(rv => {
           const row = [
-            `"${rv}"`,
+            csvCell(rv),
             ...crossTabData.colValues.map(cv => {
               const cell = ct.table.get(rv)!.get(cv)!;
               const pct = getCellPercent(cell);
-              return `"${cell.count} (${pct.toFixed(1)}%)"`;
+              return csvCell(`${cell.count} (${formatStatPercent(pct, ct.grandTotal)}%)`);
             }),
             String(ct.rowTotals.get(rv) || 0),
           ];
@@ -481,6 +502,9 @@ export function TableBuilder({
           String(ct.grandTotal),
         ];
         csv += totalsRow.join(',') + '\n';
+        if (ct.excludedCount > 0) {
+          csv += csvCell(`Excludes ${ct.excludedCount} records with missing values`) + '\n';
+        }
       });
     } else if (frequencyData.length > 0) {
       // Frequency table export
@@ -490,12 +514,12 @@ export function TableBuilder({
 
       frequencyData.forEach(row => {
         const csvRow = [
-          row.isVariableHeader ? `"${row.variableLabel}"` : '',
-          `"${row.value}"`,
+          row.isVariableHeader ? csvCell(row.variableLabel) : '',
+          csvCell(row.value),
           String(row.count),
-          row.percent.toFixed(1) + '%',
+          formatStatPercent(row.percent, row.denominator) + '%',
         ];
-        if (tableOptions.showCumPercent) csvRow.push(row.isMissing ? '-' : row.cumPercent.toFixed(1) + '%');
+        if (tableOptions.showCumPercent) csvRow.push(row.isMissing ? '-' : formatStatPercent(row.cumPercent, row.denominator) + '%');
         csv += csvRow.join(',') + '\n';
       });
     }
@@ -511,7 +535,7 @@ export function TableBuilder({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [crossTabData, frequencyData, tableOptions, dataset.name, getCellPercent]);
+  }, [crossTabData, frequencyData, tableOptions, dataset.name, getCellPercent, getPercentLabel]);
 
   // Copy table to clipboard
   const copyToClipboard = useCallback(async () => {
@@ -560,9 +584,9 @@ export function TableBuilder({
           row.isVariableHeader ? row.variableLabel : '',
           row.value,
           String(row.count),
-          formatStatPercent(row.percent, filteredRecords.length) + '%',
+          formatStatPercent(row.percent, row.denominator) + '%',
         ];
-        if (tableOptions.showCumPercent) cols.push(row.isMissing ? '-' : formatStatPercent(row.cumPercent, filteredRecords.length) + '%');
+        if (tableOptions.showCumPercent) cols.push(row.isMissing ? '-' : formatStatPercent(row.cumPercent, row.denominator) + '%');
         text += cols.join('\t') + '\n';
       });
     }
@@ -576,7 +600,7 @@ export function TableBuilder({
     } catch {
       console.error('Failed to copy to clipboard');
     }
-  }, [crossTabData, frequencyData, tableOptions, filteredRecords.length, getCellPercent]);
+  }, [crossTabData, frequencyData, tableOptions, getCellPercent]);
 
   const hasData = rowVars.length > 0;
 
@@ -586,7 +610,7 @@ export function TableBuilder({
         <div>
           <h3 className="text-lg font-semibold text-gray-900">Table Builder</h3>
           <p className="text-sm text-gray-600">
-            Drag variables to create frequency tables (rows only) or cross-tabulations (rows + column)
+            Place variables in ROWS for frequency tables, or in ROWS and COLUMN for cross-tabulations. Drag them, or use the Row and Column buttons.
           </p>
         </div>
         {hasData && (
@@ -621,7 +645,12 @@ export function TableBuilder({
               <label className="block text-xs text-gray-500 mb-1">Filter by</label>
               <select
                 value={filterBy}
-                onChange={(e) => setFilterBy(e.target.value)}
+                onChange={(e) => {
+                  // A new filter variable starts with nothing selected
+                  setFilterBy(e.target.value);
+                  setSelectedFilterValues(new Set());
+                  setShowAllFilterValues(false);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="">None (show all)</option>
@@ -695,7 +724,7 @@ export function TableBuilder({
 
           <div className="bg-white border border-gray-200 rounded-lg p-4">
             <h4 className="text-sm font-semibold text-gray-900 mb-3">Available Variables</h4>
-            <p className="text-xs text-gray-500 mb-3">Drag to ROWS or COLUMN</p>
+            <p className="text-xs text-gray-500 mb-3">Drag to ROWS or COLUMN, or use the buttons</p>
             <div className="space-y-1 max-h-48 overflow-auto">
               {dataset.columns.map(col => (
                 <div
@@ -703,12 +732,32 @@ export function TableBuilder({
                   draggable
                   onDragStart={() => handleDragStart(col.key)}
                   onDragEnd={handleDragEnd}
-                  className={`px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded cursor-move hover:bg-blue-50 hover:border-blue-300 transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded cursor-move hover:bg-blue-50 hover:border-blue-300 transition-colors ${
                     rowVars.includes(col.key) || colVar === col.key ? 'opacity-50' : ''
                   }`}
                 >
-                  {col.label}
-                  <span className="text-xs text-gray-400 ml-2">({col.type})</span>
+                  <span className="flex-1 min-w-0 truncate">
+                    {col.label}
+                    <span className="text-xs text-gray-400 ml-2">({col.type})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => addToRows(col.key)}
+                    disabled={rowVars.includes(col.key)}
+                    aria-label={`Add ${col.label} to rows`}
+                    className="px-2 py-0.5 text-xs text-blue-700 bg-white border border-blue-200 rounded hover:bg-blue-50 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-default"
+                  >
+                    Row
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAsColumn(col.key)}
+                    disabled={colVar === col.key}
+                    aria-label={`Use ${col.label} as the column`}
+                    className="px-2 py-0.5 text-xs text-green-700 bg-white border border-green-200 rounded hover:bg-green-50 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-default"
+                  >
+                    Column
+                  </button>
                 </div>
               ))}
             </div>
@@ -732,6 +781,7 @@ export function TableBuilder({
                       <span>{col?.label}</span>
                       <button
                         onClick={() => removeRowVar(varKey)}
+                        aria-label={`Remove ${col?.label ?? varKey} from rows`}
                         className="text-gray-500 hover:text-red-500 font-bold"
                       >
                         x
@@ -741,7 +791,7 @@ export function TableBuilder({
                 })}
               </div>
             ) : (
-              <p className="text-sm text-gray-400">Drop variables here for rows</p>
+              <p className="text-sm text-gray-400">Drop variables here, or press Row beside a variable</p>
             )}
           </div>
 
@@ -760,13 +810,14 @@ export function TableBuilder({
                 <span>{dataset.columns.find(c => c.key === colVar)?.label}</span>
                 <button
                   onClick={clearColumn}
+                  aria-label="Remove the column variable"
                   className="text-gray-500 hover:text-red-500 font-bold"
                 >
                   x
                 </button>
               </div>
             ) : (
-              <p className="text-sm text-gray-400">Drop here for cross-tab</p>
+              <p className="text-sm text-gray-400">Drop here for a cross-tab, or press Column</p>
             )}
           </div>
 
@@ -910,11 +961,10 @@ export function TableBuilder({
                           </tbody>
                         </table>
                       </div>
-                      {ct.excludedCount > 0 && (
-                        <p className="text-xs text-gray-500 mt-3">
-                          Note: {getPercentLabel()} shown. Excludes {ct.excludedCount} records with missing values.
-                        </p>
-                      )}
+                      <p className="text-xs text-gray-500 mt-3">
+                        Note: {getPercentLabel()} shown.
+                        {ct.excludedCount > 0 && ` Excludes ${ct.excludedCount} records with missing values.`}
+                      </p>
 
                       {/* Chi-Square Results */}
                       {(() => {
@@ -933,7 +983,14 @@ export function TableBuilder({
 
                         return (
                           <div className="mt-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                            <h5 className="text-sm font-semibold text-gray-900 mb-3">Chi-Square Test</h5>
+                            <h5 className="text-sm font-semibold text-gray-900 mb-1">
+                              {cs.yatesCorrected ? 'Chi-Square Test with Yates\u2019 Correction' : 'Pearson Chi-Square Test'}
+                            </h5>
+                            <p className="text-xs text-gray-500 mb-3">
+                              {cs.yatesCorrected
+                                ? 'Continuity-corrected, as for every 2×2 table here and in the 2×2 analysis, so both tabs give the same p-value.'
+                                : 'Uncorrected; the continuity correction applies to 2×2 tables only.'}
+                            </p>
                             <div className="grid grid-cols-3 gap-4 text-center">
                               <div>
                                 <p className="text-xl font-bold text-gray-900">
@@ -964,7 +1021,7 @@ export function TableBuilder({
                                 </p>
                                 <p className="mt-1">
                                   {csRows.length === 2 && csCols.length === 2
-                                    ? 'Use Fisher\u2019s exact test instead, available in the 2×2 analysis.'
+                                    ? 'Use Fisher\u2019s exact test instead: the 2×2 analysis shows it automatically for a table like this.'
                                     : 'Combine sparse categories until every expected count reaches 5, or use an exact test.'}
                                 </p>
                               </div>
@@ -989,7 +1046,7 @@ export function TableBuilder({
                 // Frequency table preview
                 <div>
                   <p className="text-sm font-medium text-gray-900 mb-4">
-                    Table: Characteristics of Cases (N = {filteredRecords.length})
+                    Table: Frequency of selected variables (N = {filteredRecords.length} records)
                   </p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm border border-gray-300">
@@ -1023,15 +1080,21 @@ export function TableBuilder({
                                     colSpan={3 + (tableOptions.showCumPercent ? 1 : 0)}
                                   >
                                     {row.variableLabel}
+                                    {/* Say what the percentages are out of whenever it is not N */}
+                                    {row.denominator !== filteredRecords.length && (
+                                      <span className="ml-2 text-xs font-normal text-gray-500">
+                                        (n = {row.denominator}; {row.missingCount} missing excluded from %)
+                                      </span>
+                                    )}
                                   </td>
                                 </tr>
                               )}
                               <tr className={`hover:bg-gray-50 ${row.isMissing ? 'text-gray-500' : ''}`}>
                                 <td className="px-4 py-2 pl-8">{row.value}</td>
                                 <td className="px-4 py-2 text-right">{row.count}</td>
-                                <td className="px-4 py-2 text-right">{formatStatPercent(row.percent, filteredRecords.length)}</td>
+                                <td className="px-4 py-2 text-right">{formatStatPercent(row.percent, row.denominator)}</td>
                                 {tableOptions.showCumPercent && (
-                                  <td className="px-4 py-2 text-right">{row.isMissing ? '-' : formatStatPercent(row.cumPercent, filteredRecords.length)}</td>
+                                  <td className="px-4 py-2 text-right">{row.isMissing ? '-' : formatStatPercent(row.cumPercent, row.denominator)}</td>
                                 )}
                               </tr>
                             </React.Fragment>
@@ -1044,7 +1107,7 @@ export function TableBuilder({
               ) : (
                 <div className="h-64 flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
                   <div className="text-center">
-                    <p className="text-lg mb-2">Drag variables to build your table</p>
+                    <p className="text-lg mb-2">Add variables to build your table</p>
                     <p className="text-sm">ROWS only = frequency table</p>
                     <p className="text-sm">ROWS + COLUMN = cross-tabulation</p>
                   </div>

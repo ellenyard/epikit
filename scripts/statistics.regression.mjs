@@ -372,6 +372,140 @@ try {
     assert.ok(gAmple.chiSquare.minExpectedCount >= 5);
   }
 
+  // ---------------------------------------------------------------------------
+  // 10. Fisher's exact test beyond n = 100, and for extreme tables.
+  //
+  //     It was only computed for n <= 100, so a large table with one sparse
+  //     cell had no exact p-value to quote. The reference here is the
+  //     hypergeometric sum done in exact integer arithmetic (BigInt), which
+  //     shares nothing with the log-gamma route the module takes.
+  // ---------------------------------------------------------------------------
+  {
+    const choose = (n, k) => {
+      if (k < 0 || k > n) return 0n;
+      let r = 1n;
+      for (let i = 1n; i <= BigInt(k); i++) r = (r * (BigInt(n) - BigInt(k) + i)) / i;
+      return r;
+    };
+    const exactFisher = (a, b, c, d) => {
+      const r1 = a + b, c1 = a + c, n = a + b + c + d;
+      const lo = Math.max(0, r1 - (b + d)), hi = Math.min(r1, c1);
+      let total = 0n;
+      const weights = [];
+      for (let i = lo; i <= hi; i++) {
+        const w = choose(c1, i) * choose(n - c1, r1 - i);
+        weights.push([i, w]);
+        total += w;
+      }
+      const observed = weights.find(([i]) => i === a)[1];
+      let sum = 0n;
+      for (const [, w] of weights) if (w <= observed) sum += w;
+      // 30 decimal digits of the ratio, then to a double.
+      return Number((sum * 10n ** 30n) / total) / 1e30;
+    };
+
+    for (const [a, b, c, d] of [
+      [3, 97, 12, 188],      // n = 300, a rare exposure
+      [2, 148, 9, 141],      // n = 300, sparse cases
+      [40, 110, 25, 125],    // n = 300, nothing sparse
+      [1, 499, 6, 494],      // n = 1000
+    ]) {
+      const r = calculateTwoByTwo({ a, b, c, d });
+      assert.notEqual(r.fisherExactPValue, null, `Fisher must be available at n = ${a + b + c + d}`);
+      close(r.fisherExactPValue, exactFisher(a, b, c, d), 1e-8,
+        `Fisher two-sided p for ${a}/${b}/${c}/${d}`);
+    }
+
+    // A perfectly separated table. The exact p is 2 / C(100, 50), about 2e-29.
+    // An absolute tolerance of 1e-10 on "as extreme as observed" used to sweep
+    // in every table and floor the answer at 1.3e-10.
+    const separated = calculateTwoByTwo({ a: 50, b: 0, c: 0, d: 50 });
+    assert.ok(separated.fisherExactPValue < 1e-25,
+      `a perfectly separated table must not be floored, got ${separated.fisherExactPValue}`);
+
+    // Symmetric tables: the mirror image is exactly as likely and must count.
+    close(calculateTwoByTwo({ a: 6, b: 7, c: 7, d: 6 }).fisherExactPValue, 1, 1e-9,
+      'a balanced symmetric table has p = 1');
+
+    // An empty row or column leaves nothing to test.
+    assert.equal(calculateTwoByTwo({ a: 0, b: 0, c: 5, d: 5 }).fisherExactPValue, null,
+      'an empty margin has no Fisher p-value');
+  }
+
+  // ---------------------------------------------------------------------------
+  // 11. The smallest expected count, which decides which test to quote, and
+  //     the flag saying the odds ratio was continuity-corrected.
+  // ---------------------------------------------------------------------------
+  {
+    // Oswego: expected counts 33.12 / 20.88 / 12.88 / 8.12 (worked in section 1).
+    close(calculateTwoByTwo({ a: 43, b: 11, c: 3, d: 18 }).minExpectedCount, 21 * 29 / 75, 1e-9,
+      'Oswego smallest expected count');
+    // 8/2/4/8: row totals 10 and 12, column totals 12 and 10, n = 22.
+    // Smallest expected = 10 * 10 / 22 = 4.545, below 5.
+    close(calculateTwoByTwo({ a: 8, b: 2, c: 4, d: 8 }).minExpectedCount, 100 / 22, 1e-9,
+      'smallest expected count for a sparse table');
+    assert.ok(Number.isNaN(calculateTwoByTwo({ a: 0, b: 0, c: 5, d: 5 }).minExpectedCount),
+      'an empty margin has no expected counts');
+
+    assert.equal(calculateTwoByTwo({ a: 12, b: 0, c: 6, d: 20 }).oddsRatioCorrected, true,
+      'a zero cell means the odds ratio shown is the corrected one');
+    assert.equal(calculateTwoByTwo({ a: 20, b: 30, c: 10, d: 40 }).oddsRatioCorrected, false,
+      'no zero cell, no correction');
+    assert.equal(calculateTwoByTwo({ a: 0, b: 0, c: 5, d: 5 }).oddsRatioCorrected, false,
+      'an empty margin is undefined, not corrected');
+  }
+
+  // ---------------------------------------------------------------------------
+  // 12. A 2x2 cross-tabulation must agree with the 2x2 analysis.
+  //
+  //     The cross-tab used uncorrected Pearson and the 2x2 panel used Yates, so
+  //     15/10/8/17 was "significant" (p = 0.047) in one tab and "not
+  //     significant" in the other. By hand: expected 11.5/13.5/11.5/13.5,
+  //     |O-E| = 3.5, Yates term (3.5-0.5)^2 = 9, so
+  //     chi-square = 9 * (2/11.5 + 2/13.5) = 2.898551.
+  // ---------------------------------------------------------------------------
+  {
+    const cells = [['Ate', 'Ill', 15], ['Ate', 'Well', 10], ['Not', 'Ill', 8], ['Not', 'Well', 17]];
+    const data = cells.flatMap(([rowValue, colValue, n]) =>
+      Array.from({ length: n }, () => ({ rowValue, colValue })));
+    const ct = calculateCrossTabulation(data);
+    assert.equal(ct.chiSquare.yatesCorrected, true, 'a 2x2 cross-tab is continuity-corrected');
+    close(ct.chiSquare.chiSquare, 9 * (2 / 11.5 + 2 / 13.5), 1e-9, 'Yates chi-square by hand');
+    const twoByTwo = calculateTwoByTwo({ a: 15, b: 10, c: 8, d: 17 });
+    close(ct.chiSquare.chiSquare, twoByTwo.chiSquare, 1e-9, 'cross-tab and 2x2 analysis agree on the statistic');
+    close(ct.chiSquare.pValue, twoByTwo.chiSquarePValue, 1e-12, 'and on the p-value');
+    assert.ok(ct.chiSquare.pValue > 0.05, 'which is not below 0.05 for this table');
+
+    // Larger tables stay uncorrected: the perfect 3x3 association is still n(k-1).
+    const cross = [];
+    for (let i = 0; i < 90; i++) {
+      cross.push({ rowValue: ['x', 'y', 'z'][i % 3], colValue: ['p', 'q', 'r'][i % 3] });
+    }
+    const big = calculateCrossTabulation(cross);
+    assert.equal(big.chiSquare.yatesCorrected, false, 'only 2x2 tables are corrected');
+    close(big.chiSquare.chiSquare, 180, 1e-9, 'a 3x3 table is plain Pearson');
+  }
+
+  // ---------------------------------------------------------------------------
+  // 13. Modes and the spread of a single observation.
+  // ---------------------------------------------------------------------------
+  {
+    // Two values tie. Only one used to be reported, and which one depended on
+    // the order of the rows.
+    assert.deepEqual(calculateDescriptiveStats([1, 1, 2, 2, 3]).modes, [1, 2], 'both tied modes are reported');
+    assert.deepEqual(calculateDescriptiveStats([2, 2, 1, 1, 3]).modes, [1, 2], 'whatever the row order');
+    assert.deepEqual(calculateDescriptiveStats([5, 6, 7]).modes, [], 'no repeated value, no mode');
+    assert.equal(calculateDescriptiveStats([5, 6, 7]).mode, null);
+    assert.deepEqual(calculateDescriptiveStats([2, 4, 4, 4, 5, 5, 7, 9]).modes, [4], 'a single mode');
+
+    // One observation has a mean but no estimable spread. It used to report 0.
+    const one = calculateDescriptiveStats([7]);
+    assert.equal(one.mean, 7);
+    assert.ok(Number.isNaN(one.stdDev), 'the standard deviation of one value is undefined, not 0');
+    assert.ok(Number.isNaN(one.variance), 'and so is its variance');
+    close(calculateDescriptiveStats([7, 9]).stdDev, Math.SQRT2, 1e-12, 'two values: sample SD is sqrt(2)');
+  }
+
   console.log('statistics regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });
