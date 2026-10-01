@@ -1,5 +1,6 @@
 import type { CaseRecord } from '../types/analysis';
-import { categoryValue } from './recordFilter';
+import { categoryValue, isMissingValue, sortCategoryValues, MISSING_CATEGORY_LABEL } from './recordFilter';
+import { readsAsNonCase } from './caseDefinition';
 
 export type BinSize = 'hourly' | '6hour' | '12hour' | 'daily' | 'weekly-cdc' | 'weekly-iso';
 
@@ -14,28 +15,321 @@ export const BIN_SIZES: readonly BinSize[] = [
 export function isBinSize(value: unknown): value is BinSize {
   return typeof value === 'string' && (BIN_SIZES as readonly string[]).includes(value);
 }
+
+export function isSubDailyBinSize(binSize: BinSize): boolean {
+  return binSize === 'hourly' || binSize === '6hour' || binSize === '12hour';
+}
+
 export type ColorScheme = 'default' | 'classification' | 'colorblind' | 'grayscale';
 
-// Helper to parse dates consistently as local time (exported for use in components)
+// ============ Reading dates and times ============
+//
+// Dates used to be handed to `new Date(text)`, which reads anything it does not
+// recognise as ISO by US rules. "05/01/2026 10:00" in a day-first line list was
+// drawn on May 1, "13/01/2026 08:00" was dropped as invalid, and a column of
+// Excel serial numbers was drawn in the year 46033, all without a word. Only
+// forms that can be read one way are accepted here; everything else is counted
+// as unrecognised so the chart can say how many records it left out.
+
+/** A date, and a time of day if one was written, with no timezone attached. */
+export interface WallClock {
+  year: number;
+  /** 0-based, as in Date. */
+  month: number;
+  day: number;
+  hours: number;
+  minutes: number;
+  /** False when only a date was written, so the time of day is unknown. */
+  hasTime: boolean;
+}
+
+const MONTH_NAMES: Record<string, number> = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+  may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10,
+  dec: 11, december: 11,
+};
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 1) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    return leap ? 29 : 28;
+  }
+  return [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month];
+}
+
+/**
+ * Parses a time of day and returns hours and minutes, or null.
+ *
+ * Accepts "14:00", "14:30:00", "2:30 PM", "2 PM", "1430" and "14h30". Seconds
+ * are read and dropped. A decimal such as "0.6" or "14.30" is not accepted: it
+ * could be a clock time or a fraction of a day, and guessing puts the case in
+ * the wrong bar.
+ */
+export function parseTimeString(timeStr: string | null | undefined): { hours: number; minutes: number } | null {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+
+  const trimmed = timeStr.trim();
+  if (!trimmed) return null;
+
+  // 24-hour: "14:00", "9:00", "14:30:00", "14:30:00.000"
+  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,]\d+)?)?$/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    const seconds = match24[3] ? parseInt(match24[3], 10) : 0;
+    if (hours <= 23 && minutes <= 59 && seconds <= 59) return { hours, minutes };
+    return null;
+  }
+
+  // 12-hour: "2:30 PM", "11:00 AM", "2:30:00 pm", "2 PM", "2pm", "2 p.m."
+  const match12 = trimmed.match(/^(\d{1,2})(?::(\d{2})(?::(\d{2}))?)?\s*([ap])\.?\s?m\.?$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = match12[2] ? parseInt(match12[2], 10) : 0;
+    const seconds = match12[3] ? parseInt(match12[3], 10) : 0;
+    const isPM = match12[4].toUpperCase() === 'P';
+    if (hours >= 1 && hours <= 12 && minutes <= 59 && seconds <= 59) {
+      if (isPM && hours !== 12) hours += 12;
+      if (!isPM && hours === 12) hours = 0;
+      return { hours, minutes };
+    }
+    return null;
+  }
+
+  // "14h30", "14h", "14 h 30"
+  const matchH = trimmed.match(/^(\d{1,2})\s?h\s?(\d{2})?$/i);
+  if (matchH) {
+    const hours = parseInt(matchH[1], 10);
+    const minutes = matchH[2] ? parseInt(matchH[2], 10) : 0;
+    if (hours <= 23 && minutes <= 59) return { hours, minutes };
+    return null;
+  }
+
+  // Four digits with no separator: "1430", "0930"
+  const matchCompact = trimmed.match(/^(\d{2})(\d{2})$/);
+  if (matchCompact) {
+    const hours = parseInt(matchCompact[1], 10);
+    const minutes = parseInt(matchCompact[2], 10);
+    if (hours <= 23 && minutes <= 59) return { hours, minutes };
+  }
+
+  return null;
+}
+
+/**
+ * Reads a date, with a time if one is attached, exactly as written.
+ *
+ * Accepted: year-first numeric dates (2026-01-15, 2026/1/15), and dates that
+ * spell the month (15 Jan 2026, 15-January-2026, Jan 15, 2026), each optionally
+ * followed by a time. A timezone suffix is ignored and the clock time kept: an
+ * onset recorded as 14:30 where the patient was should be drawn at 14:30
+ * wherever the chart is opened.
+ *
+ * Numeric dates with the year last are refused whether or not the day exceeds
+ * 12. Reading "13/01/2026" as day-first while leaving "05/01/2026" in the same
+ * column unread would plot half an outbreak, so the whole form is left to the
+ * importer, which asks which order the column uses.
+ */
+export function parseWallClock(value: unknown): WallClock | null {
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    const hours = value.getHours();
+    const minutes = value.getMinutes();
+    return {
+      year: value.getFullYear(), month: value.getMonth(), day: value.getDate(),
+      hours, minutes,
+      hasTime: hours !== 0 || minutes !== 0,
+    };
+  }
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text) return null;
+
+  let year: number;
+  let month: number;
+  let day: number;
+  let rest: string | undefined;
+
+  let m = /^(\d{4})([-/])(\d{1,2})\2(\d{1,2})(?:(?:T|\s+)(.+))?$/i.exec(text);
+  if (m) {
+    year = parseInt(m[1], 10);
+    month = parseInt(m[3], 10) - 1;
+    day = parseInt(m[4], 10);
+    rest = m[5];
+  } else if ((m = /^(\d{1,2})[\s\-/.]+([A-Za-z]{3,9})\.?[\s\-/.,]+(\d{4})(?:,?\s+(.+))?$/.exec(text))) {
+    const named = MONTH_NAMES[m[2].toLowerCase()];
+    if (named === undefined) return null;
+    year = parseInt(m[3], 10);
+    month = named;
+    day = parseInt(m[1], 10);
+    rest = m[4];
+  } else if ((m = /^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})(?:,?\s+(.+))?$/i.exec(text))) {
+    const named = MONTH_NAMES[m[1].toLowerCase()];
+    if (named === undefined) return null;
+    year = parseInt(m[3], 10);
+    month = named;
+    day = parseInt(m[2], 10);
+    rest = m[4];
+  } else {
+    return null;
+  }
+
+  if (month < 0 || month > 11 || day < 1 || day > daysInMonth(year, month)) return null;
+
+  if (rest === undefined) {
+    return { year, month, day, hours: 0, minutes: 0, hasTime: false };
+  }
+
+  // Drop a timezone suffix ("Z", "+03:00", "-0500") and keep the clock time.
+  const time = parseTimeString(rest.replace(/\s*(?:Z|[+-]\d{2}(?::?\d{2})?)$/i, ''));
+  // A date followed by something that is not a time is not a date we can read.
+  if (!time) return null;
+  return { year, month, day, hours: time.hours, minutes: time.minutes, hasTime: true };
+}
+
+/** A Date at these local clock values. Years below 100 are kept as written. */
+function localDate(year: number, month: number, day: number, hours = 0, minutes = 0, seconds = 0, ms = 0): Date {
+  const d = new Date(year, month, day, hours, minutes, seconds, ms);
+  if (year < 100) d.setFullYear(year);
+  return d;
+}
+
+/**
+ * Parse a date as local time (exported for use in components). Returns an
+ * Invalid Date for anything parseWallClock does not accept.
+ */
 export function parseLocalDate(dateValue: string | Date): Date {
   if (dateValue instanceof Date) {
     return dateValue;
   }
-  const dateStr = String(dateValue);
-  // If date is in YYYY-MM-DD format without time, append time to parse as local
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    return new Date(dateStr + 'T00:00:00');
+  const w = parseWallClock(String(dateValue));
+  if (!w) return new Date(NaN);
+  return localDate(w.year, w.month, w.day, w.hours, w.minutes);
+}
+
+// ============ Timezone-free time ============
+//
+// Bins used to be built by stepping a local Date forward a day at a time. In a
+// timezone whose clocks change at midnight (Egypt, Chile, Cuba, Lebanon, and
+// Brazil before 2019) the changeover day has no 00:00, so that day's bin began
+// at 01:00 and so did every bin after it. A case dated the next day, which is
+// read as 00:00, then fell in the previous day's bar: every case after the
+// changeover was drawn one day early.
+//
+// A line list has no timezone. "11 January, 14:30" means that clock reading
+// where the patient was. So binning is done on the clock values alone, held as
+// a number that counts milliseconds as if every day had 24 hours. The same
+// records then land in the same bars in every timezone.
+
+const MINUTE_MS = 60 * 1000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+const WEEK_MS = 7 * DAY_MS;
+
+function clockKey(year: number, month: number, day: number, hours = 0, minutes = 0, seconds = 0, ms = 0): number {
+  const t = new Date(Date.UTC(2000, month, day, hours, minutes, seconds, ms));
+  t.setUTCFullYear(year);
+  return t.getTime();
+}
+
+function clockKeyOfDate(d: Date): number {
+  return clockKey(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds());
+}
+
+/** The local Date showing these clock values. A missing local hour moves forward, as Date does. */
+function clockKeyToLocal(key: number): Date {
+  const u = new Date(key);
+  return localDate(
+    u.getUTCFullYear(), u.getUTCMonth(), u.getUTCDate(),
+    u.getUTCHours(), u.getUTCMinutes(), u.getUTCSeconds(), u.getUTCMilliseconds()
+  );
+}
+
+function floorTo(value: number, unit: number): number {
+  return Math.floor(value / unit) * unit;
+}
+
+function mod(value: number, by: number): number {
+  return ((value % by) + by) % by;
+}
+
+function binStepMs(binSize: BinSize): number {
+  switch (binSize) {
+    case 'hourly': return HOUR_MS;
+    case '6hour': return 6 * HOUR_MS;
+    case '12hour': return 12 * HOUR_MS;
+    case 'weekly-cdc':
+    case 'weekly-iso': return WEEK_MS;
+    default: return DAY_MS;
   }
-  return new Date(dateStr);
+}
+
+function binStartKey(key: number, binSize: BinSize): number {
+  switch (binSize) {
+    case 'hourly':
+    case '6hour':
+    case '12hour':
+      // The count starts at a midnight, so these fall on 0:00, 6:00, 12:00...
+      return floorTo(key, binStepMs(binSize));
+    case 'weekly-cdc': {
+      // CDC (MMWR) weeks start on Sunday. Day 0 of the count was a Thursday.
+      const dayNumber = Math.floor(key / DAY_MS);
+      return (dayNumber - mod(dayNumber + 4, 7)) * DAY_MS;
+    }
+    case 'weekly-iso': {
+      // ISO weeks start on Monday
+      const dayNumber = Math.floor(key / DAY_MS);
+      return (dayNumber - mod(dayNumber + 3, 7)) * DAY_MS;
+    }
+    default:
+      return floorTo(key, DAY_MS);
+  }
+}
+
+const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function formatBinLabel(key: number, binSize: BinSize, withYear = false): string {
+  const u = new Date(key);
+  const day = `${MONTH_ABBREVIATIONS[u.getUTCMonth()]} ${u.getUTCDate()}`;
+  const dated = withYear ? `${day}, ${u.getUTCFullYear()}` : day;
+  return isSubDailyBinSize(binSize) ? `${dated} ${u.getUTCHours()}:00` : dated;
 }
 
 export interface EpiCurveBin {
   startDate: Date;
   endDate: Date;
+  /** startDate's clock values as a timezone-free number; see "Timezone-free time". */
+  startKey: number;
   label: string;
   cases: CaseRecord[];
   strata: Map<string, CaseRecord[]>;
   total: number;
+}
+
+/** What was drawn, what was left out and why. The chart shows all of it. */
+export interface EpiCurveSummary {
+  /** Records in the bars. Bar heights add up to this. */
+  plotted: number;
+  /** Nothing in the date column. */
+  missingDate: number;
+  /** A value in the date column that could not be read as a date. */
+  unrecognisedDate: number;
+  unrecognisedDateExamples: string[];
+  /** Hourly bins only: a date but nothing in the time column. */
+  missingTime: number;
+  /** Hourly bins only: a value in the time column that could not be read. */
+  unrecognisedTime: number;
+  unrecognisedTimeExamples: string[];
+  /** Dated, but outside the custom date range. */
+  outsideRange: number;
+  firstOnset: Date | null;
+  lastOnset: Date | null;
+  /** True when first and last onset carry a real time of day. */
+  onsetHasTime: boolean;
+  /** Records dated far from the rest, usually a mistyped year. */
+  outlierCount: number;
+  outlierExamples: string[];
 }
 
 export interface EpiCurveData {
@@ -43,6 +337,106 @@ export interface EpiCurveData {
   maxCount: number;
   strataKeys: string[];
   dateRange: { start: Date; end: Date };
+  /** The bin size drawn, which is coarser than the one asked for when that needed too many bars. */
+  binSize: BinSize;
+  requestedBinSize: BinSize;
+  /** Bars the requested size would have needed, when that was over the limit; otherwise 0. */
+  requestedBinCount: number;
+  /** True when even weekly bins were over the limit, so nothing was drawn. */
+  tooManyBins: boolean;
+  /** Index of the tallest bar (the first, on a tie), or -1. */
+  peakBinIndex: number;
+  summary: EpiCurveSummary;
+}
+
+/**
+ * More bars than this cannot be read, and each one costs DOM nodes: one record
+ * with a mistyped year (2016 for 2026) asked for 88,000 hourly bars and froze
+ * the tab for 41 seconds. 1000 is 41 days of hours, 2.7 years of days or 19
+ * years of weeks.
+ */
+export const MAX_EPI_CURVE_BINS = 1000;
+
+/** The next coarser bin size to fall back to when a request needs too many bars. */
+const COARSER_BIN_SIZE: Partial<Record<BinSize, BinSize>> = {
+  hourly: '6hour',
+  '6hour': '12hour',
+  '12hour': 'daily',
+  daily: 'weekly-cdc',
+};
+
+export interface EpiCurveOptions {
+  /**
+   * Draw exactly this span (the custom date range) instead of fitting the axis
+   * to the data. Records outside it are counted in the summary, not plotted.
+   */
+  range?: { start: Date; end: Date };
+  maxBins?: number;
+}
+
+function emptySummary(): EpiCurveSummary {
+  return {
+    plotted: 0,
+    missingDate: 0,
+    unrecognisedDate: 0,
+    unrecognisedDateExamples: [],
+    missingTime: 0,
+    unrecognisedTime: 0,
+    unrecognisedTimeExamples: [],
+    outsideRange: 0,
+    firstOnset: null,
+    lastOnset: null,
+    onsetHasTime: false,
+    outlierCount: 0,
+    outlierExamples: [],
+  };
+}
+
+export function emptyEpiCurveData(binSize: BinSize = 'daily'): EpiCurveData {
+  return {
+    bins: [],
+    maxCount: 0,
+    strataKeys: [],
+    dateRange: { start: new Date(), end: new Date() },
+    binSize,
+    requestedBinSize: binSize,
+    requestedBinCount: 0,
+    tooManyBins: false,
+    peakBinIndex: -1,
+    summary: emptySummary(),
+  };
+}
+
+function pushExample(examples: string[], value: unknown): void {
+  const text = String(value).trim();
+  if (examples.length < 3 && !examples.includes(text)) examples.push(text);
+}
+
+/**
+ * Days that sit far from the rest of the dates, which is nearly always a
+ * mistyped year. "Far" is 300 days beyond the median, or five times the
+ * interquartile range where that is larger, so a surveillance series that
+ * really does run for years is left alone.
+ */
+function findOutlierDays(dayKeys: number[]): Set<number> {
+  const outliers = new Set<number>();
+  if (dayKeys.length < 2) return outliers;
+  const sorted = [...dayKeys].sort((a, b) => a - b);
+  const at = (fraction: number) => sorted[Math.round((sorted.length - 1) * fraction)];
+  const median = sorted[Math.floor((sorted.length - 1) / 2)];
+  // Quartiles of a handful of values are the outlier itself.
+  const spread = sorted.length >= 8 ? at(0.75) - at(0.25) : 0;
+  const fence = Math.max(300 * DAY_MS, 5 * spread);
+  for (const key of sorted) {
+    if (Math.abs(key - median) > fence) outliers.add(key);
+  }
+  return outliers;
+}
+
+function formatDayKey(key: number): string {
+  const u = new Date(key);
+  const y = String(u.getUTCFullYear()).padStart(4, '0');
+  return `${y}-${String(u.getUTCMonth() + 1).padStart(2, '0')}-${String(u.getUTCDate()).padStart(2, '0')}`;
 }
 
 // Annotation categories for timeline events (simplified for professional use)
@@ -70,6 +464,13 @@ export interface Annotation {
   category: AnnotationCategory;
   date: Date;
   endDate?: Date;
+  /**
+   * True when `date` carries a time of day the user gave. A date-only
+   * annotation is drawn at the middle of its day; a timed one at its time.
+   */
+  hasTime?: boolean;
+  /** True when `endDate` carries a time. A date-only end means the whole of that day. */
+  endHasTime?: boolean;
   label: string;
   description?: string;  // For narrative generation
   color: string;
@@ -156,6 +557,187 @@ export function getAnnotationCategory(type: AnnotationType): AnnotationCategory 
   return 'data-note';  // Default fallback
 }
 
+// ============ Saving and restoring annotations ============
+//
+// Annotation dates were saved with toISOString(), a UTC instant. Local midnight
+// on 10 January in Nairobi is 21:00 UTC on the 9th, so the same project file
+// opened in London or New York drew the annotation on 9 January. A date is now
+// saved as the date that was typed, "2026-01-10", or "2026-01-10T12:00" when a
+// time was given, and means the same day everywhere.
+
+export type StoredAnnotation = Omit<Annotation, 'date' | 'endDate'> & {
+  date: string;
+  endDate?: string;
+};
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function formatClockDate(d: Date, withTime: boolean): string {
+  const date = `${String(d.getFullYear()).padStart(4, '0')}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  return withTime ? `${date}T${pad2(d.getHours())}:${pad2(d.getMinutes())}` : date;
+}
+
+export function serializeAnnotation(annotation: Annotation): StoredAnnotation {
+  const { date, endDate, ...rest } = annotation;
+  const stored: StoredAnnotation = { ...rest, date: formatClockDate(date, annotation.hasTime === true) };
+  if (endDate) stored.endDate = formatClockDate(endDate, annotation.endHasTime === true);
+  return stored;
+}
+
+function endOfLocalDay(d: Date): Date {
+  return localDate(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+}
+
+/**
+ * An annotation date saved by an earlier version: a UTC instant that was local
+ * midnight (or, for an end date, the last millisecond of the day) wherever it
+ * was saved.
+ *
+ * On the machine that saved it the instant still reads as local midnight and is
+ * taken as is. Opened in another timezone it does not, and the day that was
+ * meant is recovered as the UTC midnight nearest the instant, which is right
+ * for every timezone within 12 hours of UTC. A file saved in New Zealand
+ * daylight time or further east and opened elsewhere can still be a day out;
+ * the instant alone cannot tell UTC+13 from UTC-11.
+ */
+function reviveLegacyInstant(text: string, isEnd: boolean): Date | null {
+  const instant = new Date(text);
+  if (isNaN(instant.getTime())) return null;
+  const start = isEnd ? new Date(instant.getTime() + 1) : instant;
+  const isLocalMidnight = start.getHours() === 0 && start.getMinutes() === 0
+    && start.getSeconds() === 0 && start.getMilliseconds() === 0;
+  if (isLocalMidnight) return instant;
+  const nearest = new Date(Math.round(start.getTime() / DAY_MS) * DAY_MS);
+  const day = localDate(nearest.getUTCFullYear(), nearest.getUTCMonth(), nearest.getUTCDate());
+  if (!isEnd) return day;
+  // The legacy end was the last millisecond of the day before `nearest`.
+  day.setDate(day.getDate() - 1);
+  return endOfLocalDay(day);
+}
+
+const ZONED_INSTANT = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+/** Read one saved annotation, in the current or the earlier format. Null if its date is unreadable. */
+export function reviveAnnotation(raw: Record<string, unknown>): Annotation | null {
+  const dateText = typeof raw.date === 'string' ? raw.date : '';
+  const endText = typeof raw.endDate === 'string' ? raw.endDate : '';
+  const revived = { ...raw } as unknown as Annotation;
+
+  if (ZONED_INSTANT.test(dateText)) {
+    const date = reviveLegacyInstant(dateText, false);
+    if (!date) return null;
+    revived.date = date;
+    revived.hasTime = false;
+  } else {
+    const w = parseWallClock(dateText);
+    if (!w) return null;
+    revived.date = localDate(w.year, w.month, w.day, w.hours, w.minutes);
+    revived.hasTime = w.hasTime;
+  }
+
+  delete revived.endDate;
+  delete revived.endHasTime;
+  if (endText) {
+    if (ZONED_INSTANT.test(endText)) {
+      const end = reviveLegacyInstant(endText, true);
+      if (end) revived.endDate = end;
+    } else {
+      const w = parseWallClock(endText);
+      if (w) {
+        revived.endDate = w.hasTime
+          ? localDate(w.year, w.month, w.day, w.hours, w.minutes)
+          : localDate(w.year, w.month, w.day, 23, 59, 59, 999);
+        revived.endHasTime = w.hasTime;
+      }
+    }
+  }
+  return revived;
+}
+
+// ============ Where things sit along the axis ============
+
+/**
+ * A moment's position along the bars, in bar widths from the left edge of the
+ * first bar (2.5 is the middle of the third bar), or null when it is off the
+ * axis. Nothing is clamped to the edge: an event outside the range shown used
+ * to be drawn on the last bar, where it read as having happened that day.
+ */
+export function positionInBins(bins: EpiCurveBin[], time: number): number | null {
+  if (bins.length === 0 || isNaN(time)) return null;
+  const firstStart = bins[0].startDate.getTime();
+  const lastEnd = bins[bins.length - 1].endDate.getTime();
+  if (time < firstStart || time > lastEnd) return null;
+  if (time === lastEnd) return bins.length;
+  // Bars are equal-width in clock time, so the index can be computed, then
+  // nudged for a day that is an hour short or long.
+  let index = Math.min(bins.length - 1, Math.max(0, Math.floor(
+    ((time - firstStart) / (lastEnd - firstStart)) * bins.length
+  )));
+  while (index > 0 && time < bins[index].startDate.getTime()) index--;
+  while (index < bins.length - 1 && time >= bins[index].endDate.getTime()) index++;
+  const start = bins[index].startDate.getTime();
+  const duration = bins[index].endDate.getTime() - start;
+  return index + (duration > 0 ? (time - start) / duration : 0);
+}
+
+/** A stretch of the axis in bar widths, clipped to what is shown. */
+export interface AxisSpan {
+  start: number;
+  end: number;
+  /** True when the stretch really begins before the first bar. */
+  clippedStart: boolean;
+  /** True when it really ends after the last bar. */
+  clippedEnd: boolean;
+}
+
+/** The part of a period that falls on the axis, or null when none of it does. */
+export function spanInBins(bins: EpiCurveBin[], startTime: number, endTime: number): AxisSpan | null {
+  if (bins.length === 0 || isNaN(startTime) || isNaN(endTime)) return null;
+  const firstStart = bins[0].startDate.getTime();
+  const lastEnd = bins[bins.length - 1].endDate.getTime();
+  if (endTime <= firstStart || startTime >= lastEnd) return null;
+  const clippedStart = startTime < firstStart;
+  const clippedEnd = endTime > lastEnd;
+  const start = clippedStart ? 0 : positionInBins(bins, startTime);
+  const end = clippedEnd ? bins.length : positionInBins(bins, endTime);
+  if (start === null || end === null) return null;
+  return { start, end: Math.max(start, end), clippedStart, clippedEnd };
+}
+
+/**
+ * Where an annotation is drawn, in bar widths.
+ *
+ * A single date with no time is drawn at the middle of its day: the centre of
+ * a daily bar, the right seventh of a weekly one, noon on an hourly axis. It
+ * used to be drawn at the centre of whichever bar held midnight, which on
+ * 12-hour bars put an event of unknown time at 6 AM. A time, when given, is
+ * drawn where it falls. A period starts at the edge of its first day (or at
+ * its start time) and runs to the end of its last day (or its end time); it
+ * used to start at the middle of the first bar.
+ */
+export function annotationSpan(annotation: Annotation, bins: EpiCurveBin[]): AxisSpan | null {
+  const time = annotation.date.getTime();
+  if (isNaN(time)) return null;
+
+  if (annotation.endDate && !isNaN(annotation.endDate.getTime())) {
+    // A date-only end is held as the last millisecond of its day.
+    const end = annotation.endDate.getTime() + (annotation.endHasTime ? 0 : 1);
+    return spanInBins(bins, time, end);
+  }
+
+  const d = annotation.date;
+  const anchor = annotation.hasTime
+    ? time
+    : localDate(d.getFullYear(), d.getMonth(), d.getDate(), 12).getTime();
+  const position = positionInBins(bins, anchor);
+  if (position === null) return null;
+  return { start: position, end: position, clippedStart: false, clippedEnd: false };
+}
+
+// ============ Incubation periods and the exposure estimate ============
+
 // Common pathogens with incubation periods (in days)
 export const PATHOGEN_INCUBATION: Record<string, { min: number; max: number; typical: number }> = {
   'Salmonella': { min: 0.5, max: 3, typical: 1 },
@@ -179,198 +761,300 @@ export const PATHOGEN_INCUBATION: Record<string, { min: number; max: number; typ
   'Legionella': { min: 2, max: 10, typical: 5 },
   'Influenza': { min: 1, max: 4, typical: 2 },
   'COVID-19': { min: 2, max: 14, typical: 5 },
-  'Measles': { min: 10, max: 14, typical: 12 },
-  'Chickenpox': { min: 14, max: 21, typical: 16 },
+  // Exposure to rash onset: 7-21 days, about 14 on average (CDC Pink Book).
+  'Measles': { min: 7, max: 21, typical: 14 },
+  // 10-21 days, usually 14-16 (CDC Pink Book).
+  'Chickenpox': { min: 10, max: 21, typical: 15 },
   'Mumps': { min: 12, max: 25, typical: 17 },
 };
 
-// Internal alias for parseLocalDate
-const parseDate = parseLocalDate;
-
 /**
- * Parses a time string (e.g., "14:00", "2:30 PM") and returns hours and minutes.
- * Returns null if the time string is invalid or empty.
+ * An incubation limit in hours. Limits under a day are stored as rounded
+ * fractions of one (0.04, 0.33), so they are rounded to the whole hour they
+ * stand for (1, 8) rather than computed with as 57.6 minutes.
  */
-function parseTimeString(timeStr: string | null | undefined): { hours: number; minutes: number } | null {
-  if (!timeStr || typeof timeStr !== 'string') return null;
+export function incubationHours(days: number): number {
+  return days < 1 ? Math.round(days * 24) : days * 24;
+}
 
-  const trimmed = timeStr.trim();
-  if (!trimmed) return null;
+function formatIncubationLimit(days: number): string {
+  return days < 1 ? `${incubationHours(days)} h` : `${days} d`;
+}
 
-  // Try 24-hour format first: "14:00", "14:30", "9:00"
-  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
-  if (match24) {
-    const hours = parseInt(match24[1], 10);
-    const minutes = parseInt(match24[2], 10);
-    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
-      return { hours, minutes };
-    }
+/** "1–6 h", "12 h–3 d" or "2–5 d": hours for limits under a day, days otherwise. */
+export function formatIncubationRange(incubation: { min: number; max: number }): string {
+  if (incubation.min < 1 && incubation.max < 1) {
+    return `${incubationHours(incubation.min)}–${incubationHours(incubation.max)} h`;
   }
-
-  // Try 12-hour format: "2:30 PM", "11:00 AM"
-  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-  if (match12) {
-    let hours = parseInt(match12[1], 10);
-    const minutes = parseInt(match12[2], 10);
-    const isPM = match12[3].toUpperCase() === 'PM';
-
-    if (hours >= 1 && hours <= 12 && minutes >= 0 && minutes <= 59) {
-      if (isPM && hours !== 12) hours += 12;
-      if (!isPM && hours === 12) hours = 0;
-      return { hours, minutes };
-    }
+  if (incubation.min >= 1 && incubation.max >= 1) {
+    return `${incubation.min}–${incubation.max} d`;
   }
+  return `${formatIncubationLimit(incubation.min)}–${formatIncubationLimit(incubation.max)}`;
+}
 
-  return null;
+export interface ExposureEstimate {
+  start: Date;
+  end: Date;
+  /** True when the first onset had no time of day, so the estimate is in whole days. */
+  wholeDays: boolean;
 }
 
 /**
- * Combines a date value with an optional time value into a full Date object.
- * If time is not provided or invalid, defaults to midnight (00:00).
+ * The period in which the first case could have been exposed: its onset less
+ * the longest incubation period, to its onset less the shortest.
+ *
+ * With an onset time the arithmetic is in hours. It used to be in whole days
+ * from midnight of the onset date whatever the bin size, which for a toxin
+ * with a 1-6 hour incubation and a first onset at 22:00 shaded the whole of the
+ * previous day and none of the six hours that mattered.
+ *
+ * With only an onset date the time of day is unknown, so the estimate is whole
+ * days and covers every exposure time consistent with an onset at any hour of
+ * that date: the longest incubation rounded up to days, the shortest rounded
+ * down, through the end of the last day.
  */
-function combineDateAndTime(dateVal: unknown, timeVal: unknown): Date {
-  const date = parseDate(String(dateVal));
-
-  if (timeVal) {
-    const time = parseTimeString(String(timeVal));
-    if (time) {
-      date.setHours(time.hours, time.minutes, 0, 0);
-    }
+export function estimateExposureWindow(
+  firstOnset: Date,
+  onsetHasTime: boolean,
+  incubation: { min: number; max: number }
+): ExposureEstimate {
+  if (onsetHasTime) {
+    const onset = clockKeyOfDate(firstOnset);
+    return {
+      start: clockKeyToLocal(onset - incubationHours(incubation.max) * HOUR_MS),
+      end: clockKeyToLocal(onset - incubationHours(incubation.min) * HOUR_MS),
+      wholeDays: false,
+    };
   }
+  const y = firstOnset.getFullYear();
+  const m = firstOnset.getMonth();
+  const d = firstOnset.getDate();
+  return {
+    start: localDate(y, m, d - Math.ceil(incubation.max)),
+    end: localDate(y, m, d - Math.floor(incubation.min), 23, 59, 59, 999),
+    wholeDays: true,
+  };
+}
 
-  return date;
+// ============ Building the curve ============
+
+/** Strata in the order a reader expects, with the missing category last. */
+function sortStrataKeys(keys: string[]): string[] {
+  const rest = keys.filter(k => k !== MISSING_CATEGORY_LABEL);
+  const alphabetical = [...rest].sort((a, b) => a.localeCompare(b));
+  const shared = sortCategoryValues(rest);
+  // The shared sort knows months and leading numbers ("5-9" before "10-14").
+  // Where it had nothing special to apply it falls back to plain alphabetical,
+  // which puts "D10" before "D2"; compare embedded numbers as numbers instead.
+  const usedSpecialOrder = shared.some((value, i) => value !== alphabetical[i]);
+  const ordered = usedSpecialOrder
+    ? shared
+    : [...rest].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }) || a.localeCompare(b));
+  return keys.includes(MISSING_CATEGORY_LABEL) ? [...ordered, MISSING_CATEGORY_LABEL] : ordered;
 }
 
 export function processEpiCurveData(
   records: CaseRecord[],
   dateColumn: string,
-  binSize: BinSize,
+  requestedBinSize: BinSize,
   stratifyBy?: string,
   annotations?: Annotation[],
-  timeColumn?: string
+  timeColumn?: string,
+  options: EpiCurveOptions = {}
 ): EpiCurveData {
-  // Filter records with valid dates
-  const validRecords = records.filter(r => {
-    const dateVal = r[dateColumn];
-    if (!dateVal) return false;
-    const date = parseDate(String(dateVal));
-    return !isNaN(date.getTime());
-  });
+  // An unrecognised size from storage is drawn daily rather than rejected.
+  const requested: BinSize = isBinSize(requestedBinSize) ? requestedBinSize : 'daily';
+  const maxBins = options.maxBins ?? MAX_EPI_CURVE_BINS;
+  const result = emptyEpiCurveData(requested);
+  const summary = result.summary;
 
-  if (validRecords.length === 0) {
-    return { bins: [], maxCount: 0, strataKeys: [], dateRange: { start: new Date(), end: new Date() } };
+  // Read every record's date once, and its time where a time column is given.
+  interface Dated {
+    record: CaseRecord;
+    dayKey: number;
+    /** Date and time together, or null when no time of day is known. */
+    timedKey: number | null;
+    timeProblem: 'missing' | 'unrecognised' | null;
   }
-
-  // Get date range (combining with time if available for sub-daily bins)
-  const dates = validRecords.map(r => {
+  const dated: Dated[] = [];
+  for (const record of records) {
+    const rawDate = record[dateColumn];
+    if (isMissingValue(rawDate)) {
+      summary.missingDate++;
+      continue;
+    }
+    const w = parseWallClock(rawDate instanceof Date ? rawDate : String(rawDate));
+    if (!w) {
+      summary.unrecognisedDate++;
+      pushExample(summary.unrecognisedDateExamples, rawDate);
+      continue;
+    }
+    const dayKey = clockKey(w.year, w.month, w.day);
+    let timedKey = w.hasTime ? dayKey + w.hours * HOUR_MS + w.minutes * MINUTE_MS : null;
+    let timeProblem: Dated['timeProblem'] = null;
     if (timeColumn) {
-      return combineDateAndTime(r[dateColumn], r[timeColumn]);
+      const rawTime = record[timeColumn];
+      if (isMissingValue(rawTime)) {
+        // A time written with the date itself still counts.
+        if (timedKey === null) timeProblem = 'missing';
+      } else {
+        const time = parseTimeString(String(rawTime));
+        if (time) {
+          timedKey = dayKey + time.hours * HOUR_MS + time.minutes * MINUTE_MS;
+        } else {
+          timedKey = null;
+          timeProblem = 'unrecognised';
+        }
+      }
     }
-    return parseDate(String(r[dateColumn]));
-  });
-  // Loop-based min/max avoids call-stack overflow on very large datasets
-  let minTime = Infinity;
-  let maxTime = -Infinity;
-  dates.forEach(d => {
-    const t = d.getTime();
-    if (t < minTime) minTime = t;
-    if (t > maxTime) maxTime = t;
-  });
-  const minDate = new Date(minTime);
-  const maxDate = new Date(maxTime);
+    dated.push({ record, dayKey, timedKey, timeProblem });
+  }
 
-  // Check if annotations extend the date range
-  let annotationMinDate = minDate;
-  let annotationMaxDate = maxDate;
+  const outlierDays = findOutlierDays(dated.map(d => d.dayKey));
+  if (outlierDays.size > 0) {
+    summary.outlierCount = dated.filter(d => outlierDays.has(d.dayKey)).length;
+    summary.outlierExamples = Array.from(outlierDays).sort((a, b) => a - b).slice(0, 5).map(formatDayKey);
+  }
 
-  if (annotations && annotations.length > 0) {
-    annotations.forEach(ann => {
-      if (ann.date < annotationMinDate) {
-        annotationMinDate = ann.date;
-      }
-      if (ann.date > annotationMaxDate) {
-        annotationMaxDate = ann.date;
-      }
+  // On hourly bins a case with a date but no usable time has no bar to go in.
+  // It used to be stacked on 00:00, which drew a midnight peak that was not
+  // there. It is left out and counted instead. With no time column chosen at
+  // all, every case is at 00:00 by the user's own choice and stays plotted.
+  const isPlottable = (d: Dated, binSize: BinSize) =>
+    !(isSubDailyBinSize(binSize) && timeColumn && d.timeProblem);
+  const keyFor = (d: Dated, binSize: BinSize) =>
+    isSubDailyBinSize(binSize) ? (d.timedKey ?? d.dayKey) : d.dayKey;
+
+  // The first and last bar for a bin size, or null when nothing can be plotted.
+  const extentFor = (binSize: BinSize): { first: number; last: number; count: number } | null => {
+    const step = binStepMs(binSize);
+
+    if (options.range) {
+      const first = binStartKey(clockKeyOfDate(options.range.start), binSize);
+      const last = binStartKey(clockKeyOfDate(options.range.end), binSize);
+      if (isNaN(first) || isNaN(last) || last < first) return null;
+      return { first, last, count: Math.round((last - first) / step) + 1 };
+    }
+
+    let minKey = Infinity;
+    let maxKey = -Infinity;
+    for (const d of dated) {
+      if (!isPlottable(d, binSize)) continue;
+      const key = keyFor(d, binSize);
+      if (key < minKey) minKey = key;
+      if (key > maxKey) maxKey = key;
+    }
+    if (minKey === Infinity) return null;
+
+    // Annotations can extend the axis beyond the data
+    let annotationMin = minKey;
+    let annotationMax = maxKey;
+    (annotations ?? []).forEach(ann => {
+      const start = clockKeyOfDate(ann.date);
+      if (start < annotationMin) annotationMin = start;
+      if (start > annotationMax) annotationMax = start;
       if (ann.endDate) {
-        if (ann.endDate > annotationMaxDate) {
-          annotationMaxDate = ann.endDate;
-        }
+        const end = clockKeyOfDate(ann.endDate);
+        if (end > annotationMax) annotationMax = end;
       }
     });
-  }
 
-  // Adjust to bin boundaries.
-  //
-  // Both ends are the START of the first and last bin to render. endDate used
-  // getBinEnd, which returns the exclusive bound one bin past the data; padding
-  // was then added on top of that, and the generation loop below is inclusive.
-  // The two compounded into one more empty bin after the outbreak than before
-  // it, which is what made short outbreaks look like they trailed off into
-  // nothing.
-  let startDate = getBinStart(annotationMinDate, binSize);
-  let endDate = getBinStart(annotationMaxDate, binSize);
+    // One empty bin each side, so the curve visibly starts from and returns to
+    // zero without burying a short outbreak in blank space. A wider window is
+    // what the custom date range is for.
+    let first = binStartKey(annotationMin, binSize) - step;
+    let last = binStartKey(annotationMax, binSize) + step;
 
-  // One empty bin each side, so the curve visibly starts from and returns to
-  // zero without burying a short outbreak in blank space. Anyone wanting a
-  // wider window can set an explicit date range.
-  const paddingBins = 1;
-  for (let i = 0; i < paddingBins; i++) {
-    startDate = getPreviousBinStart(startDate, binSize);
-  }
-  for (let i = 0; i < paddingBins; i++) {
-    endDate = getNextBinStart(endDate, binSize);
-  }
+    // If annotations extend beyond data range, add 1 extra bin for padding
+    if (annotationMin < binStartKey(minKey, binSize)) first -= step;
+    if (annotationMax > binStartKey(maxKey, binSize) + step) last += step;
 
-  // If annotations extend beyond data range, add 1 extra bin for padding
-  if (annotations && annotations.length > 0) {
-    const dataStart = getBinStart(minDate, binSize);
-    const dataEnd = getBinEnd(maxDate, binSize);
+    return { first, last, count: Math.round((last - first) / step) + 1 };
+  };
 
-    if (annotationMinDate < dataStart) {
-      startDate = getPreviousBinStart(startDate, binSize);
-    }
-    if (annotationMaxDate > dataEnd) {
-      endDate = getNextBinStart(endDate, binSize);
+  // Coarsen a request that needs more bars than can be drawn.
+  let binSize = requested;
+  let extent = extentFor(binSize);
+  if (extent && extent.count > maxBins) {
+    result.requestedBinCount = extent.count;
+    let coarser = COARSER_BIN_SIZE[binSize];
+    while (extent && extent.count > maxBins && coarser) {
+      binSize = coarser;
+      extent = extentFor(binSize);
+      coarser = COARSER_BIN_SIZE[binSize];
     }
   }
+  result.binSize = binSize;
 
-  // Generate bins
+  const countTimeProblems = () => {
+    if (!isSubDailyBinSize(binSize) || !timeColumn) return;
+    for (const d of dated) {
+      if (d.timeProblem === 'missing') summary.missingTime++;
+      if (d.timeProblem === 'unrecognised') {
+        summary.unrecognisedTime++;
+        pushExample(summary.unrecognisedTimeExamples, d.record[timeColumn]);
+      }
+    }
+  };
+
+  if (!extent) {
+    countTimeProblems();
+    return result;
+  }
+  if (extent.count > maxBins) {
+    // Weekly bars and still too many: a span of decades. Draw nothing and say so.
+    result.tooManyBins = true;
+    result.requestedBinCount = result.requestedBinCount || extent.count;
+    return result;
+  }
+  countTimeProblems();
+
+  const step = binStepMs(binSize);
   const bins: EpiCurveBin[] = [];
-  let currentStart = new Date(startDate);
-
-  while (currentStart <= endDate) {
-    const currentEnd = getNextBinStart(currentStart, binSize);
-    // No forward progress would mean an unbounded loop; stop rather than hang.
-    if (currentEnd <= currentStart) break;
-
-    const binCases = validRecords.filter(r => {
-      const caseDate = timeColumn
-        ? combineDateAndTime(r[dateColumn], r[timeColumn])
-        : parseDate(String(r[dateColumn]));
-      return caseDate >= currentStart && caseDate < currentEnd;
-    });
-
-    const strata = new Map<string, CaseRecord[]>();
-    if (stratifyBy) {
-      binCases.forEach(c => {
-        const strataValue = categoryValue(c[stratifyBy]);
-        if (!strata.has(strataValue)) {
-          strata.set(strataValue, []);
-        }
-        strata.get(strataValue)!.push(c);
-      });
-    }
-
+  for (let i = 0; i < extent.count; i++) {
+    const startKey = extent.first + i * step;
     bins.push({
-      startDate: new Date(currentStart),
-      endDate: new Date(currentEnd),
-      label: formatBinLabel(currentStart, binSize),
-      cases: binCases,
-      strata,
-      total: binCases.length,
+      startDate: clockKeyToLocal(startKey),
+      endDate: clockKeyToLocal(startKey + step),
+      startKey,
+      label: formatBinLabel(startKey, binSize),
+      cases: [],
+      strata: new Map<string, CaseRecord[]>(),
+      total: 0,
     });
+  }
 
-    currentStart = currentEnd;
+  // One pass: each record's bar is computed, not searched for.
+  let firstKey = Infinity;
+  let lastKey = -Infinity;
+  let anyTimed = false;
+  for (const d of dated) {
+    if (!isPlottable(d, binSize)) continue;
+    const key = keyFor(d, binSize);
+    const index = Math.round((binStartKey(key, binSize) - extent.first) / step);
+    if (index < 0 || index >= bins.length) {
+      summary.outsideRange++;
+      continue;
+    }
+    const bin = bins[index];
+    bin.cases.push(d.record);
+    bin.total++;
+    if (stratifyBy) {
+      const strataValue = categoryValue(d.record[stratifyBy]);
+      const group = bin.strata.get(strataValue);
+      if (group) group.push(d.record);
+      else bin.strata.set(strataValue, [d.record]);
+    }
+    if (key < firstKey) firstKey = key;
+    if (key > lastKey) lastKey = key;
+    if (isSubDailyBinSize(binSize) && d.timedKey !== null) anyTimed = true;
+    summary.plotted++;
+  }
+
+  if (summary.plotted > 0) {
+    summary.firstOnset = clockKeyToLocal(firstKey);
+    summary.lastOnset = clockKeyToLocal(lastKey);
+    summary.onsetHasTime = anyTimed;
   }
 
   // Get all unique strata keys
@@ -379,129 +1063,144 @@ export function processEpiCurveData(
     bin.strata.forEach((_, key) => strataKeysSet.add(key));
   });
 
-  let maxCount = 1;
-  bins.forEach(b => {
-    if (b.total > maxCount) maxCount = b.total;
+  let maxCount = 0;
+  let peakBinIndex = -1;
+  bins.forEach((b, i) => {
+    if (b.total > maxCount) {
+      maxCount = b.total;
+      peakBinIndex = i;
+    }
   });
 
   return {
+    ...result,
     bins,
     maxCount,
-    strataKeys: Array.from(strataKeysSet).sort(),
-    dateRange: { start: startDate, end: endDate },
+    strataKeys: sortStrataKeys(Array.from(strataKeysSet)),
+    dateRange: { start: clockKeyToLocal(extent.first), end: clockKeyToLocal(extent.last) },
+    peakBinIndex,
   };
 }
 
-function getBinStart(date: Date, binSize: BinSize): Date {
-  const d = new Date(date);
+// ============ Axis labels ============
 
-  switch (binSize) {
-    case 'hourly':
-      d.setMinutes(0, 0, 0);
-      break;
-    case '6hour':
-      d.setHours(Math.floor(d.getHours() / 6) * 6, 0, 0, 0);
-      break;
-    case '12hour':
-      d.setHours(Math.floor(d.getHours() / 12) * 12, 0, 0, 0);
-      break;
-    case 'daily':
-      d.setHours(0, 0, 0, 0);
-      break;
-    case 'weekly-cdc': {
-      // CDC weeks start on Sunday
-      const cdcDay = d.getDay();
-      d.setDate(d.getDate() - cdcDay);
-      d.setHours(0, 0, 0, 0);
-      break;
-    }
-    case 'weekly-iso': {
-      // ISO weeks start on Monday
-      const isoDay = d.getDay() || 7;
-      d.setDate(d.getDate() - (isoDay - 1));
-      d.setHours(0, 0, 0, 0);
-      break;
-    }
+export interface AxisLabel {
+  /** Index of the bin the label belongs to. */
+  index: number;
+  text: string;
+}
+
+/** Label spacings, in bins, that land on round clock or calendar values. */
+const LABEL_STEPS: Record<BinSize, number[]> = {
+  hourly: [1, 2, 3, 4, 6, 12, 24, 48, 72, 168],
+  '6hour': [1, 2, 4, 8, 12, 28],
+  '12hour': [1, 2, 4, 6, 14, 28],
+  daily: [1, 2, 7, 14, 28],
+  'weekly-cdc': [1, 2, 4, 8, 13, 26, 52],
+  'weekly-iso': [1, 2, 4, 8, 13, 26, 52],
+};
+
+/**
+ * Which bars get an x-axis label when there are too many to label them all.
+ *
+ * Every Nth bar counted from the first was labelled before, so an hourly axis
+ * was labelled 23:00, 3:00, 7:00... and the midnight bars, which are where
+ * date-only cases sit, never got one. Labels now fall on round values (midnight
+ * on an hourly axis, Mondays on a daily one), counted from a fixed origin so
+ * they do not shift when the range changes.
+ *
+ * When the axis spans more than one calendar year, the first label and the
+ * first label of each new year carry the year.
+ */
+export function chooseAxisLabels(bins: EpiCurveBin[], binSize: BinSize, maxLabels: number): AxisLabel[] {
+  if (bins.length === 0) return [];
+  const limit = Math.max(1, Math.floor(maxLabels));
+
+  const steps = LABEL_STEPS[binSize] ?? LABEL_STEPS.daily;
+  let step = steps.find(s => Math.ceil(bins.length / s) <= limit) ?? 0;
+  if (step === 0) {
+    step = steps[steps.length - 1];
+    while (Math.ceil(bins.length / step) > limit) step *= 2;
   }
+  const labelStep = step;
 
-  return d;
+  const unit = binStepMs(binSize);
+  // Daily bins a week or more apart are labelled on Mondays.
+  const offset = binSize === 'daily' && labelStep % 7 === 0 ? 3 : 0;
+  const yearOf = (bin: EpiCurveBin) => new Date(bin.startKey).getUTCFullYear();
+  const spansYears = yearOf(bins[0]) !== yearOf(bins[bins.length - 1]);
+
+  const labels: AxisLabel[] = [];
+  let previousYear: number | null = null;
+  bins.forEach((bin, index) => {
+    if (mod(Math.floor(bin.startKey / unit) + offset, labelStep) !== 0) return;
+    const year = yearOf(bin);
+    const withYear = spansYears && year !== previousYear;
+    previousYear = year;
+    labels.push({ index, text: withYear ? formatBinLabel(bin.startKey, binSize, true) : bin.label });
+  });
+  return labels;
 }
 
-function getBinEnd(date: Date, binSize: BinSize): Date {
-  const start = getBinStart(date, binSize);
-  return getNextBinStart(start, binSize);
+/** A bin's label with its year, for tooltips. */
+export function fullBinLabel(bin: EpiCurveBin, binSize: BinSize): string {
+  return formatBinLabel(bin.startKey, binSize, true);
 }
 
-function getNextBinStart(date: Date, binSize: BinSize): Date {
-  const d = new Date(date);
-
+/**
+ * What a reader needs to be told about the bars that the labels do not say.
+ * A weekly curve was labelled "Mar 2, Mar 9, Mar 16" with nothing to show the
+ * bars were weeks, or whether they ran Sunday to Saturday or Monday to Sunday.
+ */
+export function binSizeNote(binSize: BinSize): string {
   switch (binSize) {
-    case 'hourly':
-      d.setHours(d.getHours() + 1);
-      break;
-    case '6hour':
-      d.setHours(d.getHours() + 6);
-      break;
-    case '12hour':
-      d.setHours(d.getHours() + 12);
-      break;
-    case 'daily':
-      d.setDate(d.getDate() + 1);
-      break;
     case 'weekly-cdc':
+      return 'Each bar is one week, Sunday to Saturday (CDC/MMWR weeks), labelled with its first day.';
     case 'weekly-iso':
-      d.setDate(d.getDate() + 7);
-      break;
+      return 'Each bar is one week, Monday to Sunday (ISO weeks), labelled with its first day.';
     default:
-      // Must still advance. Returning the date unchanged makes the bin
-      // generation loop below spin forever and exhaust memory.
-      d.setDate(d.getDate() + 1);
-      break;
+      return '';
   }
-
-  return d;
 }
 
-function getPreviousBinStart(date: Date, binSize: BinSize): Date {
-  const d = new Date(date);
+export const BIN_SIZE_NAMES: Record<BinSize, string> = {
+  hourly: 'hourly',
+  '6hour': '6-hour',
+  '12hour': '12-hour',
+  daily: 'daily',
+  'weekly-cdc': 'weekly (CDC/MMWR)',
+  'weekly-iso': 'weekly (ISO)',
+};
 
-  switch (binSize) {
-    case 'hourly':
-      d.setHours(d.getHours() - 1);
-      break;
-    case '6hour':
-      d.setHours(d.getHours() - 6);
-      break;
-    case '12hour':
-      d.setHours(d.getHours() - 12);
-      break;
-    case 'daily':
-      d.setDate(d.getDate() - 1);
-      break;
-    case 'weekly-cdc':
-    case 'weekly-iso':
-      d.setDate(d.getDate() - 7);
-      break;
+// ============ Colours ============
+
+const CLASSIFICATION_COLORS = {
+  confirmed: '#DC2626',
+  probable: '#F59E0B',
+  suspected: '#3B82F6',
+  unknown: '#9CA3AF',
+  nonCase: '#6B7280',
+};
+
+/**
+ * The case classification a stratum value names, whatever its spelling.
+ *
+ * Only the exact strings "Confirmed", "Probable" and "Suspected" were matched
+ * before. "Suspect", the CDC spelling, fell through to the default palette by
+ * position and came out the same amber as Probable; lower-case values lost
+ * their colours altogether.
+ */
+function classificationOf(strataKey: string): keyof typeof CLASSIFICATION_COLORS | null {
+  const text = strataKey.trim().toLowerCase();
+  if (text === '' || text === MISSING_CATEGORY_LABEL.toLowerCase() || /^(missing|unk|not known|undetermined|pending)$/.test(text)) {
+    return 'unknown';
   }
-
-  return d;
-}
-
-function formatBinLabel(date: Date, binSize: BinSize): string {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-  switch (binSize) {
-    case 'hourly':
-      return `${months[date.getMonth()]} ${date.getDate()} ${date.getHours()}:00`;
-    case '6hour':
-    case '12hour':
-      return `${months[date.getMonth()]} ${date.getDate()} ${date.getHours()}:00`;
-    case 'daily':
-      return `${months[date.getMonth()]} ${date.getDate()}`;
-    case 'weekly-cdc':
-    case 'weekly-iso':
-      return `${months[date.getMonth()]} ${date.getDate()}`;
-  }
+  // Negation first, so "Not confirmed" and "Not a case" are not coloured as cases.
+  if (readsAsNonCase(strataKey)) return 'nonCase';
+  if (/confirm/.test(text)) return 'confirmed';
+  if (/probable/.test(text)) return 'probable';
+  if (/suspect|possible/.test(text)) return 'suspected';
+  return null;
 }
 
 export function getColorForStrata(
@@ -514,12 +1213,11 @@ export function getColorForStrata(
     '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'
   ];
 
-  const classificationColors: Record<string, string> = {
-    'Confirmed': '#DC2626',
-    'Probable': '#F59E0B',
-    'Suspected': '#3B82F6',
-    'Unknown': '#9CA3AF',
-  };
+  // For values the classification scheme does not name: the default palette
+  // without the blue, amber and red it has already given a meaning.
+  const unclassifiedColors = [
+    '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16', '#F97316', '#6366F1'
+  ];
 
   const colorblindColors = [
     '#0077BB', '#33BBEE', '#009988', '#EE7733', '#CC3311',
@@ -532,8 +1230,12 @@ export function getColorForStrata(
   ];
 
   switch (scheme) {
-    case 'classification':
-      return classificationColors[strataKey] || defaultColors[index % defaultColors.length];
+    case 'classification': {
+      const classification = classificationOf(strataKey);
+      return classification
+        ? CLASSIFICATION_COLORS[classification]
+        : unclassifiedColors[index % unclassifiedColors.length];
+    }
     case 'colorblind':
       return colorblindColors[index % colorblindColors.length];
     case 'grayscale':
@@ -544,38 +1246,12 @@ export function getColorForStrata(
 }
 
 export function findFirstCaseDate(records: CaseRecord[], dateColumn: string): Date | null {
-  const validRecords = records.filter(r => {
-    const dateVal = r[dateColumn];
-    if (!dateVal) return false;
-    const date = parseDate(String(dateVal));
-    return !isNaN(date.getTime());
-  });
-
-  if (validRecords.length === 0) return null;
-
   let firstTime = Infinity;
-  validRecords.forEach(r => {
-    const t = parseDate(String(r[dateColumn])).getTime();
+  records.forEach(r => {
+    const dateVal = r[dateColumn];
+    if (!dateVal) return;
+    const t = parseLocalDate(String(dateVal)).getTime();
     if (t < firstTime) firstTime = t;
   });
-  return new Date(firstTime);
-}
-
-// Calculate exposure window working backward from cases
-export function calculateExposureWindow(
-  firstCaseDate: Date,
-  lastCaseDate: Date,
-  pathogen: string
-): { start: Date; end: Date } | null {
-  const incubation = PATHOGEN_INCUBATION[pathogen];
-  if (!incubation) return null;
-
-  // Exposure window is from (last case - max incubation) to (first case - min incubation)
-  const start = new Date(lastCaseDate);
-  start.setDate(start.getDate() - Math.ceil(incubation.max));
-
-  const end = new Date(firstCaseDate);
-  end.setDate(end.getDate() - Math.floor(incubation.min));
-
-  return { start, end };
+  return firstTime === Infinity ? null : new Date(firstTime);
 }

@@ -44,22 +44,25 @@ export const EpiCurveTutorial: React.FC = () => {
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">1.</span>
                 <div>
-                  <strong>Select a Date Variable:</strong> Choose the variable that represents when cases occurred
+                  <strong>Choose the Date Column:</strong> Pick the column that records when each case became ill
                   (typically "date of illness onset" or "symptom onset date"). Avoid using administrative dates like
                   "date interviewed" or "date reported" as these don't reflect the true temporal distribution.
+                  Records with no date, or a date that cannot be read, are left out; the summary at the top of
+                  this panel says how many.
                 </div>
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">2.</span>
                 <div>
-                  <strong>Choose Time Unit:</strong> Select an appropriate time interval (hour, day, week, or month).
-                  For acute outbreaks, use hours or days. For longer investigations, use weeks or months.
+                  <strong>Choose the Bin Size:</strong> Hourly, 6-hour, 12-hour, daily or weekly. For acute
+                  outbreaks, use hours or days; bins shorter than a day need a Time Column. For longer
+                  investigations, use weeks: CDC/MMWR weeks run Sunday to Saturday and ISO weeks Monday to Sunday.
                 </div>
               </li>
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">3.</span>
                 <div>
-                  <strong>Add Stratification (Optional):</strong> Select a grouping variable to color-code your bars
+                  <strong>Stratify By (Optional):</strong> Select a grouping variable to color-code your bars
                   (e.g., by case status, sex, or exposure). This helps identify patterns within subgroups.
                 </div>
               </li>
@@ -79,9 +82,9 @@ export const EpiCurveTutorial: React.FC = () => {
               <div className="flex items-start">
                 <div className="w-2 h-2 bg-blue-500 rounded-full mr-2 mt-2"></div>
                 <div>
-                  <strong className="text-blue-900">Point Source Outbreak:</strong> A sharp peak with rapid rise and
-                  fall, resembling a bell curve. Suggests all cases were exposed at roughly the same time (e.g., from
-                  contaminated food at a single event).
+                  <strong className="text-blue-900">Point Source Outbreak:</strong> A rapid rise to a single peak
+                  and a slower decline, with all cases falling within about one incubation period. Suggests all cases
+                  were exposed at roughly the same time (e.g., from contaminated food at a single event).
                 </div>
               </div>
               <div className="flex items-start">
@@ -113,7 +116,8 @@ export const EpiCurveTutorial: React.FC = () => {
                   <li>• Use the smallest practical time unit—too large masks patterns, too small creates noise</li>
                   <li>• Pay attention to gaps or unusual patterns that might indicate data quality issues</li>
                   <li>• Compare the curve shape with known incubation periods to identify likely pathogens</li>
-                  <li>• Export your chart for reports using browser print or screenshot tools</li>
+                  <li>• Mark exposures and control measures with Annotations: click the chart, or use + Add Event</li>
+                  <li>• Use Export PNG or Export SVG under the chart to save the figure for a report</li>
                 </ul>
               </div>
             </div>
