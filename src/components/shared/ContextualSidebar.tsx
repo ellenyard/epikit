@@ -179,7 +179,7 @@ export function ContextualSidebar({
       {/* Mobile Backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-25 lg:hidden"
+          className="fixed inset-0 bg-black/25 lg:hidden"
           style={{ zIndex: zIndex - 1 }}
           onClick={onClose}
         />

@@ -166,6 +166,48 @@ try {
     assert.equal(parseProjectFile(JSON.stringify(future)), null, 'a future major version must be refused');
   }
 
+  // 9. A hand-edited or damaged file must not hand the app shapes it cannot
+  //    render. These each crashed Review/Clean after an apparently
+  //    successful load.
+  {
+    const { sanitizeDataset, sanitizeEditLog } = await import(pathToFileURL(bundled).href);
+    const damaged = {
+      version: '1.0', exportedAt: '', activeDatasetId: 'ds1', analysisState: {},
+      datasets: [{
+        id: 'ds1', name: 'A', source: 'import', createdAt: '', updatedAt: '',
+        columns: [null, { key: 'age', label: 5, type: 'integer' }, { label: 'no key' }, { key: 'sex', label: 'Sex', type: 'categorical' }],
+        records: [null, { age: 3 }, { id: 'r1', age: 4 }, { id: 'r1', age: 5 }, 'text'],
+      }],
+      editLog: [null, { id: 'e1', datasetId: 'ds1' }, { id: 7 }],
+    };
+    const p = parseProjectFile(JSON.stringify(damaged));
+    assert.ok(p, 'a damaged but recognisable project still loads');
+    const [d] = p.datasets;
+    assert.deepEqual(d.columns.map(c => [c.key, c.label, c.type]),
+      [['age', 'age', 'text'], ['sex', 'Sex', 'categorical']],
+      'unusable columns are dropped; a bad label falls back to the key and an unknown type to text');
+    assert.equal(d.records.length, 3, 'null and non-object records are dropped');
+    assert.deepEqual(d.records.map(r => r.age), [3, 4, 5], 'the usable records keep their values');
+    assert.equal(new Set(d.records.map(r => r.id)).size, 3,
+      'every record ends up with its own id, or selecting one row selects them all');
+    assert.equal(d.records[1].id, 'r1', 'an existing unique id is kept');
+    assert.deepEqual(p.editLog, [{ id: 'e1', datasetId: 'ds1' }], 'unusable edit log entries are dropped');
+
+    assert.equal(sanitizeDataset(null), null);
+    assert.equal(sanitizeDataset({ id: 'x', name: 'y', columns: [] }), null, 'no records array: not a dataset');
+    assert.deepEqual(sanitizeEditLog('nope'), []);
+
+    // A well-formed dataset passes through unchanged, so re-saving it writes
+    // the same bytes (two open tabs rely on that to settle).
+    const clean = dataset('ds1', 'A');
+    assert.deepEqual(sanitizeDataset(clean), clean, 'a valid dataset is returned as it was');
+    assert.equal(JSON.stringify(sanitizeDataset(clean)), JSON.stringify(clean),
+      'and serialises identically, key order included');
+
+    const nullDataset = { ...damaged, datasets: [null] };
+    assert.equal(parseProjectFile(JSON.stringify(nullDataset)), null, 'a file whose dataset is not an object is refused');
+  }
+
   console.log('persistence regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

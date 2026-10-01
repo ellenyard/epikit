@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { isStaleChunkError, reloadForStaleChunk, RELOAD_GUARD_KEY } from '../utils/chunkRecovery';
+import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../utils/contact';
 
 interface Props {
   children: ReactNode;
@@ -65,9 +66,19 @@ export class ErrorBoundary extends Component<Props, State> {
                 ? "LineList was updated while this tab was open, so part of it could not be loaded. Reloading picks up the new version. Your data is safe — it's saved in this browser."
                 : "An unexpected error occurred. Your data is safe — it's saved automatically in your browser."}
             </p>
-            <p className="text-xs text-gray-400 mb-4 font-mono">
+            <p className="text-xs text-gray-500 mb-4 font-mono">
               {this.state.error?.message}
             </p>
+            {/* The moment someone is most willing to report a problem, and the
+                one where the message above is worth having. */}
+            {!isStaleChunkError(this.state.error) && (
+              <p className="text-sm text-gray-600 mb-4">
+                If this keeps happening, please email{' '}
+                <a href={FEEDBACK_MAILTO} className="text-blue-700 underline">{FEEDBACK_EMAIL}</a>{' '}
+                with the message above and what you were doing. Please don't send data that
+                could identify anyone.
+              </p>
+            )}
             <button
               onClick={isStaleChunkError(this.state.error)
                 ? () => window.location.reload()

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDialog } from '../hooks/useDialog';
+import { readStorage, writeStorage, removeStorage } from '../utils/persistence';
 
 interface AccessibilitySettingsProps {
   isOpen: boolean;
@@ -53,10 +54,10 @@ function applySettings(
 }
 
 export function AccessibilitySettings({ isOpen, onClose }: AccessibilitySettingsProps) {
-  const [highContrast, setHighContrast] = useState(() => localStorage.getItem('a11y-high-contrast') === 'true');
-  const [colorblindFriendly, setColorblindFriendly] = useState(() => localStorage.getItem('a11y-colorblind-friendly') === 'true');
-  const [reducedMotion, setReducedMotion] = useState(() => localStorage.getItem('a11y-reduced-motion') === 'true');
-  const [fontSize, setFontSize] = useState(() => localStorage.getItem('a11y-font-size') || 'normal');
+  const [highContrast, setHighContrast] = useState(() => readStorage('a11y-high-contrast') === 'true');
+  const [colorblindFriendly, setColorblindFriendly] = useState(() => readStorage('a11y-colorblind-friendly') === 'true');
+  const [reducedMotion, setReducedMotion] = useState(() => readStorage('a11y-reduced-motion') === 'true');
+  const [fontSize, setFontSize] = useState(() => readStorage('a11y-font-size') || 'normal');
 
   useEffect(() => {
     applySettings(highContrast, colorblindFriendly, reducedMotion, fontSize);
@@ -65,27 +66,27 @@ export function AccessibilitySettings({ isOpen, onClose }: AccessibilitySettings
   const handleToggleHighContrast = () => {
     const newValue = !highContrast;
     setHighContrast(newValue);
-    localStorage.setItem('a11y-high-contrast', String(newValue));
+    writeStorage('a11y-high-contrast', String(newValue));
     applySettings(newValue, colorblindFriendly, reducedMotion, fontSize);
   };
 
   const handleToggleColorblindFriendly = () => {
     const newValue = !colorblindFriendly;
     setColorblindFriendly(newValue);
-    localStorage.setItem('a11y-colorblind-friendly', String(newValue));
+    writeStorage('a11y-colorblind-friendly', String(newValue));
     applySettings(highContrast, newValue, reducedMotion, fontSize);
   };
 
   const handleToggleReducedMotion = () => {
     const newValue = !reducedMotion;
     setReducedMotion(newValue);
-    localStorage.setItem('a11y-reduced-motion', String(newValue));
+    writeStorage('a11y-reduced-motion', String(newValue));
     applySettings(highContrast, colorblindFriendly, newValue, fontSize);
   };
 
   const handleFontSizeChange = (size: string) => {
     setFontSize(size);
-    localStorage.setItem('a11y-font-size', size);
+    writeStorage('a11y-font-size', size);
     applySettings(highContrast, colorblindFriendly, reducedMotion, size);
   };
 
@@ -94,10 +95,10 @@ export function AccessibilitySettings({ isOpen, onClose }: AccessibilitySettings
     setColorblindFriendly(false);
     setReducedMotion(false);
     setFontSize('normal');
-    localStorage.removeItem('a11y-high-contrast');
-    localStorage.removeItem('a11y-colorblind-friendly');
-    localStorage.removeItem('a11y-reduced-motion');
-    localStorage.removeItem('a11y-font-size');
+    removeStorage('a11y-high-contrast');
+    removeStorage('a11y-colorblind-friendly');
+    removeStorage('a11y-reduced-motion');
+    removeStorage('a11y-font-size');
     applySettings(false, false, false, 'normal');
   };
 
@@ -106,7 +107,7 @@ export function AccessibilitySettings({ isOpen, onClose }: AccessibilitySettings
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl w-full max-w-2xl m-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useDialog } from '../hooks/useDialog';
+import { FEEDBACK_EMAIL, FEEDBACK_MAILTO, FEEDBACK_PRIVACY_NOTE } from '../utils/contact';
 
 interface HelpCenterProps {
   isOpen: boolean;
@@ -15,6 +17,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
 }) => {
   const [activeSection, setActiveSection] = useState<HelpSection>('quick-start');
   const [expandedFAQ, setExpandedFAQ] = useState<string | null>(null);
+  const { panelRef, dialogProps } = useDialog({ onClose, labelledBy: 'help-center-title', isOpen });
 
   if (!isOpen) return null;
 
@@ -24,15 +27,19 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="help-center-title"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4"
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex">
+      {/* On a phone the section list becomes a scrolling row above the text;
+          a fixed side column left about a third of the screen for reading. */}
+      <div
+        ref={panelRef}
+        {...dialogProps}
+        className="bg-white rounded-lg shadow-xl max-w-6xl w-full h-full max-h-[94vh] md:h-auto md:max-h-[90vh] overflow-hidden flex flex-col md:flex-row"
+      >
         {/* Sidebar */}
-        <div className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
+        <div className="md:w-64 bg-gray-50 border-b md:border-b-0 md:border-r border-gray-200 flex flex-col flex-shrink-0">
+          <div className="hidden md:block p-4 border-b border-gray-200">
             <h2 id="help-center-title" className="text-lg font-semibold text-gray-800 flex items-center">
               <svg className="w-5 h-5 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -41,10 +48,10 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             </h2>
           </div>
 
-          <nav className="flex-1 overflow-y-auto p-2" aria-label="Help sections">
+          <nav className="flex md:block gap-1 md:flex-1 overflow-x-auto md:overflow-x-visible md:overflow-y-auto p-2" aria-label="Help sections">
             <button
               onClick={() => setActiveSection('quick-start')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+              className={`md:w-full text-left text-sm md:text-base px-3 py-2 rounded-lg md:mb-1 whitespace-nowrap flex-shrink-0 transition-colors ${
                 activeSection === 'quick-start'
                   ? 'bg-blue-100 text-blue-700 font-medium'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -57,7 +64,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             </button>
             <button
               onClick={() => setActiveSection('faq')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+              className={`md:w-full text-left text-sm md:text-base px-3 py-2 rounded-lg md:mb-1 whitespace-nowrap flex-shrink-0 transition-colors ${
                 activeSection === 'faq'
                   ? 'bg-blue-100 text-blue-700 font-medium'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -70,7 +77,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             </button>
             <button
               onClick={() => setActiveSection('privacy')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+              className={`md:w-full text-left text-sm md:text-base px-3 py-2 rounded-lg md:mb-1 whitespace-nowrap flex-shrink-0 transition-colors ${
                 activeSection === 'privacy'
                   ? 'bg-blue-100 text-blue-700 font-medium'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -83,7 +90,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             </button>
             <button
               onClick={() => setActiveSection('saving-sharing')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+              className={`md:w-full text-left text-sm md:text-base px-3 py-2 rounded-lg md:mb-1 whitespace-nowrap flex-shrink-0 transition-colors ${
                 activeSection === 'saving-sharing'
                   ? 'bg-blue-100 text-blue-700 font-medium'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -96,7 +103,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             </button>
             <button
               onClick={() => setActiveSection('about')}
-              className={`w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors ${
+              className={`md:w-full text-left text-sm md:text-base px-3 py-2 rounded-lg md:mb-1 whitespace-nowrap flex-shrink-0 transition-colors ${
                 activeSection === 'about'
                   ? 'bg-blue-100 text-blue-700 font-medium'
                   : 'text-gray-700 hover:bg-gray-100'
@@ -109,7 +116,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
             </button>
           </nav>
 
-          <div className="p-4 border-t border-gray-200">
+          <div className="hidden md:block p-4 border-t border-gray-200">
             <button
               onClick={onOpenOnboarding}
               className="w-full px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm font-medium"
@@ -120,9 +127,9 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0">
           {/* Header */}
-          <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+          <div className="bg-white border-b border-gray-200 px-4 md:px-6 py-3 md:py-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-gray-800">
               {activeSection === 'quick-start' && 'Quick Start Guide'}
               {activeSection === 'faq' && 'Frequently Asked Questions'}
@@ -142,7 +149,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
           </div>
 
           {/* Content Area */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6">
             {activeSection === 'quick-start' && (
               <div className="space-y-6 max-w-4xl">
                 <div className="bg-blue-50 border-l-4 border-blue-500 p-4">
@@ -158,13 +165,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     <ol className="list-decimal ml-6 space-y-2">
                       <li>Navigate to any analysis module (Review/Clean, Epi Curve, Maps, etc.)</li>
                       <li>Click the <strong>"Import Data"</strong> button in the dataset selector bar</li>
-                      <li>Select your CSV or Excel file (make sure it is de-identified, with no PHI)</li>
-                      <li>Review the preview to verify columns are detected correctly</li>
+                      <li>Choose or drop a CSV or Excel file, or paste rows copied from a spreadsheet (make sure the data are de-identified, with no PHI)</li>
+                      <li>If LineList asks how to read an ambiguous date or number column, answer it; then check the preview and any warnings</li>
                       <li>Click "Import Records" to load your data</li>
                     </ol>
                     <div className="bg-amber-50 border border-amber-300 rounded p-3 mt-3">
                       <p className="text-amber-800 text-sm">
-                        <strong>💡 Tip:</strong> CSV files should have column headers in the first row and use comma separators. For Excel files with multiple sheets, choose which sheet to import.
+                        <strong>💡 Tip:</strong> Put the column headers in the first row. Comma-, semicolon- and tab-separated files are all read. For Excel files with multiple sheets, choose which sheet to import.
                       </p>
                     </div>
                   </div>
@@ -218,7 +225,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   <div className="prose prose-sm text-gray-600">
                     <ul className="list-disc ml-6 space-y-2">
                       <li><strong>Export CSV:</strong> Download your dataset with all edits and derived variables using "Export Dataset CSV" in the analysis tools</li>
-                      <li><strong>Save Charts:</strong> Use the "Export PNG" and "Copy to Clipboard" buttons on charts (SVG export is also available in Epi Curve and Sketch Map)</li>
+                      <li><strong>Save Charts:</strong> Use the "Export PNG", "Export SVG" and "Copy to Clipboard" buttons shown with each chart</li>
                       <li><strong>Export Tables:</strong> Download frequency tables and cross-tabulations as CSV from Build Tables</li>
                       <li><strong>Save Project:</strong> Use the Save Project button in the top toolbar to download your whole project (datasets and edit log) as a JSON file</li>
                     </ul>
@@ -262,7 +269,8 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       </h5>
                       <p className="mb-2">Save charts using the export buttons shown with each chart:</p>
                       <ul className="list-disc ml-5 space-y-1 text-gray-600">
-                        <li><strong>Export PNG:</strong> Download chart images (SVG export is also available in Epi Curve and Sketch Map)</li>
+                        <li><strong>Export PNG:</strong> Download a chart as an image for a report or slide</li>
+                        <li><strong>Export SVG:</strong> Download a chart as a vector file that stays sharp at any size and can be edited</li>
                         <li><strong>Copy to Clipboard:</strong> Paste charts directly into reports and slides</li>
                         <li><strong>Export to Excel:</strong> Download the underlying chart data from the Visualize module</li>
                         <li><strong>Print to PDF:</strong> Use the browser print function (Ctrl/Cmd + P) to save a page as PDF</li>
@@ -390,7 +398,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       <ul className="space-y-1 text-blue-800">
                         <li>• <strong>Client-side processing:</strong> Imported datasets are processed in your browser</li>
                         <li>• <strong>No installation required:</strong> Works directly in your web browser</li>
-                        <li>• <strong>Free core tools:</strong> Essential outbreak-analysis workflows are available without charge</li>
+                        <li>• <strong>Free:</strong> No cost, no account, and the source code is open (MIT license)</li>
                         <li>• <strong>Privacy-first design:</strong> No application-server upload or cloud storage of imported datasets</li>
                       </ul>
                     </div>
@@ -439,15 +447,30 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         <div>
-                          <strong>Restart Onboarding:</strong> Click the "Restart Onboarding" button at the bottom of this help center to see the introductory wizard again.
+                          <strong>Introduction:</strong>{' '}
+                          <button
+                            onClick={onOpenOnboarding}
+                            className="text-blue-600 underline hover:text-blue-800"
+                          >
+                            Open the introductory walkthrough
+                          </button>{' '}
+                          for a short tour of the tools using the sample outbreak.
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-gray-50 border border-gray-300 rounded-lg p-4 mt-4">
-                      <h5 className="font-medium text-gray-800 mb-2">Technical Support</h5>
+                      <h5 className="font-medium text-gray-800 mb-2">Feedback and Error Reports</h5>
+                      <p className="text-gray-700 mb-2">
+                        Noticed an error, something confusing, or a result that looks wrong? Have a suggestion?
+                        Please email{' '}
+                        <a href={FEEDBACK_MAILTO} className="text-blue-600 underline hover:text-blue-800">
+                          {FEEDBACK_EMAIL}
+                        </a>
+                        . {FEEDBACK_PRIVACY_NOTE}
+                      </p>
                       <p className="text-gray-700">
-                        Found a bug or have a feature request? Please open an issue on the{' '}
+                        If you use GitHub, you can also open an issue on the{' '}
                         <a
                           href="https://github.com/ellenyard/epikit/issues"
                           target="_blank"
@@ -492,7 +515,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'import',
                     question: 'How do I import my data?',
-                    answer: 'Navigate to any analysis module and click the "Import Data" button in the dataset selector bar. Select your CSV or Excel file and click "Import Records". CSV files should have column headers in the first row and use comma separators. For Excel files with multiple sheets, choose which sheet to import.'
+                    answer: 'Navigate to any analysis module and click the "Import Data" button in the dataset selector bar. Choose or drop a CSV or Excel file, or paste rows copied from a spreadsheet, then click the Import button. If a date column could be read day-first or month-first, LineList asks rather than guessing, and it lists anything it could not read. Put the column headers in the first row; comma-, semicolon- and tab-separated files are all read. For Excel files with multiple sheets, choose which sheet to import.'
                   },
                   {
                     id: 'storage',
@@ -500,8 +523,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     answer: 'Imported datasets are processed in your browser and saved in this browser\'s local storage so you can return later. LineList does not upload imported datasets to an application server or cloud storage. Map layers and other externally hosted resources may still generate normal network requests. Use project export to create backups or move work to another device.'
                   },
                   {
+                    id: 'capacity',
+                    question: 'How much data can LineList hold?',
+                    answer: 'Work is kept in this browser\'s storage, which holds roughly 10,000 rows of a 20-column line list across all your datasets (the bundled samples can be deleted to make room). A larger file can still be imported and analysed, but LineList will warn that it could not be saved, and it will not be there after you close the tab. Keep your source file, and use Save Project for anything you want to return to.'
+                  },
+                  {
                     id: 'phi',
-                    question: 'Can I upload data with Protected Health Information (PHI)?',
+                    question: 'Can I import data with Protected Health Information (PHI)?',
                     answer: 'No, you should NOT import data containing PHI such as names, addresses, dates of birth, SSNs, or other direct identifiers. Always de-identify your data before importing it into LineList. Use case IDs instead of names, generalize dates and locations, and follow your organization\'s data handling policies.'
                   },
                   {
@@ -517,7 +545,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'export',
                     question: 'How do I save my analysis results?',
-                    answer: 'You can export your cleaned dataset as CSV using "Export Dataset CSV" in the analysis tools, and download tables as CSV from Build Tables. Charts offer "Export PNG" and "Copy to Clipboard" buttons, and the Visualize module can export chart data to Excel. To back up your whole project (datasets and edit log) as a JSON file, use the Save Project button in the top toolbar.'
+                    answer: 'You can export your cleaned dataset as CSV using "Export Dataset CSV" in the analysis tools, and download tables as CSV from Build Tables. Charts offer "Export PNG", "Export SVG" and "Copy to Clipboard" buttons, and the Visualize module can export chart data to Excel. To back up your whole project (datasets and edit log) as a JSON file, use the Save Project button in the top toolbar.'
                   },
                   {
                     id: 'coordinates',
@@ -623,7 +651,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                         <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                       </svg>
                       <div>
-                        <h5 className="font-bold text-red-900 text-lg mb-2">DO NOT Upload PHI</h5>
+                        <h5 className="font-bold text-red-900 text-lg mb-2">Do Not Import PHI</h5>
                         <p className="text-red-800 text-sm mb-3">
                           Even though LineList processes imported datasets client-side, you should NEVER import data containing PHI.
                           This protects against accidental disclosure and ensures compliance with privacy regulations.
@@ -761,15 +789,16 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
 
                     <div className="space-y-4 text-sm">
                       <div>
-                        <h6 className="font-semibold text-amber-900 mb-2">1. Apply Coordinate Jittering</h6>
+                        <h6 className="font-semibold text-amber-900 mb-2">1. Keep Coordinate Jittering On</h6>
                         <p className="text-amber-800 mb-2">
-                          Add small random offsets to latitude and longitude values (e.g., ±0.001° to ±0.01°) before
-                          importing into LineList. This obscures exact locations while preserving spatial patterns useful
-                          for outbreak investigation.
+                          The Spot Map moves each displayed point a random distance (500 m by default) so that a
+                          map does not pinpoint a household, while keeping the spatial pattern. Leave it on for
+                          anything you share, and choose a larger distance for sparsely populated areas.
                         </p>
-                        <div className="bg-white border border-amber-200 rounded p-3 font-mono text-xs">
-                          Example: 41.6639, -83.5552 → 41.667, -83.558 (jittered)
-                        </div>
+                        <p className="text-amber-800">
+                          Jittering changes the map and its exports, not your dataset. If your data policy does not
+                          allow exact coordinates on this computer at all, coarsen them before import.
+                        </p>
                       </div>
 
                       <div>

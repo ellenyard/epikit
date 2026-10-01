@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useDialog } from '../hooks/useDialog';
+import { writeStorage } from '../utils/persistence';
 
 interface OnboardingWizardProps {
   isOpen: boolean;
@@ -24,6 +26,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     }
   }, [isOpen]);
 
+  const { panelRef, dialogProps } = useDialog({ onClose, labelledBy: 'onboarding-title', isOpen });
+
   if (!isOpen) return null;
 
   const steps: Step[] = ['welcome', 'privacy', 'demo', 'tools', 'getstarted'];
@@ -42,25 +46,25 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
   };
 
   const handleSkip = () => {
-    localStorage.setItem('epikit_onboarding_completed', 'true');
+    writeStorage('epikit_onboarding_completed', 'true');
     onClose();
   };
 
   const handleComplete = () => {
-    localStorage.setItem('epikit_onboarding_completed', 'true');
+    writeStorage('epikit_onboarding_completed', 'true');
     onClose();
   };
 
   const handleTryDemo = () => {
     onLoadDemo();
-    localStorage.setItem('epikit_onboarding_completed', 'true');
+    writeStorage('epikit_onboarding_completed', 'true');
     onNavigate('review');
     onClose();
   };
 
   const handleTryTool = (module: string) => {
     onLoadDemo();
-    localStorage.setItem('epikit_onboarding_completed', 'true');
+    writeStorage('epikit_onboarding_completed', 'true');
     // 'descriptive' and '2way' are views inside the Analysis module, not
     // top-level modules — map them so navigation doesn't land on a blank page
     const target = module === 'descriptive' || module === '2way' ? 'analysis' : module;
@@ -70,12 +74,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="onboarding-title"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
     >
-      <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -181,7 +182,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
                   <div>
-                    <h4 className="font-bold text-red-900 text-lg mb-2">IMPORTANT: Do Not Upload PHI or Sensitive Data</h4>
+                    <h4 className="font-bold text-red-900 text-lg mb-2">IMPORTANT: Do Not Import PHI or Sensitive Data</h4>
                     <p className="text-red-800">
                       <strong>Protected Health Information (PHI)</strong> includes names, addresses, dates of birth,
                       social security numbers, medical record numbers, and other identifiers.
@@ -516,9 +517,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         1
                       </div>
                       <div>
-                        <h5 className="font-medium text-gray-800">Upload Your Data</h5>
+                        <h5 className="font-medium text-gray-800">Import Your Data</h5>
                         <p className="text-sm text-gray-600">
-                          Click "Import Data" from any analysis module to upload a de-identified CSV file
+                          Click "Import Data" to open a de-identified CSV or Excel file
                         </p>
                       </div>
                     </div>

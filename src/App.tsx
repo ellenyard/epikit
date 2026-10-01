@@ -44,7 +44,8 @@ import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecord
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
-import { exportProject, downloadProject, parseProjectFile, saveDatasets, saveEditLog, saveActiveDatasetId, restoreModuleState } from './utils/persistence';
+import { exportProject, downloadProject, parseProjectFile, saveDatasets, saveEditLog, saveActiveDatasetId, restoreModuleState, sanitizeDataset, sanitizeEditLog, readStorage, writeStorage, removeStorage } from './utils/persistence';
+import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from './utils/contact';
 import type { VariableConfig } from './types/analysis';
 import { Dialog } from './components/shared';
 
@@ -148,25 +149,32 @@ const DEMO_DATASET_FACTORIES: Record<string, () => Dataset> = {
   [DEMO_SURVEILLANCE_DATASET_ID]: createSurveillanceDemoDataset,
 };
 
-function loadInitialDatasets(ensureDatasetId?: string): Dataset[] {
-  // Parse persisted datasets defensively: corrupted localStorage must not crash
-  // the app at startup. On failure, drop the corrupt key and fall back to the
-  // bundled demo datasets.
-  let datasets: Dataset[];
+/**
+ * Parse a stored dataset list, keeping only entries the app can render.
+ * Returns null when the value is not a list at all.
+ */
+function parseStoredDatasets(raw: string | null): Dataset[] | null {
+  if (!raw) return null;
   try {
-    const saved = localStorage.getItem('epikit_datasets');
-    const parsed: unknown = saved ? JSON.parse(saved) : null;
-    if (Array.isArray(parsed)) {
-      datasets = parsed as Dataset[];
-    } else {
-      if (saved) localStorage.removeItem('epikit_datasets');
-      datasets = [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
-    }
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map(sanitizeDataset).filter((d): d is Dataset => d !== null);
   } catch {
-    localStorage.removeItem('epikit_datasets');
+    return null;
+  }
+}
+
+function loadInitialDatasets(ensureDatasetId?: string): Dataset[] {
+  // Parse persisted datasets defensively: corrupted or blocked localStorage
+  // must not crash the app at startup. On failure, drop the corrupt key and
+  // fall back to the bundled demo datasets.
+  const saved = readStorage('epikit_datasets');
+  let datasets = parseStoredDatasets(saved);
+  if (datasets === null) {
+    if (saved) removeStorage('epikit_datasets');
     datasets = [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
   }
-  const savedVersion = localStorage.getItem('epikit_demoDataVersion');
+  const savedVersion = readStorage('epikit_demoDataVersion');
 
   if (savedVersion && Number(savedVersion) >= DEMO_DATA_VERSION) {
     const ensureFactory = ensureDatasetId ? DEMO_DATASET_FACTORIES[ensureDatasetId] : undefined;
@@ -203,7 +211,12 @@ function App() {
   const [showLocaleSettings, setShowLocaleSettings] = useState(false);
   const [showProjectLoadConfirm, setShowProjectLoadConfirm] = useState<{ project: ReturnType<typeof parseProjectFile>; filename: string } | null>(null);
   const [showBackupReminder, setShowBackupReminder] = useState(false);
-  const [showStorageWarning, setShowStorageWarning] = useState(false);
+  // 'save': a routine save failed. 'project': a loaded project is too large
+  // to keep, so it is open for this session only.
+  const [showStorageWarning, setShowStorageWarning] = useState<false | 'save' | 'project'>(false);
+  // True while this tab holds work that storage does not, so that another
+  // tab's save is not allowed to replace it.
+  const unsavedRef = useRef(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const projectFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -219,7 +232,7 @@ function App() {
   // Which dataset is currently selected for viewing/editing
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(() => {
     if (initialEntry.activeDatasetId) return initialEntry.activeDatasetId;
-    const saved = localStorage.getItem('epikit_activeDatasetId');
+    const saved = readStorage('epikit_activeDatasetId');
     return saved || DEMO_DATASET_ID;
   });
 
@@ -229,17 +242,16 @@ function App() {
   // Each entry records: what changed, old/new values, reason, and who made it.
   // ---------------------------------------------------------------------------
   const [editLog, setEditLog] = useState<EditLogEntry[]>(() => {
+    const saved = readStorage('epikit_editLog');
     try {
-      const saved = localStorage.getItem('epikit_editLog');
       const parsed: unknown = saved ? JSON.parse(saved) : null;
       if (parsed === null) return [];
-      if (Array.isArray(parsed)) return parsed as EditLogEntry[];
-      localStorage.removeItem('epikit_editLog');
-      return [];
+      if (Array.isArray(parsed)) return sanitizeEditLog(parsed);
     } catch {
-      localStorage.removeItem('epikit_editLog');
-      return [];
+      // fall through to dropping the corrupt entry
     }
+    removeStorage('epikit_editLog');
+    return [];
   });
 
   // Onboarding wizard can be accessed from Help Center
@@ -325,7 +337,16 @@ function App() {
   // the deployed demo-data version after the initial state has been built.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    localStorage.setItem('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
+    writeStorage('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
+  }, []);
+
+  // The ?sample= and ?action= links are one-shot instructions. Left in the
+  // address bar, a reload would reopen the import dialog or drag the user back
+  // to the sample after they had moved on to their own data.
+  useEffect(() => {
+    if (window.location.search) {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -333,17 +354,48 @@ function App() {
   // All state changes are automatically persisted so users don't lose work.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (saveDatasets(datasets)) return;
+    if (saveDatasets(datasets)) {
+      unsavedRef.current = false;
+      return;
+    }
+    unsavedRef.current = true;
     // Defer so the warning isn't set synchronously inside the effect body
-    const timer = setTimeout(() => setShowStorageWarning(true), 0);
+    const timer = setTimeout(() => setShowStorageWarning(current => current || 'save'), 0);
     return () => clearTimeout(timer);
   }, [datasets]);
 
   useEffect(() => {
     if (saveEditLog(editLog)) return;
-    const timer = setTimeout(() => setShowStorageWarning(true), 0);
+    const timer = setTimeout(() => setShowStorageWarning(current => current || 'save'), 0);
     return () => clearTimeout(timer);
   }, [editLog]);
+
+  // ---------------------------------------------------------------------------
+  // STAY IN STEP WITH OTHER TABS
+  // Every save writes the whole dataset list. A second tab opened earlier (the
+  // homepage links open one) holds an older copy, and its next save would
+  // silently discard whatever this tab imported in the meantime. Adopting the
+  // other tab's save when it happens keeps both copies current. Re-saving the
+  // adopted value writes identical text, which raises no further event.
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      // Work that could not be saved here exists nowhere else; keep it.
+      if (unsavedRef.current) return;
+      if (event.key === 'epikit_datasets') {
+        const incoming = parseStoredDatasets(event.newValue);
+        if (incoming) setDatasets(incoming);
+      } else if (event.key === 'epikit_editLog' && event.newValue) {
+        try {
+          setEditLog(sanitizeEditLog(JSON.parse(event.newValue)));
+        } catch {
+          // Ignore a value this tab cannot read.
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   useEffect(() => {
     if (activeDatasetId) {
@@ -489,10 +541,17 @@ function App() {
   const handleUpdateRecords = useCallback((updates: Array<{ recordId: string; field: string; value: unknown }>) => {
     if (!activeDataset) return;
 
-    // Group updates and apply them
+    // Group updates by record first: filtering the whole update list for every
+    // record made a recode of a large dataset take many seconds.
+    const updatesByRecord = new Map<string, typeof updates>();
+    for (const update of updates) {
+      const list = updatesByRecord.get(update.recordId);
+      if (list) list.push(update);
+      else updatesByRecord.set(update.recordId, [update]);
+    }
     const updatedRecords = activeDataset.records.map(record => {
-      const recordUpdates = updates.filter(u => u.recordId === record.id);
-      if (recordUpdates.length === 0) return record;
+      const recordUpdates = updatesByRecord.get(record.id);
+      if (!recordUpdates) return record;
 
       const newRecord = { ...record };
       recordUpdates.forEach(update => {
@@ -569,6 +628,12 @@ function App() {
 
     const project = showProjectLoadConfirm.project;
 
+    // Write the data before anything else and find out whether it fits. This
+    // used to reload unconditionally: a project too large for browser storage
+    // then vanished on reload with no message, which is exactly the backup the
+    // storage-full warning tells people to make.
+    const stored = saveDatasets(project.datasets) && saveEditLog(project.editLog);
+
     // Load all project data
     setDatasets(project.datasets);
     setActiveDatasetId(project.activeDatasetId);
@@ -576,7 +641,7 @@ function App() {
 
     // Restore analysis states to localStorage
     if (project.analysisState) {
-      localStorage.setItem('epikit_analysis_state', JSON.stringify(project.analysisState));
+      writeStorage('epikit_analysis_state', JSON.stringify(project.analysisState));
     }
 
     // Restore each module's own saved work: epi-curve annotations and binning,
@@ -585,10 +650,20 @@ function App() {
     restoreModuleState(project.moduleState);
 
     setShowProjectLoadConfirm(null);
+    // Leaving for the dashboard unmounts the open module, so each one reads
+    // the restored setup when it is next opened.
     setActiveModule('dashboard');
-    // Modules read their state on mount, so reload to pick up what was just
-    // written rather than leaving the already-mounted ones showing stale setup.
-    window.location.reload();
+
+    if (stored) {
+      saveActiveDatasetId(project.activeDatasetId);
+      // Reload so nothing mounted before the load is left showing stale setup.
+      window.location.reload();
+    } else {
+      // Too large to keep: stay on this page, where the project is in memory,
+      // and say so plainly.
+      unsavedRef.current = true;
+      setShowStorageWarning('project');
+    }
   }, [showProjectLoadConfirm]);
 
   // Check if current module needs dataset selector
@@ -694,9 +769,17 @@ function App() {
                 </svg>
               </button>
             </div>
-            <div className="text-sm text-slate-400 hidden lg:block">
-              Epidemiology Toolkit
-            </div>
+            <a
+              href={FEEDBACK_MAILTO}
+              className="hidden sm:flex items-center gap-1.5 px-2 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              aria-label={`Send feedback by email to ${FEEDBACK_EMAIL}`}
+              title={`Report an error or suggest an improvement: ${FEEDBACK_EMAIL}`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <span className="hidden lg:inline">Feedback</span>
+            </a>
             {/* Mobile hamburger button */}
             <button
               onClick={() => setShowMobileMenu(!showMobileMenu)}
@@ -795,6 +878,11 @@ function App() {
                 </button>
               </div>
             </div>
+            <div className="border-t border-slate-700 px-3 py-2 text-center">
+              <a href={FEEDBACK_MAILTO} className="text-sm text-slate-300 hover:text-white underline underline-offset-2">
+                Send feedback: {FEEDBACK_EMAIL}
+              </a>
+            </div>
           </div>
         )}
       </nav>
@@ -884,7 +972,7 @@ function App() {
           // Suspense boundary shows a spinner while the module chunk downloads.
           <Suspense fallback={<div className="flex-1 flex items-center justify-center bg-white"><LoadingSpinner size="lg" message="Loading module…" /></div>}>
           {activeModule === 'review' ? (
-            <ErrorBoundary moduleName="Review/Clean" onReset={handleResetModuleError}>
+            <ErrorBoundary key="review" moduleName="Review/Clean" onReset={handleResetModuleError}>
               <Review
                 datasets={datasets}
                 activeDatasetId={activeDatasetId}
@@ -903,7 +991,7 @@ function App() {
               />
             </ErrorBoundary>
           ) : activeModule === 'epicurve' ? (
-            <ErrorBoundary moduleName="Epi Curve" onReset={handleResetModuleError}>
+            <ErrorBoundary key="epicurve" moduleName="Epi Curve" onReset={handleResetModuleError}>
               <EpiCurve
                 key={`${activeDataset.id}-${initialEntry.sampleOutbreak && activeDataset.id === DEMO_DATASET_ID ? 'sample' : 'default'}`}
                 dataset={activeDataset}
@@ -912,11 +1000,11 @@ function App() {
               />
             </ErrorBoundary>
           ) : activeModule === 'maps' ? (
-            <ErrorBoundary moduleName="Maps" onReset={handleResetModuleError}>
+            <ErrorBoundary key="maps" moduleName="Maps" onReset={handleResetModuleError}>
               <Maps dataset={activeDataset} datasets={datasets} />
             </ErrorBoundary>
           ) : activeModule === 'analysis' ? (
-            <ErrorBoundary moduleName="Analysis" onReset={handleResetModuleError}>
+            <ErrorBoundary key="analysis" moduleName="Analysis" onReset={handleResetModuleError}>
               <AnalysisWorkflow
                 dataset={activeDataset}
                 onCreateVariable={handleCreateVariable}
@@ -924,7 +1012,7 @@ function App() {
               />
             </ErrorBoundary>
           ) : activeModule === 'visualize' ? (
-            <ErrorBoundary moduleName="Visualize" onReset={handleResetModuleError}>
+            <ErrorBoundary key="visualize" moduleName="Visualize" onReset={handleResetModuleError}>
               <VisualizeWorkflow dataset={activeDataset} />
             </ErrorBoundary>
           ) : null}
@@ -1031,8 +1119,14 @@ function App() {
                 </svg>
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium text-gray-900">Browser storage is full</p>
-                <p className="text-xs text-gray-500 mt-1">Your latest changes could not be saved. Export a project backup to keep your work safe.</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {showStorageWarning === 'project' ? 'This project is too large to keep in this browser' : 'Your latest changes were not saved'}
+                </p>
+                <p className="text-xs text-gray-600 mt-1">
+                  {showStorageWarning === 'project'
+                    ? 'It is open now, but it will not be here after you close or reload this tab. Keep the project file, and load it again when you return.'
+                    : "This browser's storage is full or blocked, so the changes exist only in this tab. Save a project file now to keep your work."}
+                </p>
                 <div className="flex gap-2 mt-3">
                   <button
                     onClick={() => { handleSaveProject(); setShowStorageWarning(false); }}

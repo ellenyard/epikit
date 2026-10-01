@@ -10,11 +10,18 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { LocaleProvider } from './contexts/LocaleContext'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <LocaleProvider>
-      <App />
-    </LocaleProvider>
+    {/* Outermost, so a failure while starting up shows a message rather than
+        a blank page; each module has its own boundary inside App. */}
+    <div className="h-screen flex flex-col">
+      <ErrorBoundary>
+        <LocaleProvider>
+          <App />
+        </LocaleProvider>
+      </ErrorBoundary>
+    </div>
   </StrictMode>,
 )

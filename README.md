@@ -38,11 +38,14 @@ Open `http://localhost:5173`.
 ## Verification
 
 ```bash
-npm run build
 npm run lint
-npm run test:csv
-npm run test:area-map
+npm run build
+npm run test:statistics   # one of the regression scripts; see package.json for the full list
 ```
+
+Every `test:*` script in `package.json` runs in CI before each deploy. They check the
+calculations against published worked examples and guard import, date, map-privacy and
+persistence behaviour.
 
 ## Technology
 
@@ -50,6 +53,13 @@ npm run test:area-map
 - Tailwind CSS
 - Leaflet and OpenStreetMap-derived layers
 - Vite
+
+## Feedback
+
+Noticed an error, a confusing result, or have a suggestion? Email
+[ellen.yard@gmail.com](mailto:ellen.yard@gmail.com?subject=LineList%20feedback) or
+[open an issue](https://github.com/ellenyard/epikit/issues). Please don't send datasets or
+screenshots that contain identifiable information.
 
 ## License
 

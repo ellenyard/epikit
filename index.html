@@ -251,7 +251,7 @@
       /* Footer */
       footer { border-top: 1px solid var(--slate-200); padding: 36px 0; }
       .footer-inner { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; }
-      .footer-links { display: flex; gap: 22px; font-size: 14px; color: var(--slate-600); margin-left: auto; }
+      .footer-links { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 14px; color: var(--slate-600); margin-left: auto; }
       .footer-links a:hover { color: var(--slate-900); }
       .footer-copy { font-size: 13px; color: var(--slate-500); width: 100%; }
       .footer-copy a { color: var(--slate-600); text-decoration: underline; text-underline-offset: 2px; }
@@ -307,6 +307,7 @@
       </div>
     </header>
 
+    <main>
     <!-- Hero -->
     <div class="hero">
       <div class="container">
@@ -325,13 +326,13 @@
               srcset="/screenshots/epicurve-narrow.webp"
               type="image/webp"
               width="680"
-              height="293"
+              height="305"
             />
             <source
               media="(max-width: 860px)"
               srcset="/screenshots/epicurve-narrow.png"
               width="680"
-              height="293"
+              height="305"
             />
             <source srcset="/screenshots/epicurve.webp" type="image/webp" width="1440" height="690" />
             <img
@@ -393,7 +394,7 @@
             <picture>
               <source srcset="/screenshots/review-clean-narrow.webp" type="image/webp" width="600" height="405" />
               <img class="shot" src="/screenshots/review-clean-narrow.png" width="600" height="405"
-                alt="A line list beside the Data Quality panel, which reports 20 warnings and highlights the affected rows"
+                alt="A line list beside the Data Quality panel, which reports 17 warnings and highlights the affected rows"
                 loading="lazy" decoding="async" />
             </picture>
             <figcaption>Check quality and fix records before analysis.</figcaption>
@@ -411,7 +412,7 @@
             <picture>
               <source srcset="/screenshots/visualize-chart-narrow.webp" type="image/webp" width="560" height="420" />
               <img class="shot" src="/screenshots/visualize-chart-narrow.png" width="560" height="420"
-                alt="A horizontal bar chart of synthetic cases by classification, with export controls"
+                alt="A horizontal bar chart of synthetic outbreak records by case classification"
                 loading="lazy" decoding="async" />
             </picture>
             <figcaption>Export figures for a report or briefing.</figcaption>
@@ -427,7 +428,8 @@
         <p>
           Imported datasets are processed locally and saved only in your browser's storage. LineList
           does not upload your data to an application server and does not offer cloud storage. Map
-          tiles and other externally hosted resources generate normal network requests.
+          backgrounds are fetched from a public tile service, which sees the area being viewed but
+          none of your data.
         </p>
         <p class="warn">
           Do not import protected health information or direct identifiers. De-identify datasets and
@@ -450,10 +452,14 @@
           <li><span class="k">Accounts</span><span class="v">None. No sign-up, no tracking, no dataset upload.</span></li>
           <li><span class="k">Sample data</span><span class="v">Synthetic <a href="/app/?sample=outbreak">foodborne outbreak</a>, <a href="/app/?sample=surveillance">monthly disease surveillance</a>, and child nutrition survey</span></li>
           <li><span class="k">Methods</span><span class="v">Risk ratios, odds ratios, attack rates, chi-square and Fisher's exact test are <a href="https://github.com/ellenyard/epikit/blob/main/scripts/statistics.regression.mjs" target="_blank" rel="noopener noreferrer">checked against published worked examples</a> (the CDC Oswego outbreak, Fisher's tea-tasting table, standard chi-square critical values) on every change.</span></li>
+          <li><span class="k">Browsers</span><span class="v">Current Chrome, Edge, Firefox, or Safari (Chrome and Edge 111+, Firefox 128+, Safari 16.4+).</span></li>
+          <li><span class="k">Feedback</span><span class="v">Noticed an error or have a suggestion? Email <a href="mailto:ellen.yard@gmail.com?subject=LineList%20feedback">ellen.yard@gmail.com</a>. Please don't send datasets or screenshots that contain identifiable information.</span></li>
           <li><span class="k">Affiliation</span><span class="v">An independent project. Not an official product of, or endorsed by, the Centers for Disease Control and Prevention.</span></li>
         </ul>
       </div>
     </section>
+
+    </main>
 
     <!-- Footer -->
     <footer>
@@ -475,6 +481,7 @@
           <a href="/app/">Open LineList</a>
           <a href="/app/?action=help">Docs</a>
           <a href="#privacy">Privacy</a>
+          <a href="mailto:ellen.yard@gmail.com?subject=LineList%20feedback">Feedback</a>
           <a href="https://github.com/ellenyard/epikit" target="_blank" rel="noopener noreferrer">GitHub</a>
         </nav>
         <p class="footer-copy">

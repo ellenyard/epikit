@@ -3,7 +3,7 @@
  * and exporting/importing project files.
  */
 
-import type { Dataset, EditLogEntry } from '../types/analysis';
+import type { CaseRecord, DataColumn, Dataset, EditLogEntry } from '../types/analysis';
 
 const STORAGE_KEYS = {
   DATASETS: 'epikit_datasets',
@@ -104,7 +104,109 @@ export function restoreModuleState(moduleState: Record<string, unknown> | undefi
   }
 }
 
+// ============ Shape checks ============
+
+const COLUMN_TYPES: DataColumn['type'][] = ['text', 'number', 'date', 'boolean', 'categorical'];
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Make one stored or imported dataset safe to render, or return null when it
+ * is not a dataset at all.
+ *
+ * The app trusts this shape everywhere: a null record or a column without a
+ * label throws deep inside a module, and from storage that happens again on
+ * every reload. Entries that cannot be used are dropped rather than repaired
+ * by guesswork; a record without an id is given one, because selection and
+ * deletion are keyed on it and rows sharing an undefined id act as one row.
+ */
+export function sanitizeDataset(value: unknown): Dataset | null {
+  if (!isObject(value)) return null;
+  if (typeof value.id !== 'string' || typeof value.name !== 'string') return null;
+  if (!Array.isArray(value.columns) || !Array.isArray(value.records)) return null;
+
+  const columns: DataColumn[] = [];
+  for (const column of value.columns) {
+    if (!isObject(column) || typeof column.key !== 'string' || column.key === '') continue;
+    const type = COLUMN_TYPES.includes(column.type as DataColumn['type'])
+      ? (column.type as DataColumn['type'])
+      : 'text';
+    const valueOrder = Array.isArray(column.valueOrder)
+      ? column.valueOrder.filter((v): v is string => typeof v === 'string')
+      : undefined;
+    columns.push({
+      ...column,
+      key: column.key,
+      label: typeof column.label === 'string' && column.label !== '' ? column.label : column.key,
+      type,
+      ...(valueOrder ? { valueOrder } : {}),
+    });
+  }
+
+  const seenIds = new Set<string>();
+  const records: CaseRecord[] = [];
+  for (const record of value.records) {
+    if (!isObject(record)) continue;
+    let id = typeof record.id === 'string' && record.id !== '' ? record.id : null;
+    if (id === null || seenIds.has(id)) id = crypto.randomUUID();
+    seenIds.add(id);
+    records.push({ ...record, id });
+  }
+
+  const now = new Date().toISOString();
+  return {
+    ...value,
+    id: value.id,
+    name: value.name,
+    source: value.source === 'form' ? 'form' : 'import',
+    columns,
+    records,
+    createdAt: typeof value.createdAt === 'string' ? value.createdAt : now,
+    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : now,
+  };
+}
+
+/** Keep the edit log entries that can be displayed; drop anything else. */
+export function sanitizeEditLog(value: unknown): EditLogEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (entry): entry is EditLogEntry =>
+      isObject(entry) && typeof entry.id === 'string' && typeof entry.datasetId === 'string'
+  );
+}
+
 // ============ localStorage Functions ============
+
+/**
+ * Storage access that cannot throw. Reading localStorage raises a
+ * SecurityError when site data is blocked, and an unguarded read during
+ * startup leaves a blank page.
+ */
+export function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function writeStorage(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function removeStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Nothing to remove if storage is unavailable.
+  }
+}
 
 export function saveDatasets(datasets: Dataset[]): boolean {
   try {
@@ -264,23 +366,18 @@ export function parseProjectFile(fileContent: string): ProjectData | null {
       console.error('Invalid project file: missing datasets');
       return null;
     }
+    const datasets: Dataset[] = [];
     for (const d of project.datasets) {
-      if (
-        !d ||
-        typeof d !== 'object' ||
-        typeof d.id !== 'string' ||
-        typeof d.name !== 'string' ||
-        !Array.isArray(d.columns) ||
-        !Array.isArray(d.records)
-      ) {
+      const dataset = sanitizeDataset(d);
+      if (!dataset) {
         console.error('Invalid project file: malformed dataset entry');
         return null;
       }
+      datasets.push(dataset);
     }
-    const datasets = project.datasets;
 
     // Normalize optional fields so downstream code can trust the shape
-    const editLog = Array.isArray(project.editLog) ? project.editLog : [];
+    const editLog = sanitizeEditLog(project.editLog);
     const activeDatasetId =
       typeof project.activeDatasetId === 'string' && datasets.some(d => d.id === project.activeDatasetId)
         ? project.activeDatasetId

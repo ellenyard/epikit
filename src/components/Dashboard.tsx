@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Dataset } from '../types/analysis';
 import { isSampleDataset } from '../data/demoData';
 import { Dialog } from './shared';
+import { FEEDBACK_EMAIL, FEEDBACK_MAILTO, FEEDBACK_PRIVACY_NOTE } from '../utils/contact';
 
 interface DashboardProps {
   datasets: Dataset[];
@@ -24,10 +25,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
   const [deleteConfirmDataset, setDeleteConfirmDataset] = useState<Dataset | null>(null);
 
-  // Get datasets sorted by most recent
+  // Most recent first. Every dataset is listed: with three samples installed,
+  // a cap of five hid a user's own third import from this screen.
   const recentDatasets = [...datasets].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  ).slice(0, 5);
+  );
 
   const handleDatasetClick = (dataset: Dataset) => {
     onSelectDataset(dataset.id);
@@ -176,6 +178,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
             To move work to another computer or keep a backup, use <strong>Save Project</strong> in
             the toolbar, and <strong>Load Project</strong> to restore it. A project file carries
             your datasets, edit history, and the analysis you have set up.
+          </p>
+          <p>
+            Noticed an error or have a suggestion? Email{' '}
+            <a href={FEEDBACK_MAILTO} className="text-blue-700 hover:text-blue-900 underline underline-offset-2">
+              {FEEDBACK_EMAIL}
+            </a>
+            . {FEEDBACK_PRIVACY_NOTE}
           </p>
         </section>
       </div>
