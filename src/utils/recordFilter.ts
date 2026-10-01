@@ -17,6 +17,10 @@
  * matched every record whose value was missing.
  */
 import type { CaseRecord, DataColumn, FilterCondition, SortConfig } from '../types/analysis';
+import type { DateFormat } from '../contexts/LocaleContext';
+import { parseStoredDate, comparableTime, dayNumber, formatStoredDate } from './dateValue';
+import type { DateParts } from './dateValue';
+import { convertDateValue } from './dateDetection';
 
 /** What a missing value is called wherever records are grouped or filtered. */
 export const MISSING_CATEGORY_LABEL = 'Unknown';
@@ -82,59 +86,89 @@ export function filterByCategoryValues(
   return records.filter(record => selected.has(categoryValue(record[column])));
 }
 
+export interface FilterOptions {
+  /**
+   * The user's date format. A date typed into a filter is read in this order,
+   * and "contains" also searches the date as it is displayed.
+   */
+  dateFormat?: DateFormat;
+}
+
 /**
- * Parse a date for comparison.
+ * Read a date typed into a filter.
  *
- * A bare YYYY-MM-DD is parsed as UTC midnight by the Date constructor while a
- * value carrying a time is parsed as local, so a column mixing the two shifted
- * by the timezone offset and compared wrongly near midnight. Both are read as
- * local here, which is also how the importers now read spreadsheet dates.
+ * The line list shows dates in the user's format, so that is what gets typed:
+ * 04/03/2025 for 4 March under day-first. Handing that to the Date
+ * constructor read it month-first, and 15/03/2025 not at all, so the filter
+ * silently returned the wrong rows or none.
  */
-function parseComparableDate(value: string): number {
-  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
-  if (dateOnly) {
-    return new Date(
-      Number(dateOnly[1]),
-      Number(dateOnly[2]) - 1,
-      Number(dateOnly[3])
-    ).getTime();
-  }
-  return new Date(value).getTime();
+function parseTypedDate(value: string, dateFormat?: DateFormat): DateParts | null {
+  const parsed = convertDateValue(value, dateFormat === 'MM/DD/YYYY' ? 'MDY' : 'DMY');
+  return parsed ? parseStoredDate(parsed.iso) : null;
 }
 
 export function filterRecords(
   records: CaseRecord[],
   filters: FilterCondition[],
-  columns?: DataColumn[]
+  columns?: DataColumn[],
+  options: FilterOptions = {}
 ): CaseRecord[] {
   if (filters.length === 0) return records;
 
   return records.filter(record =>
     filters.every(filter => {
+      const value = record[filter.column];
       // Normalised, so a missing value compares as empty rather than as the
       // text "null", and stray whitespace does not make a value its own thing.
-      const text = normalizedText(record[filter.column]).toLowerCase();
+      const text = normalizedText(value).toLowerCase();
       const target = normalizedText(filter.value).toLowerCase();
+      const columnType = columns?.find(c => c.key === filter.column)?.type;
+
+      // Every way the cell can legitimately be written. A stored true is shown
+      // as "Yes" and a stored date in the user's format, and a filter has to
+      // match what is on screen as well as what is stored.
+      const forms = [text];
+      if (typeof value === 'boolean') forms.push(value ? 'yes' : 'no');
+      const cellDate = columnType === 'date' && text !== '' ? parseStoredDate(value) : null;
+      const targetDate = columnType === 'date' && target !== ''
+        ? parseTypedDate(String(filter.value), options.dateFormat)
+        : null;
+      if (cellDate && options.dateFormat) {
+        forms.push(formatStoredDate(value, options.dateFormat).toLowerCase());
+      }
+
+      const sameDate = (): boolean | null => {
+        if (!cellDate || !targetDate) return null;
+        return targetDate.hasTime
+          ? comparableTime(cellDate) === comparableTime(targetDate)
+          : dayNumber(cellDate) === dayNumber(targetDate);
+      };
 
       switch (filter.operator) {
         case 'equals':
-          return text === target;
-        case 'not_equals':
-          return text !== target;
+          return sameDate() ?? forms.includes(target);
+        case 'not_equals': {
+          const same = sameDate();
+          return same === null ? !forms.includes(target) : !same;
+        }
         case 'contains':
           // An empty target matches everything, which is what an empty search
           // box should do; a missing value matches nothing else.
-          return text.includes(target);
+          return forms.some(form => form.includes(target));
         case 'greater_than':
         case 'less_than': {
           if (text === '' || target === '') return false;
-          const columnType = columns?.find(c => c.key === filter.column)?.type;
-          const left = columnType === 'date'
-            ? parseComparableDate(String(record[filter.column]))
-            : Number(text);
-          const right = columnType === 'date'
-            ? parseComparableDate(String(filter.value))
-            : Number(target);
+          let left: number, right: number;
+          if (columnType === 'date') {
+            // A date with no time is the start of that day, so an onset at
+            // 02:00 on the 10th is after the 10th and the 10th itself is not.
+            if (!cellDate || !targetDate) return false;
+            left = comparableTime(cellDate);
+            right = comparableTime(targetDate);
+          } else {
+            left = Number(text);
+            right = Number(target);
+          }
           if (Number.isNaN(left) || Number.isNaN(right)) return false;
           return filter.operator === 'greater_than' ? left > right : left < right;
         }

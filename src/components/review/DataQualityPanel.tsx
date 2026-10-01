@@ -238,7 +238,8 @@ export function DataQualityPanel({
                 Duplicate Detection
               </h4>
               <p className="text-xs text-gray-500 mb-3">
-                Find duplicate or similar records. Enable fuzzy matching to catch typos and variations.
+                Finds identical records, repeated IDs, and records that are the same in every field
+                apart from their ID. Enable fuzzy matching to also catch near-miss spellings of names.
               </p>
 
               {/* Fuzzy Matching Toggle */}

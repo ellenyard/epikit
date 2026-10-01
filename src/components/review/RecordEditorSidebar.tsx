@@ -44,6 +44,8 @@ export function RecordEditorSidebar({
 
   const formatValue = (value: unknown): string => {
     if (value === null || value === undefined || value === '') return '(empty)';
+    // Stored true/false is shown as Yes/No, as it is in the line list.
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     return String(value);
   };
 

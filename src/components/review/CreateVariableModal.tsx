@@ -1,8 +1,37 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { DataColumn, VariableConfig, CategoryRule, CaseRecord } from '../../types/analysis';
 import { toVariableName, validateVariableConfig, generateVariableValues } from '../../utils/variableCreation';
+import { classifyNumber } from '../../utils/localeNumbers';
 import { useLocale } from '../../contexts/LocaleContext';
 import { useDialog } from '../../hooks/useDialog';
+
+/** The words in a column's key and label, lower-cased and without accents. */
+function columnWords(column: DataColumn): string[] {
+  return `${column.key} ${column.label}`
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+/**
+ * The column a template is about, or undefined when the dataset has none.
+ *
+ * Matched on whole words. Looking for "age" anywhere in the name picked
+ * "village", "stage" and "dosage", and every template used that same search,
+ * so Fever Status binned ages (or villages) into Normal and Fever.
+ */
+function findTemplateSource(
+  columns: DataColumn[],
+  words: RegExp,
+  preferred: DataColumn['type'][]
+): DataColumn | undefined {
+  const matches = columns.filter(col => columnWords(col).some(word => words.test(word)));
+  return matches.find(col => preferred.includes(col.type)) ?? matches[0];
+}
+
+// More distinct values than this and a recode is done by typing, not clicking.
+const MAX_VALUE_CHIPS = 60;
 
 interface CreateVariableModalProps {
   isOpen: boolean;
@@ -30,6 +59,7 @@ export function CreateVariableModal({
   const [error, setError] = useState<string | null>(null);
   const [nameManuallyEdited, setNameManuallyEdited] = useState(false);
   const [showTemplates, setShowTemplates] = useState(true);
+  const [templateNotice, setTemplateNotice] = useState<string | null>(null);
 
   const getDefaultSourceColumn = useCallback((nextMethod: VariableConfig['method']) => {
     if (nextMethod !== 'categorize') return '';
@@ -49,6 +79,7 @@ export function CreateVariableModal({
       setFormula('');
       setError(null);
       setNameManuallyEdited(false);
+      setTemplateNotice(null);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [isOpen, getDefaultSourceColumn]);
@@ -58,8 +89,40 @@ export function CreateVariableModal({
     return existingColumns.find(col => col.key === sourceColumn)?.type;
   }, [existingColumns, sourceColumn]);
 
+  // What the source column holds, which decides how it can be categorised:
+  // numbers by range, anything else by listing the values each group takes.
+  // A text column that is nearly all numbers (an age column imported as text
+  // because of one "<1") gets both, so the numbers can still be ranged and
+  // the odd values placed by hand.
+  const sourceProfile = useMemo(() => {
+    const counts = new Map<string, number>();
+    let filled = 0, numeric = 0;
+    for (const record of records) {
+      const value = sourceColumn ? record[sourceColumn] : null;
+      if (value === null || value === undefined || String(value).trim() === '') continue;
+      filled++;
+      const text = String(value).trim();
+      const isNumber = typeof value === 'number' || classifyNumber(text) !== null;
+      if (isNumber) numeric++;
+      else counts.set(text, (counts.get(text) ?? 0) + 1);
+    }
+    const mostlyNumeric = sourceColumnType === 'number' || (filled > 0 && numeric / filled >= 0.8);
+    if (!mostlyNumeric) {
+      // Not a numeric column: every value is a category to assign, numbers too.
+      counts.clear();
+      for (const record of records) {
+        const value = sourceColumn ? record[sourceColumn] : null;
+        if (value === null || value === undefined || String(value).trim() === '') continue;
+        const text = String(value).trim();
+        counts.set(text, (counts.get(text) ?? 0) + 1);
+      }
+    }
+    const values = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    return { useRanges: mostlyNumeric, values };
+  }, [records, sourceColumn, sourceColumnType]);
+
   // Generate preview values
-  const previewValues = useMemo(() => {
+  const allValues = useMemo(() => {
     if (!sourceColumn && method !== 'blank' && method !== 'formula') {
       return [];
     }
@@ -75,12 +138,16 @@ export function CreateVariableModal({
     };
 
     try {
-      const values = generateVariableValues(records, config, sourceColumnType, localeConfig);
-      return values.slice(0, 3); // Show first 3
+      return generateVariableValues(records, config, sourceColumnType, localeConfig);
     } catch {
       return [];
     }
   }, [name, label, type, method, sourceColumn, categories, formula, records, sourceColumnType, localeConfig]);
+  const previewValues = allValues.slice(0, 3); // Show first 3
+  // How many records no category takes. Three preview rows cannot show this,
+  // and a variable that is mostly "Other" is the sign of a wrong source or range.
+  const otherCount = method === 'categorize' ? allValues.filter(v => v === 'Other').length : 0;
+  const emptyCount = method === 'formula' ? allValues.filter(v => v === '').length : 0;
 
   const handleAddCategory = () => {
     const newCategory: CategoryRule = {
@@ -88,6 +155,7 @@ export function CreateVariableModal({
       label: '',
       min: undefined,
       max: undefined,
+      values: [],
     };
     setCategories([...categories, newCategory]);
   };
@@ -100,6 +168,17 @@ export function CreateVariableModal({
     setCategories(categories.map(c =>
       c.id === id ? { ...c, ...updates } : c
     ));
+  };
+
+  /** Put a source value in a category, or take it out; a value sits in one category at most. */
+  const toggleCategoryValue = (id: string, value: string) => {
+    setCategories(categories.map(c => {
+      const current = c.values ?? [];
+      if (c.id === id) {
+        return { ...c, values: current.includes(value) ? current.filter(v => v !== value) : [...current, value] };
+      }
+      return current.includes(value) ? { ...c, values: current.filter(v => v !== value) } : c;
+    }));
   };
 
   const handleCreate = () => {
@@ -148,7 +227,7 @@ export function CreateVariableModal({
     name: string;
     type: DataColumn['type'];
     method: VariableConfig['method'];
-    sourceColumn?: string;
+    source: { words: RegExp; preferred: DataColumn['type'][]; describe: string };
     categories?: CategoryRule[];
     formula?: string;
     description: string;
@@ -158,19 +237,16 @@ export function CreateVariableModal({
     setType(template.type);
     setMethod(template.method);
 
-    // Find appropriate source column if template specifies a type
-    if (template.method === 'categorize') {
-      const ageCol = existingColumns.find(col =>
-        col.key.toLowerCase().includes('age') || col.label.toLowerCase().includes('age')
-      );
-      setSourceColumn(ageCol?.key || '');
-    } else if (template.sourceColumn) {
-      setSourceColumn(template.sourceColumn);
-    }
+    // Each template names the kind of column it is about. When the dataset
+    // has none, the source is left for the user to choose: a wrong column
+    // chosen silently produces a plausible-looking variable.
+    const source = findTemplateSource(existingColumns, template.source.words, template.source.preferred);
+    setSourceColumn(source?.key || '');
+    setTemplateNotice(source
+      ? null
+      : `No ${template.source.describe} variable was found in this dataset. Choose the source variable below.`);
 
-    if (template.categories) {
-      setCategories(template.categories);
-    }
+    setCategories(template.categories ?? []);
     if (template.formula) {
       setFormula(template.formula);
     }
@@ -179,6 +255,7 @@ export function CreateVariableModal({
   };
 
   // Define common templates
+  const AGE_SOURCE = { words: /^age$/, preferred: ['number'] as DataColumn['type'][], describe: 'age' };
   const templates = [
     {
       label: 'Age Group',
@@ -186,6 +263,7 @@ export function CreateVariableModal({
       type: 'categorical' as const,
       method: 'categorize' as const,
       description: 'Categorize ages into standard groups (0-4, 5-17, 18-49, 50+)',
+      source: AGE_SOURCE,
       categories: [
         { id: '1', label: '0-4 years', min: 0, max: 4 },
         { id: '2', label: '5-17 years', min: 5, max: 17 },
@@ -199,6 +277,7 @@ export function CreateVariableModal({
       type: 'categorical' as const,
       method: 'categorize' as const,
       description: 'Group ages into decades (0-9, 10-19, 20-29, etc.)',
+      source: AGE_SOURCE,
       categories: [
         { id: '1', label: '0-9 years', min: 0, max: 9 },
         { id: '2', label: '10-19 years', min: 10, max: 19 },
@@ -218,6 +297,7 @@ export function CreateVariableModal({
       type: 'categorical' as const,
       method: 'categorize' as const,
       description: 'Classify records as Adult (18+) or Child (0-17)',
+      source: AGE_SOURCE,
       categories: [
         { id: '1', label: 'Child (0-17)', min: 0, max: 17 },
         { id: '2', label: 'Adult (18+)', min: 18, max: 999 },
@@ -229,6 +309,7 @@ export function CreateVariableModal({
       type: 'categorical' as const,
       method: 'categorize' as const,
       description: 'Categorize temperature as Normal (<37.5°C) or Fever (≥37.5°C)',
+      source: { words: /^temp/, preferred: ['number'] as DataColumn['type'][], describe: 'temperature' },
       categories: [
         { id: '1', label: 'Normal', min: 0, max: 37.4 },
         { id: '2', label: 'Fever', min: 37.5, max: 50 },
@@ -240,6 +321,7 @@ export function CreateVariableModal({
       type: 'categorical' as const,
       method: 'copy' as const,
       description: 'Copy of case status field for analysis',
+      source: { words: /^(status|classif|class)/, preferred: ['categorical', 'text'] as DataColumn['type'][], describe: 'case status' },
     },
   ];
 
@@ -250,7 +332,7 @@ export function CreateVariableModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div ref={panelRef} {...dialogProps} className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
@@ -279,6 +361,12 @@ export function CreateVariableModal({
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
               {error}
+            </div>
+          )}
+
+          {templateNotice && !sourceColumn && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
+              {templateNotice}
             </div>
           )}
 
@@ -412,6 +500,9 @@ export function CreateVariableModal({
               onChange={(e) => {
                 const nextMethod = e.target.value as VariableConfig['method'];
                 setMethod(nextMethod);
+                // A formula gives a number; left as "categorical" it was
+                // treated as a label by every numeric analysis.
+                if (nextMethod === 'formula' && type === 'categorical') setType('number');
                 if (!sourceColumn || nextMethod === 'blank') {
                   setSourceColumn(getDefaultSourceColumn(nextMethod));
                 }
@@ -466,7 +557,7 @@ export function CreateVariableModal({
                         placeholder="Category label"
                         className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
                       />
-                      {sourceColumnType === 'number' && (
+                      {sourceProfile.useRanges && (
                         <div className="flex gap-2 items-center">
                           <span className="text-xs text-gray-500">Range:</span>
                           <input
@@ -490,6 +581,51 @@ export function CreateVariableModal({
                           />
                         </div>
                       )}
+                      {sourceProfile.values.length > 0 && sourceProfile.values.length <= MAX_VALUE_CHIPS && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">
+                            {sourceProfile.useRanges
+                              ? 'Values that are not numbers; click any that belong in this category:'
+                              : 'Click the values that belong in this category:'}
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {sourceProfile.values.map(([value, count]) => {
+                              const mine = (category.values ?? []).includes(value);
+                              const taken = !mine && categories.some(c => (c.values ?? []).includes(value));
+                              return (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  aria-pressed={mine}
+                                  onClick={() => toggleCategoryValue(category.id, value)}
+                                  title={taken ? 'In another category; click to move it here' : undefined}
+                                  className={`px-2 py-0.5 text-xs rounded-full border ${
+                                    mine
+                                      ? 'bg-blue-600 text-white border-blue-600'
+                                      : taken
+                                      ? 'bg-gray-100 text-gray-400 border-gray-200'
+                                      : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400'
+                                  }`}
+                                >
+                                  {value} <span className="opacity-70">({count})</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      {sourceProfile.values.length > MAX_VALUE_CHIPS && !sourceProfile.useRanges && (
+                        <input
+                          type="text"
+                          aria-label="Values in this category, separated by semicolons"
+                          value={(category.values ?? []).join('; ')}
+                          onChange={(e) => handleUpdateCategory(category.id, {
+                            values: e.target.value.split(';').map(v => v.trim()).filter(Boolean),
+                          })}
+                          placeholder="Values in this category, separated by semicolons"
+                          className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+                        />
+                      )}
                     </div>
                     <button
                       onClick={() => handleRemoveCategory(category.id)}
@@ -511,6 +647,12 @@ export function CreateVariableModal({
                   </svg>
                   Add Category
                 </button>
+                <p className="text-xs text-gray-500">
+                  {sourceProfile.useRanges
+                    ? 'Ranges include both ends. A value between two adjacent ranges, such as 4.5 between 0–4 and 5–17, goes to the lower one. '
+                    : ''}
+                  Blank values stay blank; a value no category takes becomes "Other".
+                </p>
               </div>
             </div>
           )}
@@ -531,7 +673,24 @@ export function CreateVariableModal({
               />
               <p className="text-xs text-gray-500 mt-1">
                 Use curly braces around variable names. Supports +, -, *, /, and parentheses.
+                Subtracting one date from another gives the number of days between them,
+                e.g. {'{report_date} - {onset_date}'}.
               </p>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {existingColumns
+                  .filter(col => col.type === 'number' || col.type === 'date')
+                  .map(col => (
+                    <button
+                      key={col.key}
+                      type="button"
+                      onClick={() => setFormula(`${formula}{${col.key}}`)}
+                      title={`Insert ${col.label}`}
+                      className="px-2 py-0.5 text-xs font-mono rounded border border-gray-300 text-gray-700 hover:border-blue-400"
+                    >
+                      {`{${col.key}}`}
+                    </button>
+                  ))}
+              </div>
             </div>
           )}
 
@@ -543,10 +702,13 @@ export function CreateVariableModal({
               </label>
               <div className="bg-gray-50 rounded-lg p-3 space-y-1 text-sm font-mono">
                 {previewValues.map((value, index) => {
-                  const sourceValue = sourceColumn ? records[index][sourceColumn] : null;
+                  // A formula has no single source; showing the column left
+                  // selected from another method beside its result misleads.
+                  const showSource = sourceColumn && (method === 'categorize' || method === 'copy');
+                  const sourceValue = showSource ? records[index][sourceColumn] : null;
                   return (
                     <div key={index} className="text-gray-700">
-                      {sourceColumn && (
+                      {showSource && (
                         <>
                           <span className="text-gray-500">{sourceColumn}: {String(sourceValue)}</span>
                           <span className="text-gray-400 mx-2">→</span>
@@ -559,6 +721,16 @@ export function CreateVariableModal({
                   );
                 })}
               </div>
+              {otherCount > 0 && (
+                <p className="text-sm text-amber-700 mt-2">
+                  {otherCount.toLocaleString()} of {records.length.toLocaleString()} records fall in no category and would be "Other".
+                </p>
+              )}
+              {emptyCount > 0 && (
+                <p className="text-sm text-gray-600 mt-2">
+                  {emptyCount.toLocaleString()} of {records.length.toLocaleString()} records would be empty, because an input is missing or is not a number or date.
+                </p>
+              )}
             </div>
           )}
         </div>

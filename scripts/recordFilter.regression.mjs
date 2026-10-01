@@ -294,6 +294,55 @@ try {
     assert.deepEqual(sortCategoryValues([]), [], 'an empty axis is not an error');
   }
 
+  // Filters match what the line list shows, not only what is stored.
+  {
+    const cols = [
+      { key: 'cid', label: 'ID', type: 'text' },
+      { key: 'hosp', label: 'Hospitalised', type: 'boolean' },
+      { key: 'onset', label: 'Onset', type: 'date' },
+    ];
+    const records = [
+      { id: 'A', cid: 'A', hosp: true, onset: '2025-03-04' },
+      { id: 'B', cid: 'B', hosp: false, onset: '2025-03-15' },
+      { id: 'C', cid: 'C', hosp: null, onset: '2025-04-03' },
+      { id: 'D', cid: 'D', hosp: null, onset: '2025-03-04T22:15' },
+      { id: 'E', cid: 'E', hosp: null, onset: '31/02/2025' },
+    ];
+    const run = (column, operator, value, dateFormat = 'DD/MM/YYYY') =>
+      ids(filterRecords(records, [{ column, operator, value }], cols, { dateFormat }));
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    // A stored true is displayed "Yes". Filtering on "Yes" found nothing.
+    assert.deepEqual(run('hosp', 'equals', 'Yes'), ['A']);
+    assert.deepEqual(run('hosp', 'equals', 'no'), ['B']);
+    assert.deepEqual(run('hosp', 'contains', 'No'), ['B']);
+    assert.deepEqual(run('hosp', 'equals', 'true'), ['A'], 'the stored form still matches');
+    assert.deepEqual(run('hosp', 'not_equals', 'Yes'), ['B', 'C', 'D', 'E']);
+
+    // A date typed the way it is displayed. Day-first: 04/03/2025 is 4 March.
+    assert.deepEqual(run('onset', 'equals', '04/03/2025'), ['A', 'D'], `a time on the 4th is on the 4th (TZ=${tz})`);
+    assert.deepEqual(run('onset', 'equals', '2025-03-04'), ['A', 'D']);
+    assert.deepEqual(run('onset', 'equals', '2025-03-04T22:15'), ['D']);
+    assert.deepEqual(run('onset', 'not_equals', '04/03/2025'), ['B', 'C', 'E']);
+    assert.deepEqual(run('onset', 'contains', '03/2025'), ['A', 'B', 'D'], 'contains searches the date as displayed');
+    assert.deepEqual(run('onset', 'contains', '2025-03'), ['A', 'B', 'D'], 'and as stored');
+    // The same text under a month-first setting is 3 April.
+    assert.deepEqual(run('onset', 'equals', '04/03/2025', 'MM/DD/YYYY'), ['C']);
+    assert.deepEqual(run('onset', 'contains', '03/04/2025', 'MM/DD/YYYY'), ['A', 'D']);
+
+    // Comparisons read the typed date in the user's order. 15/03/2025 used
+    // to match nothing, and 05/03/2025 was read as 3 May.
+    assert.deepEqual(run('onset', 'greater_than', '15/03/2025'), ['C']);
+    assert.deepEqual(run('onset', 'greater_than', '05/03/2025'), ['B', 'C'], `5 March, not 3 May (TZ=${tz})`);
+    assert.deepEqual(run('onset', 'less_than', '05/03/2025'), ['A', 'D']);
+    assert.deepEqual(run('onset', 'greater_than', '2025-03-04'), ['B', 'C', 'D'], 'a time on the 4th is after the start of the 4th');
+    // A bound that is not a date matches nothing; so does a cell that is not one.
+    assert.deepEqual(run('onset', 'greater_than', 'soon'), []);
+    assert.deepEqual(run('onset', 'less_than', '2099-01-01'), ['A', 'B', 'C', 'D'], 'an unreadable cell is neither before nor after');
+    // The unreadable cell can still be found by its text.
+    assert.deepEqual(run('onset', 'equals', '31/02/2025'), ['E']);
+  }
+
   console.log('record filter regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

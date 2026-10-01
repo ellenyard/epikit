@@ -1,34 +1,47 @@
 import type { DataColumn, CaseRecord } from '../types/analysis';
-import { parseFlexibleNumber, formatCsvNumber } from './localeNumbers';
+import { formatCsvNumber } from './localeNumbers';
 import type { LocaleConfig } from '../contexts/LocaleContext';
-import { matchingDateFormats, resolveUnambiguousFormat, parseDateWithFormat } from './dateDetection';
-import { isNumericColumn } from './typeInference';
-import type { DateFormat } from './dateDetection';
+import { buildDataset, emptyResult, locateHeaderRow } from './tableImport';
+import type { BuildOptions, ImportWarning, ParseResult, RawTable } from './tableImport';
 
-export interface ParseResult {
-  columns: DataColumn[];
-  records: CaseRecord[];
-  errors: string[];
-}
+export type { ParseResult } from './tableImport';
 
-export interface CSVParseOptions {
+export interface CSVParseOptions extends BuildOptions {
   delimiter?: string; // Auto-detect if not provided
-  localeConfig?: LocaleConfig; // For parsing locale-specific numbers
+  /**
+   * No longer consulted when reading numbers: the decimal mark is worked out
+   * from the file (see localeNumbers.ts). Still accepted so callers need not
+   * change.
+   */
+  localeConfig?: LocaleConfig;
 }
+
+const DELIMITERS = [',', ';', '\t', '|'];
 
 /**
- * Detect the delimiter used in a CSV file by analyzing the header row
+ * Detect the delimiter used in a CSV file.
+ *
+ * Reads the first lines rather than the header alone. A header such as
+ * "id;Nom, prénom;âge" holds as many commas as semicolons, and a title line
+ * above the header may hold neither; the delimiter is the one that splits the
+ * most lines into the same number of fields.
  */
-export function detectDelimiter(headerLine: string): string {
-  const possibleDelimiters = [',', ';', '\t', '|'];
-  const counts = possibleDelimiters.map(delim => ({
-    delimiter: delim,
-    count: countDelimiterOccurrences(headerLine, delim)
-  }));
+export function detectDelimiter(sample: string): string {
+  const lines = sample.split(/\r\n|\n|\r/).filter(line => line.trim()).slice(0, 10);
+  if (lines.length === 0) return ',';
 
-  // Return the delimiter with the most occurrences
-  const best = counts.reduce((a, b) => (b.count > a.count ? b : a));
-  return best.count > 0 ? best.delimiter : ',';
+  let best = { delimiter: ',', agreeing: 0, count: 0 };
+  for (const delimiter of DELIMITERS) {
+    const counts = lines.map(line => countDelimiterOccurrences(line, delimiter));
+    const tally = new Map<number, number>();
+    for (const count of counts) if (count > 0) tally.set(count, (tally.get(count) ?? 0) + 1);
+    for (const [count, agreeing] of tally) {
+      if (agreeing > best.agreeing || (agreeing === best.agreeing && count > best.count)) {
+        best = { delimiter, agreeing, count };
+      }
+    }
+  }
+  return best.delimiter;
 }
 
 function countDelimiterOccurrences(line: string, delimiter: string): number {
@@ -61,263 +74,209 @@ function hasCommonDelimiterHint(line: string): boolean {
   return [',', ';', '\t'].some(delim => countDelimiterOccurrences(line, delim) > 0);
 }
 
-/**
- * Split CSV text into records, honoring quoted fields that may contain line
- * breaks. Handles \r\n, lone \r, and lone \n line endings.
- */
-function splitCSVRecords(content: string): string[] {
-  const records: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < content.length; i++) {
-    const char = content[i];
-
-    if (char === '"') {
-      if (inQuotes && content[i + 1] === '"') {
-        current += '""';
-        i++; // Escaped quote inside a quoted field
-      } else {
-        inQuotes = !inQuotes;
-        current += char;
-      }
-    } else if (!inQuotes && (char === '\n' || char === '\r')) {
-      if (char === '\r' && content[i + 1] === '\n') i++;
-      records.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-
-  records.push(current);
-  return records;
+interface CsvRow {
+  fields: string[];
+  /** Line of the file the row starts on. */
+  line: number;
 }
 
-export function parseCSV(content: string, options: CSVParseOptions = {}): ParseResult {
-  const errors: string[] = [];
-  const lines = splitCSVRecords(content).filter(line => line.trim());
+/**
+ * Split CSV text into rows of fields.
+ *
+ * A quotation mark opens a quoted field only at the start of a field, as in
+ * RFC 4180. Anywhere else it is an ordinary character. Treating every quote
+ * as a toggle meant one inch mark in a free-text cell (height 5" approx)
+ * opened a quoted field that ran to the end of the file: every later row was
+ * folded into that cell and the import reported no error.
+ *
+ * A quoted field that is never closed is handled the same way: the quote is
+ * taken as a literal character and parsing resumes from it, with a warning.
+ */
+function tokenize(content: string, delimiter: string, warnings: ImportWarning[]): CsvRow[] {
+  const rows: CsvRow[] = [];
+  const length = content.length;
+  let fields: string[] = [];
+  let field = '';
+  let line = 1;
+  let rowLine = 1;
+  let i = 0;
+  // Positions of quotes already found to be unmatched, to be read literally.
+  const literalQuotes = new Set<number>();
+  const unmatched: number[] = [];
 
-  if (lines.length === 0) {
-    return { columns: [], records: [], errors: ['File is empty'] };
-  }
+  const endField = () => { fields.push(field.trim()); field = ''; };
+  const endRow = () => {
+    endField();
+    rows.push({ fields, line: rowLine });
+    fields = [];
+  };
 
-  // Auto-detect or use provided delimiter
-  const delimiter = options.delimiter || detectDelimiter(lines[0]);
+  while (i < length) {
+    const char = content[i];
 
-  // Parse header row
-  const headerLine = lines[0];
-  const headers = parseCSVLine(headerLine, delimiter);
-
-  if (headers.length === 0) {
-    return { columns: [], records: [], errors: ['No columns found in header'] };
-  }
-
-  if (headers.length === 1 && hasCommonDelimiterHint(headerLine)) {
-    errors.push(
-      'Only one column was detected, but the header contains common CSV delimiters. Check that the file delimiter is correct before importing.'
-    );
-  }
-
-  // Infer column types from first few data rows
-  const sampleRows = lines.slice(1, Math.min(11, lines.length)).map(line => parseCSVLine(line, delimiter));
-  const columnKeys = buildColumnKeys(headers);
-  const columns: DataColumn[] = headers.map((header, index) => {
-    const sampleValues = sampleRows.map(row => row[index]).filter(v => v !== undefined && v !== '');
-    const inferredType = inferColumnType(sampleValues, options.localeConfig);
-
-    return {
-      key: columnKeys[index],
-      label: header.trim(),
-      type: inferredType,
-    };
-  });
-
-  // Pick a normalization format for unambiguous date columns so dates are
-  // stored as ISO strings. Ambiguous columns keep raw values; the import
-  // wizard lets the user pick the interpretation.
-  const dateNormalization = new Map<string, DateFormat>();
-  columns.forEach((col, index) => {
-    if (col.type !== 'date') return;
-    const sampleValues = sampleRows.map(row => row[index]).filter(v => v !== undefined && v !== '');
-    const resolved = resolveUnambiguousFormat(matchingDateFormats(sampleValues));
-    if (resolved) dateNormalization.set(col.key, resolved);
-  });
-
-  // Parse data rows
-  const records: CaseRecord[] = [];
-  let unparseableNumberCount = 0;
-  const unparseableNumberExamples: string[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i], delimiter);
-
-    if (values.length !== headers.length) {
-      errors.push(`Row ${i + 1}: Expected ${headers.length} columns, found ${values.length}`);
+    if (char === '"' && field.trim() === '' && !literalQuotes.has(i)) {
+      // Quoted field. Read to the closing quote; "" inside is one quote.
+      const start = i;
+      const startLine = line;
+      let value = '';
+      let closed = false;
+      i++;
+      while (i < length) {
+        const c = content[i];
+        if (c === '"') {
+          if (content[i + 1] === '"') { value += '"'; i += 2; continue; }
+          closed = true;
+          i++;
+          break;
+        }
+        if (c === '\n' || (c === '\r' && content[i + 1] !== '\n')) line++;
+        value += c;
+        i++;
+      }
+      if (!closed) {
+        // Never closed: go back and read the quote as a literal character.
+        literalQuotes.add(start);
+        unmatched.push(startLine);
+        line = startLine;
+        i = start;
+        continue;
+      }
+      field = value;
       continue;
     }
 
-    const record: CaseRecord = { id: crypto.randomUUID() };
-    columns.forEach((col, index) => {
-      const rawValue = values[index];
-
-      if (col.type === 'number' && rawValue !== '') {
-        // Values that fail numeric parsing become empty instead of silent NaN
-        const num = options.localeConfig
-          ? parseFlexibleNumber(rawValue, options.localeConfig)
-          : Number(rawValue);
-        if (isNaN(num)) {
-          unparseableNumberCount++;
-          if (unparseableNumberExamples.length < 3) {
-            unparseableNumberExamples.push(`row ${i + 1} ("${rawValue}")`);
-          }
-          record[col.key] = null;
-        } else {
-          record[col.key] = num;
-        }
-        return;
-      }
-
-      if (col.type === 'date' && rawValue !== '') {
-        const format = dateNormalization.get(col.key);
-        // Skip values with time components so times are not silently dropped
-        if (format && !/[T:]/.test(rawValue)) {
-          record[col.key] = parseDateWithFormat(rawValue, format) ?? rawValue;
-        } else {
-          record[col.key] = rawValue;
-        }
-        return;
-      }
-
-      record[col.key] = parseValue(rawValue, col.type, options.localeConfig);
-    });
-
-    records.push(record);
-  }
-
-  if (unparseableNumberCount > 0) {
-    errors.push(
-      `${unparseableNumberCount} numeric value${unparseableNumberCount === 1 ? '' : 's'} could not be parsed and ${unparseableNumberCount === 1 ? 'was' : 'were'} set to empty (${unparseableNumberExamples.join('; ')}${unparseableNumberCount > unparseableNumberExamples.length ? '; …' : ''})`
-    );
-  }
-
-  return { columns, records, errors };
-}
-
-function parseCSVLine(line: string, delimiter: string = ','): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
-
-    if (inQuotes) {
-      if (char === '"' && nextChar === '"') {
-        current += '"';
-        i++; // Skip next quote
-      } else if (char === '"') {
-        inQuotes = false;
-      } else {
-        current += char;
-      }
+    if (char === delimiter) {
+      endField();
+      i++;
+    } else if (char === '\n' || char === '\r') {
+      if (char === '\r' && content[i + 1] === '\n') i++;
+      endRow();
+      line++;
+      rowLine = line;
+      i++;
     } else {
-      if (char === '"') {
-        inQuotes = true;
-      } else if (char === delimiter) {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += char;
-      }
+      field += char;
+      i++;
     }
   }
+  if (field !== '' || fields.length > 0) endRow();
 
-  result.push(current.trim());
-  return result;
-}
+  if (unmatched.length > 0) {
+    warnings.push({
+      level: 'check',
+      message: `${unmatched.length === 1 ? 'A quotation mark' : `${unmatched.length} quotation marks`} at the start of a value had no closing mark (line ${unmatched.slice(0, 5).join(', ')}). ${unmatched.length === 1 ? 'It was' : 'They were'} kept as part of the text; check ${unmatched.length === 1 ? 'that row' : 'those rows'}.`,
+    });
+  }
 
-function sanitizeColumnKey(header: string): string {
-  return header
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '');
+  return rows;
 }
 
 /**
- * Build unique, collision-free column keys. 'id' is reserved for record UUIDs,
- * duplicate keys get numeric suffixes, and empty headers get a fallback key.
+ * Read CSV or tab-separated text into a grid: header, rows, and notes about
+ * how the text was read. Typing the columns is left to buildDataset.
  */
-function buildColumnKeys(headers: string[]): string[] {
-  const used = new Set<string>();
-  return headers.map((header, index) => {
-    let base = sanitizeColumnKey(header) || `column_${index + 1}`;
-    if (base === 'id') base = 'id_';
-    let key = base;
-    let suffix = 2;
-    while (used.has(key)) {
-      key = `${base}_${suffix}`;
-      suffix++;
-    }
-    used.add(key);
-    return key;
-  });
-}
+export function extractCSVTable(content: string, options: { delimiter?: string } = {}): RawTable | null {
+  const warnings: ImportWarning[] = [];
+  let text = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
 
-function inferColumnType(values: string[], localeConfig?: LocaleConfig): DataColumn['type'] {
-  if (values.length === 0) return 'text';
-
-  // Zero-padded values are identifiers, not quantities: treating "007" as 7
-  // destroys participant IDs and codes on import. Locale-aware parsing is used
-  // when a config is supplied so grouped and decimal separators still work.
-  const toNumber = localeConfig
-    ? (v: unknown) => parseFlexibleNumber(String(v), localeConfig)
-    : (v: unknown) => Number(v);
-  if (isNumericColumn(values, toNumber)) return 'number';
-
-  // Check for date patterns using the shared date format validators.
-  // This avoids Date.parse's US bias (DD/MM/YYYY with day > 12 used to be
-  // mistyped as text) and accepts 2-digit years.
-  if (matchingDateFormats(values).length > 0) return 'date';
-
-  const isBoolean = values.every(v =>
-    ['true', 'false', 'yes', 'no', '1', '0'].includes(v.toLowerCase())
-  );
-  if (isBoolean) return 'boolean';
-
-  return 'text';
-}
-
-function parseValue(value: string, type: DataColumn['type'], localeConfig?: LocaleConfig): unknown {
-  if (value === '' || value === null || value === undefined) {
-    return null;
+  // Excel's "sep=;" first line names the delimiter and is not data.
+  let declared: string | undefined;
+  const sep = /^sep=(.)\r?\n/i.exec(text);
+  let lineOffset = 0;
+  if (sep) {
+    declared = sep[1];
+    text = text.slice(sep[0].length);
+    lineOffset = 1;
   }
 
-  switch (type) {
-    case 'number':
-      if (localeConfig) {
-        return parseFlexibleNumber(value, localeConfig);
-      }
-      return Number(value);
-    case 'date':
-      return value; // Keep as string for display, parse when needed
-    case 'boolean':
-      return ['true', 'yes', '1'].includes(value.toLowerCase());
-    default:
-      return value;
+  if (!text.trim()) return null;
+
+  const delimiter = options.delimiter || declared || detectDelimiter(text);
+  const rows = tokenize(text, delimiter, warnings)
+    .filter(row => row.fields.some(f => f !== ''));
+  if (rows.length === 0) return null;
+
+  const headerIndex = locateHeaderRow(rows.map(row => row.fields));
+  if (headerIndex > 0) {
+    const skipped = rows.slice(0, headerIndex).map(row => row.fields.find(f => f !== '') ?? '');
+    warnings.push({
+      level: 'info',
+      message: `${headerIndex === 1 ? 'The first line was' : `The first ${headerIndex} lines were`} treated as a title, not as data ("${skipped[0].slice(0, 60)}"). Column names were read from line ${rows[headerIndex].line + lineOffset}.`,
+    });
   }
+
+  const headers = rows[headerIndex].fields;
+  const dataRows = rows.slice(headerIndex + 1);
+
+  if (headers.length === 1 && hasCommonDelimiterHint(headers[0])) {
+    warnings.push({
+      level: 'check',
+      message: 'Only one column was detected, but the header contains common CSV delimiters. Check that the file delimiter is correct before importing.',
+    });
+  }
+
+  // A trailing delimiter leaves one empty field at the end of every row; it is
+  // not a column.
+  const usedWidth = (fields: string[]) => {
+    let n = fields.length;
+    while (n > 0 && fields[n - 1] === '') n--;
+    return n;
+  };
+  const headerWidth = Math.max(usedWidth(headers), 1);
+  const short: number[] = [];
+  let widest = headerWidth;
+  for (const row of dataRows) {
+    const used = usedWidth(row.fields);
+    if (used > widest) widest = used;
+    if (row.fields.length < headerWidth) short.push(row.line + lineOffset);
+  }
+
+  if (short.length > 0) {
+    warnings.push({
+      level: 'check',
+      message: `${short.length === 1 ? '1 row has' : `${short.length.toLocaleString('en-US')} rows have`} fewer values than there are columns; the missing cells were left empty (line ${short.slice(0, 5).join(', ')}${short.length > 5 ? ', …' : ''}).`,
+    });
+  }
+  if (widest > headerWidth) {
+    warnings.push({
+      level: 'check',
+      message: `Some rows have more values than the header has names. The extra ${widest - headerWidth === 1 ? 'column was' : 'columns were'} kept and named "Column ${headerWidth + 1}"${widest - headerWidth > 1 ? ` to "Column ${widest}"` : ''}.`,
+    });
+  }
+
+  return {
+    headers: headers.slice(0, widest),
+    rows: dataRows.map(row => {
+      const cells: (string | null)[] = [];
+      for (let c = 0; c < widest; c++) cells.push(c < row.fields.length && row.fields[c] !== '' ? row.fields[c] : null);
+      return cells;
+    }),
+    rowNumbers: dataRows.map(row => row.line + lineOffset),
+    warnings,
+    delimiter,
+  };
+}
+
+export function parseCSV(content: string, options: CSVParseOptions = {}): ParseResult {
+  const table = extractCSVTable(content, options);
+  if (!table) return emptyResult('File is empty');
+  return buildDataset(table, options);
 }
 
 export interface CSVExportOptions {
   delimiter?: string; // Default: ','
   localeConfig?: LocaleConfig; // For locale-specific delimiter
+  bom?: boolean; // Default: true
 }
 
 /**
  * Export data to CSV format
  * IMPORTANT: Numbers always use period (.) as decimal separator for R compatibility
  * regardless of locale. The delimiter (comma or semicolon) is locale-specific.
+ *
+ * The text starts with a byte-order mark. Without one, Excel on Windows reads
+ * the file in the system code page and every accented name comes out garbled
+ * (José as JosÃ©). R (readr, data.table, rio), Stata and pandas all skip it.
  */
 export function exportToCSV(
   columns: DataColumn[],
@@ -338,15 +297,21 @@ export function exportToCSV(
         return formatCsvNumber(value);
       }
 
+      // Datasets saved before imports kept Yes/No as text hold true/false.
+      // Write them the way the line list shows them.
+      if (typeof value === 'boolean') {
+        return value ? 'Yes' : 'No';
+      }
+
       return escapeCSVValue(String(value ?? ''), delimiter);
     }).join(delimiter);
   });
 
-  return [header, ...rows].join('\n');
+  return (options.bom === false ? '' : '\ufeff') + [header, ...rows].join('\n');
 }
 
 function escapeCSVValue(value: string, delimiter: string = ','): string {
-  if (value.includes(delimiter) || value.includes('"') || value.includes('\n')) {
+  if (value.includes(delimiter) || value.includes('"') || value.includes('\n') || value.includes('\r')) {
     return `"${value.replace(/"/g, '""')}"`;
   }
   return value;

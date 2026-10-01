@@ -83,6 +83,31 @@ interface LocaleContextType {
 const LocaleContext = createContext<LocaleContextType | undefined>(undefined);
 
 /**
+ * Storage access that cannot throw.
+ *
+ * Reading localStorage raises a SecurityError when the browser blocks site
+ * data, which managed and hardened browsers do. This provider wraps the whole
+ * app, so an exception here left a blank page with nothing to explain it.
+ * Without storage the settings simply do not persist.
+ */
+function readSetting(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSetting(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // Storage unavailable or full: the setting applies for this session only.
+  }
+}
+
+/**
  * Detect appropriate number format from browser locale
  */
 function detectNumberFormat(): NumberFormat {
@@ -125,14 +150,14 @@ function detectDateFormat(): DateFormat {
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [numberFormat, setNumberFormatState] = useState<NumberFormat>(() => {
-    const saved = localStorage.getItem('epikit-number-format');
+    const saved = readSetting('epikit-number-format');
     if (saved && saved in NUMBER_FORMAT_CONFIGS) {
       return saved as NumberFormat;
     }
     // Check for legacy locale setting and migrate
-    const legacyLocale = localStorage.getItem('epikit-locale');
+    const legacyLocale = readSetting('epikit-locale');
     if (legacyLocale) {
-      localStorage.removeItem('epikit-locale');
+      writeSetting('epikit-locale', null);
       if (legacyLocale === 'en-US') return 'period-decimal';
       if (legacyLocale === 'fr-FR') return 'space-grouping';
       if (legacyLocale === 'ar-SA') return 'arabic';
@@ -142,7 +167,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   });
 
   const [dateFormat, setDateFormatState] = useState<DateFormat>(() => {
-    const saved = localStorage.getItem('epikit-date-format');
+    const saved = readSetting('epikit-date-format');
     if (saved && ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'].includes(saved)) {
       return saved as DateFormat;
     }
@@ -151,12 +176,12 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
 
   const setNumberFormat = (format: NumberFormat) => {
     setNumberFormatState(format);
-    localStorage.setItem('epikit-number-format', format);
+    writeSetting('epikit-number-format', format);
   };
 
   const setDateFormat = (format: DateFormat) => {
     setDateFormatState(format);
-    localStorage.setItem('epikit-date-format', format);
+    writeSetting('epikit-date-format', format);
   };
 
   // Legacy compatibility for any code using setLocale

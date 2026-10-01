@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ContextualSidebar } from '../shared/ContextualSidebar';
 import type { EditLogEntry } from '../../types/analysis';
+import { isRecordAddition, isRecordDeletion } from '../../utils/editLog';
 
 interface EditLogPanelProps {
   entries: EditLogEntry[];
@@ -41,6 +42,8 @@ export function EditLogPanel({
 
   const formatValue = (value: unknown): string => {
     if (value === null || value === undefined || value === '') return '-';
+    // Stored true/false is shown as Yes/No, as it is in the line list.
+    if (typeof value === 'boolean') return value ? 'Yes' : 'No';
     return String(value);
   };
 
@@ -105,7 +108,7 @@ export function EditLogPanel({
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6-6m0 0l-6 6" />
             </svg>
-            Undo Last Edit
+            {isRecordDeletion(mostRecentEdit) ? 'Undo Last Deletion' : 'Undo Last Edit'}
           </button>
         </div>
       )}
@@ -135,15 +138,22 @@ export function EditLogPanel({
                 </span>
               </div>
 
-              <div className="flex items-center text-sm mb-2">
-                <span className="text-red-600 line-through truncate max-w-24" title={formatValue(entry.oldValue)}>
-                  {formatValue(entry.oldValue)}
-                </span>
-                <span className="mx-2 text-gray-400">&rarr;</span>
-                <span className="text-green-600 truncate max-w-24" title={formatValue(entry.newValue)}>
-                  {formatValue(entry.newValue)}
-                </span>
-              </div>
+              {isRecordDeletion(entry) || isRecordAddition(entry) ? (
+                // A whole record, held in the entry so a deletion can be undone.
+                <p className={`text-sm mb-2 ${isRecordDeletion(entry) ? 'text-red-600' : 'text-green-600'}`}>
+                  {isRecordDeletion(entry) ? 'The whole record was deleted' : 'A new record was added'}
+                </p>
+              ) : (
+                <div className="flex items-center text-sm mb-2">
+                  <span className="text-red-600 line-through truncate max-w-24" title={formatValue(entry.oldValue)}>
+                    {formatValue(entry.oldValue)}
+                  </span>
+                  <span className="mx-2 text-gray-400">&rarr;</span>
+                  <span className="text-green-600 truncate max-w-24" title={formatValue(entry.newValue)}>
+                    {formatValue(entry.newValue)}
+                  </span>
+                </div>
+              )}
 
               <div className="flex items-center gap-2 text-xs">
                 {editingCell?.id === entry.id && editingCell.field === 'reason' ? (

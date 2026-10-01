@@ -38,6 +38,9 @@ import { runDataQualityChecks, getDefaultConfig } from '../../utils/dataQuality'
 import { addVariableToDataset } from '../../utils/variableCreation';
 import { ReviewCleanTutorial } from '../tutorials/ReviewCleanTutorial';
 import { Dialog } from '../shared';
+import { useLocale } from '../../contexts/LocaleContext';
+import { deletedRecordOf, isRecordAddition, isRecordDeletion } from '../../utils/editLog';
+import { exportToCSV } from '../../utils/csvParser';
 
 interface ReviewProps {
   datasets: Dataset[];
@@ -70,6 +73,8 @@ export function Review({
   getEditLogForDataset,
   exportEditLog,
 }: ReviewProps) {
+  const { config: localeConfig } = useLocale();
+
   // ---------------------------------------------------------------------------
   // UI STATE
   // ---------------------------------------------------------------------------
@@ -140,12 +145,13 @@ export function Review({
       const issues = runDataQualityChecks(
         activeDataset.records,
         activeDataset.columns,
-        dataQualityConfig
+        dataQualityConfig,
+        { dateFormat: localeConfig.dateFormat }
       );
       setDataQualityIssues(issues);
       setIsRunningChecks(false);
     }, 50);
-  }, [activeDataset, dataQualityConfig]);
+  }, [activeDataset, dataQualityConfig, localeConfig.dateFormat]);
 
   const handleSelectIssue = useCallback((issue: DataQualityIssue) => {
     setSelectedIssue(issue);
@@ -205,14 +211,67 @@ export function Review({
   const handleUndoEdit = useCallback((entry: EditLogEntry) => {
     if (!activeDataset) return;
 
-    // Revert the field to its old value
-    updateRecord(activeDataset.id, entry.recordId, {
-      [entry.columnKey]: entry.oldValue,
-    });
+    if (isRecordDeletion(entry)) {
+      // Put the deleted record back. It returns at the end of the list; its
+      // original position is not kept.
+      const record = deletedRecordOf(entry);
+      if (record && !activeDataset.records.some(r => r.id === record.id)) {
+        updateDataset(activeDataset.id, { records: [...activeDataset.records, record] });
+      }
+    } else if (isRecordAddition(entry)) {
+      deleteRecord(activeDataset.id, entry.recordId);
+    } else {
+      // Revert the field to its old value
+      updateRecord(activeDataset.id, entry.recordId, {
+        [entry.columnKey]: entry.oldValue,
+      });
+    }
 
     // Remove the undone entry from the edit log
     removeEditLogEntry(entry.id);
-  }, [activeDataset, updateRecord, removeEditLogEntry]);
+  }, [activeDataset, updateRecord, updateDataset, deleteRecord, removeEditLogEntry]);
+
+  // Delete many records in one update. Deleting them one call at a time
+  // rebuilt the whole record list once per record.
+  const handleDeleteRecords = useCallback((recordIds: string[]) => {
+    if (!activeDataset) return;
+    const doomed = new Set(recordIds);
+    updateDataset(activeDataset.id, { records: activeDataset.records.filter(r => !doomed.has(r.id)) });
+  }, [activeDataset, updateDataset]);
+
+  // Download the dataset as it now stands. Cleaning happens in this module,
+  // and the only way to take the cleaned data out as CSV was a menu on the
+  // Epi Curve tab.
+  const handleExportCsv = useCallback(() => {
+    if (!activeDataset) return;
+    const csv = exportToCSV(activeDataset.columns, activeDataset.records, { localeConfig });
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeDataset.name}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [activeDataset, localeConfig]);
+
+  // The value box of a filter. A date column gets a date picker for the
+  // comparisons, so the date is unambiguous however the user writes dates;
+  // "contains" stays free text and searches the date as displayed.
+  const filterValueInput = (filter: FilterCondition, index: number) => {
+    const column = activeDataset?.columns.find(c => c.key === filter.column);
+    const pickDate = column?.type === 'date' && filter.operator !== 'contains';
+    return (
+      <input
+        type={pickDate ? 'date' : 'text'}
+        aria-label="Filter value"
+        value={String(filter.value)}
+        onChange={(e) => updateFilter(index, { value: e.target.value })}
+        placeholder="Value"
+        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+      />
+    );
+  };
 
   if (!activeDataset) {
     return null;
@@ -289,6 +348,18 @@ export function Review({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                   Rename Dataset
+                </button>
+                <button
+                  onClick={() => {
+                    handleExportCsv();
+                    setShowDatasetMenu(false);
+                  }}
+                  className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export as CSV
                 </button>
                 <hr className="my-1 border-gray-200" />
                 <button
@@ -375,6 +446,15 @@ export function Review({
       {/* Desktop Toolbar - visible only on large screens */}
       <div className="hidden lg:flex items-center justify-end gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
         <button
+          onClick={handleExportCsv}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors text-gray-600 hover:bg-gray-100"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export CSV
+        </button>
+        <button
           onClick={() => setShowEditLog(!showEditLog)}
           className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
             showEditLog
@@ -398,7 +478,7 @@ export function Review({
       <div className="flex-1 flex overflow-hidden">
         {/* Mobile Left Panel Overlay */}
         {showMobilePanel && (
-          <div className="lg:hidden fixed inset-0 z-50 bg-black bg-opacity-50" onClick={() => setShowMobilePanel(false)}>
+          <div className="lg:hidden fixed inset-0 z-50 bg-black/50" onClick={() => setShowMobilePanel(false)}>
             <div className="absolute left-0 top-0 bottom-0 w-80 max-w-[90vw] bg-white shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-center justify-between p-4 border-b border-gray-200">
                 <h2 className="font-semibold text-gray-900">Tools & Data Quality</h2>
@@ -462,13 +542,7 @@ export function Review({
                               <option value="is_not_empty">is not empty</option>
                             </select>
                             {!['is_empty', 'is_not_empty'].includes(filter.operator) && (
-                              <input
-                                type="text"
-                                value={String(filter.value)}
-                                onChange={(e) => updateFilter(index, { value: e.target.value })}
-                                placeholder="Value"
-                                className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
+                              filterValueInput(filter, index)
                             )}
                             <button
                               onClick={() => removeFilter(index)}
@@ -589,13 +663,7 @@ export function Review({
                           <option value="is_not_empty">is not empty</option>
                         </select>
                         {!['is_empty', 'is_not_empty'].includes(filter.operator) && (
-                          <input
-                            type="text"
-                            value={String(filter.value)}
-                            onChange={(e) => updateFilter(index, { value: e.target.value })}
-                            placeholder="Value"
-                            className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                          />
+                          filterValueInput(filter, index)
                         )}
                         <button
                           onClick={() => removeFilter(index)}
@@ -666,8 +734,10 @@ export function Review({
             dataset={activeDataset}
             onUpdateRecord={(recordId, updates) => updateRecord(activeDataset.id, recordId, updates)}
             onDeleteRecord={(recordId) => deleteRecord(activeDataset.id, recordId)}
+            onDeleteRecords={handleDeleteRecords}
             onAddRecord={(record) => addRecord(activeDataset.id, record)}
             onEditComplete={addEditLogEntry}
+            onUpdateEditLogEntry={updateEditLogEntry}
             highlightedRecordIds={highlightedRecordIds}
             scrollToRecordId={scrollToRecordId}
             highlightField={highlightField}

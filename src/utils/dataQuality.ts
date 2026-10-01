@@ -43,7 +43,10 @@ import type {
   NumericRangeRule,
   FuzzyMatchingConfig,
 } from '../types/analysis';
-import { calculateRecordSimilarity } from './stringSimilarity';
+import type { DateFormat } from '../contexts/LocaleContext';
+import { jaroWinklerSimilarity } from './stringSimilarity';
+import { parseStoredDate, dayNumber, comparableTime, todayDayNumber, formatDateParts } from './dateValue';
+import type { DateParts } from './dateValue';
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -54,14 +57,17 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 11);
 }
 
-// Parse a date value from various formats
-function parseDate(value: unknown): Date | null {
-  if (!value) return null;
-  if (value instanceof Date) return value;
-  const str = String(value).trim();
-  if (!str) return null;
-  const date = new Date(str);
-  return isNaN(date.getTime()) ? null : date;
+// Read a stored date. Deliberately not the Date constructor: that reads
+// "03/04/2025" month-first whatever was meant, and reads "2025-03-04" as UTC
+// midnight, which printed as the day before anywhere west of Greenwich.
+function parseDate(value: unknown): DateParts | null {
+  return isEmpty(value) ? null : parseStoredDate(value);
+}
+
+/** Options that affect how issues are worded, not what is found. */
+export interface DataQualityOptions {
+  /** How dates are written in issue details. Defaults to ISO. */
+  dateFormat?: DateFormat;
 }
 
 // Check if a value is empty
@@ -172,9 +178,67 @@ export function getDefaultConfig(): DataQualityConfig {
 // Identifies exact and near-duplicate records using fuzzy string matching
 // =============================================================================
 
+/** Columns whose values identify a record rather than describe it. */
+const ID_NAME = /(^|[^a-z])(id|ids|no|num|number|code|uuid|serial|record)([^a-z]|$)/i;
+
+interface FieldProfile {
+  key: string;
+  label: string;
+  type: DataColumn['type'];
+  /** Values normalised for comparison; '' is missing. */
+  values: string[];
+  /** A case or record identifier: unique per record, so never compared. */
+  isIdentifier: boolean;
+  /** Varies enough that two records sharing it means something. */
+  distinguishing: boolean;
+}
+
+function profileField(records: CaseRecord[], column: { key: string; label: string; type: DataColumn['type'] }): FieldProfile {
+  const values = records.map(record => {
+    const value = record[column.key];
+    return isEmpty(value) ? '' : String(value).trim().toLowerCase();
+  });
+  const present = values.filter(v => v !== '');
+  const distinct = new Set(present).size;
+  const ratio = present.length > 0 ? distinct / present.length : 0;
+
+  // An identifier is nearly unique and looks like a code: it carries digits
+  // and no spaces. A name column is nearly unique too, but it is exactly what
+  // duplicates should be matched on. A column named as an identifier needs
+  // less proof, since a file with duplicated IDs is the case being looked for.
+  const codeLike = present.length > 0 &&
+    present.filter(v => /\d/.test(v) && !/\s/.test(v)).length >= present.length * 0.8;
+  const namedAsId = ID_NAME.test(column.key.replace(/_/g, ' ')) || ID_NAME.test(column.label);
+  const isIdentifier =
+    present.length >= 2 &&
+    (column.type === 'number'
+      ? namedAsId && ratio >= 0.9 && present.every(v => /^\d+$/.test(v))
+      : column.type !== 'date' && ((codeLike && ratio >= 0.9) || (namedAsId && ratio >= 0.5)));
+
+  return {
+    key: column.key, label: column.label, type: column.type, values,
+    isIdentifier,
+    distinguishing: present.length >= 2 && ratio >= 0.5,
+  };
+}
+
 /**
- * Check for duplicate records using configurable fuzzy matching.
- * Groups similar records together rather than creating pairwise issues.
+ * Check for duplicate records.
+ *
+ * Three findings, in decreasing certainty:
+ *
+ *  1. Identical records: every compared field the same.
+ *  2. A repeated identifier: two records carrying the same case ID.
+ *  3. Similar records: the same in every field both have filled in, apart
+ *     from the identifier, allowing a near-miss spelling in free text.
+ *
+ * What this replaced averaged a similarity score over the first ten columns
+ * and counted two blanks as a match. On a line list that meant two people who
+ * were not cases, with no dates and the same sex, scored 87% alike on their
+ * blanks and were reported as duplicates; the bundled surveillance sample
+ * drew 55 such warnings without containing one duplicate. A blank says
+ * nothing about whether two records are the same person, so blanks are not
+ * compared, and one differing age or date now rules a pair out.
  */
 function checkDuplicates(
   records: CaseRecord[],
@@ -184,135 +248,169 @@ function checkDuplicates(
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
-  // Get all data fields (excluding 'id')
-  const allFields = columns.map(c => c.key);
-
-  // Use selected fields if provided, otherwise check all fields.
-  // Cap the number of compared fields so the pairwise fingerprint stays
-  // cheap on wide datasets.
-  const MAX_COMPARE_FIELDS = 10;
-  const fieldsToCheck = (fields.length > 0 ? fields : allFields).slice(0, MAX_COMPARE_FIELDS);
-
-  if (fieldsToCheck.length === 0) return issues;
-
-  // Build field info with types for similarity calculation
-  const fieldInfo = fieldsToCheck.map(key => {
-    const col = columns.find(c => c.key === key);
-    return {
-      key,
-      type: (col?.type || 'text') as 'text' | 'date' | 'number' | 'boolean',
-    };
+  // Use selected fields if provided, otherwise check all fields
+  const explicit = fields.length > 0;
+  const compared = (explicit ? fields : columns.map(c => c.key)).map(key => {
+    const column = columns.find(c => c.key === key);
+    return { key, label: column?.label ?? key, type: (column?.type ?? 'text') as DataColumn['type'] };
   });
+  if (compared.length === 0 || records.length < 2) return issues;
 
-  // Pairwise fuzzy matching is O(n^2); on large datasets it would hang the
-  // UI, so fall back to O(n) exact-fingerprint grouping instead
-  const MAX_FUZZY_RECORDS = 1000;
-  if (records.length > MAX_FUZZY_RECORDS) {
-    const exactGroups = new Map<string, string[]>();
-    for (const record of records) {
-      const parts = fieldsToCheck.map(f => {
-        const val = record[f];
-        return val === null || val === undefined ? '' : String(val).trim().toLowerCase();
-      });
-      if (parts.every(p => p === '')) continue;
-      const key = parts.join('');
-      const group = exactGroups.get(key);
-      if (group) group.push(record.id);
-      else exactGroups.set(key, [record.id]);
+  const profiles = compared.map(column => profileField(records, column));
+  // Fields the user chose are all compared; identifiers are only set aside
+  // when the check is left to work across every column.
+  const identifiers = explicit ? [] : profiles.filter(p => p.isIdentifier);
+  const content = explicit ? profiles : profiles.filter(p => !p.isIdentifier);
+
+  const grouped = new Set<number>();
+  const pushGroup = (
+    indexes: number[], severity: DataQualityIssue['severity'], message: string, details?: string, field?: string
+  ) => {
+    indexes.forEach(i => grouped.add(i));
+    issues.push({
+      id: generateId(), checkType: 'duplicate', category: 'duplicate', severity,
+      recordIds: indexes.map(i => records[i].id), message, details, field,
+    });
+  };
+
+  // 1. Identical in every compared field, identifier included.
+  const SEP = '\u0001';
+  const identical = new Map<string, number[]>();
+  for (let i = 0; i < records.length; i++) {
+    const parts = profiles.map(p => p.values[i]);
+    if (parts.every(v => v === '')) continue;
+    const fingerprint = parts.join(SEP);
+    const group = identical.get(fingerprint);
+    if (group) group.push(i); else identical.set(fingerprint, [i]);
+  }
+  for (const group of identical.values()) {
+    if (group.length > 1) {
+      pushGroup(group, 'error', `${group.length} identical records found`,
+        explicit ? 'Same value in every selected field' : 'Same value in every field');
     }
-    for (const group of exactGroups.values()) {
+  }
+
+  // 2. The same identifier on records that are otherwise different.
+  for (const id of identifiers) {
+    const byValue = new Map<string, number[]>();
+    for (let i = 0; i < records.length; i++) {
+      const value = id.values[i];
+      if (value === '' || grouped.has(i)) continue;
+      const group = byValue.get(value);
+      if (group) group.push(i); else byValue.set(value, [i]);
+    }
+    for (const group of byValue.values()) {
       if (group.length > 1) {
-        issues.push({
-          id: generateId(),
-          checkType: 'duplicate',
-          category: 'duplicate',
-          severity: 'error',
-          recordIds: group,
-          message: `${group.length} duplicate records found`,
-          details: 'Exact match (fuzzy matching skipped for large dataset)',
-        });
+        pushGroup(group, 'warning',
+          `${group.length} records share ${id.label} "${String(records[group[0]][id.key]).trim()}"`,
+          'The records differ in other fields', id.key);
+      }
+    }
+  }
+
+  if (content.length === 0) return issues;
+
+  // Two records sharing a sex and a district are not thereby the same
+  // person. Unless the user chose the fields, a match has to include at least
+  // one field that tells records apart: a name, a date of birth, a phone
+  // number, a coordinate.
+  const needsDistinguishing = !explicit;
+  if (needsDistinguishing && !content.some(p => p.distinguishing)) return issues;
+
+  // Enough fields in common to mean something: half of them, and at least
+  // three where there are three to compare.
+  const required = Math.min(content.length, Math.max(3, Math.ceil(content.length / 2)));
+
+  // 3a. Too many records to compare pair by pair: report only records that
+  // are the same in every field except the identifier.
+  const MAX_PAIRWISE_RECORDS = 2000;
+  if (records.length > MAX_PAIRWISE_RECORDS) {
+    const same = new Map<string, number[]>();
+    for (let i = 0; i < records.length; i++) {
+      if (grouped.has(i)) continue;
+      let filled = 0, distinguishing = false;
+      for (const p of content) {
+        if (p.values[i] !== '') { filled++; if (p.distinguishing) distinguishing = true; }
+      }
+      if (filled < required || (needsDistinguishing && !distinguishing)) continue;
+      const fingerprint = content.map(p => p.values[i]).join(SEP);
+      const group = same.get(fingerprint);
+      if (group) group.push(i); else same.set(fingerprint, [i]);
+    }
+    for (const group of same.values()) {
+      if (group.length > 1) {
+        pushGroup(group, 'warning', `${group.length} records identical apart from their identifier`,
+          'Near-match spelling was not checked: the dataset is too large to compare every pair of records');
       }
     }
     return issues;
   }
 
-  // Track which records have been assigned to a duplicate group
-  const assignedToGroup = new Set<string>();
-  const duplicateGroups: string[][] = [];
+  // 3b. Pair by pair. Fields that must match exactly go first, most varied
+  // first, so that nearly every pair is ruled out on its first comparison.
+  const fuzzy = fuzzyConfig.enabled && fuzzyConfig.textThreshold < 1.0;
+  const isFuzzyField = (p: FieldProfile) => fuzzy && p.type === 'text' && p.distinguishing;
+  const ordered = [...content].sort((a, b) =>
+    Number(isFuzzyField(a)) - Number(isFuzzyField(b)) || Number(b.distinguishing) - Number(a.distinguishing));
+  const dateDays = ordered.map(p => (p.type === 'date' && fuzzy && fuzzyConfig.dateTolerance > 0
+    ? records.map(r => { const d = parseDate(r[p.key]); return d ? dayNumber(d) : null; })
+    : null));
 
-  // Threshold for considering records as duplicates
-  const threshold = fuzzyConfig.enabled ? fuzzyConfig.textThreshold : 1.0;
-
-  // Compare each pair of records
-  for (let i = 0; i < records.length; i++) {
-    const record1 = records[i];
-
-    // Skip if all checked fields are empty
-    const hasData1 = fieldsToCheck.some(f => {
-      const val = record1[f];
-      return val !== null && val !== undefined && String(val).trim() !== '';
-    });
-    if (!hasData1) continue;
-
-    // Skip if already in a group
-    if (assignedToGroup.has(record1.id)) continue;
-
-    const currentGroup: string[] = [record1.id];
-
-    for (let j = i + 1; j < records.length; j++) {
-      const record2 = records[j];
-
-      // Skip if already in a group
-      if (assignedToGroup.has(record2.id)) continue;
-
-      // Skip if all checked fields are empty
-      const hasData2 = fieldsToCheck.some(f => {
-        const val = record2[f];
-        return val !== null && val !== undefined && String(val).trim() !== '';
-      });
-      if (!hasData2) continue;
-
-      // Calculate similarity
-      const similarity = calculateRecordSimilarity(
-        record1,
-        record2,
-        fieldInfo,
-        {
-          textThreshold: fuzzyConfig.textThreshold,
-          dateTolerance: fuzzyConfig.dateTolerance,
+  /** Labels of the fields that matched only approximately, or null if the pair does not match. */
+  const comparePair = (i: number, j: number): string[] | null => {
+    let overlap = 0, distinguishing = false;
+    const approximate: string[] = [];
+    for (let f = 0; f < ordered.length; f++) {
+      const p = ordered[f];
+      const a = p.values[i], b = p.values[j];
+      if (a === '' && b === '') continue;
+      // Filled in on one record only. With fuzzy matching off the records
+      // have to be the same, so this rules the pair out.
+      if (a === '' || b === '') { if (!fuzzy) return null; continue; }
+      if (a !== b) {
+        const days = dateDays[f];
+        if (days) {
+          const da = days[i], db = days[j];
+          if (da === null || db === null || Math.abs(da - db) > fuzzyConfig.dateTolerance) return null;
+          approximate.push(p.label);
+        } else if (isFuzzyField(p)) {
+          // A near-miss spelling is a slipped or swapped letter. Different
+          // digits are a different house number or bed, not a typo.
+          if (a.replace(/\D/g, '') !== b.replace(/\D/g, '')) return null;
+          if (jaroWinklerSimilarity(a, b) < fuzzyConfig.textThreshold) return null;
+          approximate.push(p.label);
+        } else {
+          return null;
         }
-      );
-
-      // If similarity meets threshold, add to group
-      if (similarity >= threshold) {
-        currentGroup.push(record2.id);
-        assignedToGroup.add(record2.id);
       }
+      overlap++;
+      if (p.distinguishing) distinguishing = true;
     }
+    if (overlap < required || (needsDistinguishing && !distinguishing)) return null;
+    return approximate;
+  };
 
-    // If group has more than one record, it's a duplicate group
-    if (currentGroup.length > 1) {
-      duplicateGroups.push(currentGroup);
-      assignedToGroup.add(record1.id);
+  for (let i = 0; i < records.length; i++) {
+    if (grouped.has(i)) continue;
+    const group = [i];
+    const approximate = new Set<string>();
+    for (let j = i + 1; j < records.length; j++) {
+      if (grouped.has(j)) continue;
+      const result = comparePair(i, j);
+      if (!result) continue;
+      group.push(j);
+      result.forEach(label => approximate.add(label));
     }
-  }
-
-  // Create issues for each duplicate group
-  for (const group of duplicateGroups) {
-    const isFuzzy = fuzzyConfig.enabled && fuzzyConfig.textThreshold < 1.0;
-    issues.push({
-      id: generateId(),
-      checkType: 'duplicate',
-      category: 'duplicate',
-      severity: isFuzzy ? 'warning' : 'error',
-      recordIds: group,
-      message: isFuzzy
-        ? `${group.length} similar records found (${Math.round(fuzzyConfig.textThreshold * 100)}% match)`
-        : `${group.length} duplicate records found`,
-      details: isFuzzy
-        ? `Fuzzy matching with ${Math.round(fuzzyConfig.textThreshold * 100)}% threshold${fuzzyConfig.dateTolerance > 0 ? `, ±${fuzzyConfig.dateTolerance} day date tolerance` : ''}`
-        : undefined,
-    });
+    if (group.length > 1) {
+      const near = [...approximate];
+      pushGroup(group, 'warning',
+        near.length > 0
+          ? `${group.length} similar records found (${Math.round(fuzzyConfig.textThreshold * 100)}% match)`
+          : `${group.length} records identical apart from ${identifiers.length > 0 ? 'their identifier' : 'blank fields'}`,
+        near.length > 0
+          ? `Same in every other field; close but not equal in ${near.join(', ')}`
+          : 'Same value in every field both records have filled in');
+    }
   }
 
   return issues;
@@ -329,7 +427,8 @@ function checkDuplicates(
  */
 function checkDateOrder(
   records: CaseRecord[],
-  rules: DateOrderRule[]
+  rules: DateOrderRule[],
+  dateFormat: DateFormat
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
@@ -339,7 +438,16 @@ function checkDateOrder(
       const secondDate = parseDate(record[rule.secondDateField]);
 
       // Only check if both dates are present
-      if (firstDate && secondDate && firstDate > secondDate) {
+      if (!firstDate || !secondDate) continue;
+
+      // A date without a time is the whole day. Against a time on that same
+      // day it is neither before nor after, so the two are compared by day
+      // unless both carry a time.
+      const outOfOrder = firstDate.hasTime && secondDate.hasTime
+        ? comparableTime(firstDate) > comparableTime(secondDate)
+        : dayNumber(firstDate) > dayNumber(secondDate);
+
+      if (outOfOrder) {
         issues.push({
           id: generateId(),
           checkType: 'date_order',
@@ -348,7 +456,7 @@ function checkDateOrder(
           recordIds: [record.id],
           field: rule.secondDateField,
           message: `${rule.secondDateLabel} before ${rule.firstDateLabel}`,
-          details: `${rule.firstDateLabel}: ${firstDate.toLocaleDateString()}, ${rule.secondDateLabel}: ${secondDate.toLocaleDateString()}`,
+          details: `${rule.firstDateLabel}: ${formatDateParts(firstDate, dateFormat)}, ${rule.secondDateLabel}: ${formatDateParts(secondDate, dateFormat)}`,
         });
       }
     }
@@ -368,15 +476,15 @@ function checkFutureDatesInRecords(
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
 
-  // End of today, so a timestamp later today is not treated as future.
-  const endOfToday = new Date();
-  endOfToday.setHours(23, 59, 59, 999);
+  // Compared by calendar day, so a time later today is not the future, and
+  // tomorrow is, in every time zone.
+  const today = todayDayNumber();
 
   for (const column of columns.filter(c => c.type === 'date')) {
     const recordIds: string[] = [];
     for (const record of records) {
       const value = parseDate(record[column.key]);
-      if (value && value > endOfToday) recordIds.push(record.id);
+      if (value && dayNumber(value) > today) recordIds.push(record.id);
     }
 
     if (recordIds.length > 0) {
@@ -389,6 +497,48 @@ function checkFutureDatesInRecords(
         field: column.key,
         message: `${recordIds.length} record${recordIds.length !== 1 ? 's' : ''} with ${column.label} in the future`,
         details: 'A date after today usually means a mistyped year or a misread date format.',
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Flag values in date columns that are not dates.
+ *
+ * Such a value takes no part in the other date checks and is left off an epi
+ * curve, so without this it is a case that silently goes missing from the
+ * analysis. Typical causes are a date typed in another format, a date that
+ * does not exist (31/02/2025), or a note typed into the date cell.
+ */
+function checkUnreadableDates(
+  records: CaseRecord[],
+  columns: DataColumn[]
+): DataQualityIssue[] {
+  const issues: DataQualityIssue[] = [];
+
+  for (const column of columns.filter(c => c.type === 'date')) {
+    const recordIds: string[] = [];
+    let example = '';
+    for (const record of records) {
+      const value = record[column.key];
+      if (isEmpty(value) || parseStoredDate(value)) continue;
+      recordIds.push(record.id);
+      if (!example) example = String(value).trim();
+    }
+
+    if (recordIds.length > 0) {
+      issues.push({
+        id: generateId(),
+        // Reported under date order, the nearest existing check type.
+        checkType: 'date_order',
+        category: 'temporal',
+        severity: 'error',
+        recordIds,
+        field: column.key,
+        message: `${recordIds.length} record${recordIds.length !== 1 ? 's' : ''} with ${column.label} that cannot be read as a date`,
+        details: `For example "${example.length > 40 ? `${example.slice(0, 37)}…` : example}". These records are left out of date checks and epi curves until corrected.`,
       });
     }
   }
@@ -502,7 +652,8 @@ function checkMissingValues(
 export function runDataQualityChecks(
   records: CaseRecord[],
   columns: DataColumn[],
-  config: DataQualityConfig
+  config: DataQualityConfig,
+  options: DataQualityOptions = {}
 ): DataQualityIssue[] {
   const issues: DataQualityIssue[] = [];
   const { enabledChecks } = config;
@@ -514,7 +665,12 @@ export function runDataQualityChecks(
 
   // Date order checks
   if (enabledChecks.includes('date_order') && config.dateOrderRules.length > 0) {
-    issues.push(...checkDateOrder(records, config.dateOrderRules));
+    issues.push(...checkDateOrder(records, config.dateOrderRules, options.dateFormat ?? 'YYYY-MM-DD'));
+  }
+
+  // Values in date columns that are not dates: needs no rules either.
+  if (enabledChecks.includes('date_order')) {
+    issues.push(...checkUnreadableDates(records, columns));
   }
 
   // Future dates: no rules needed, so this catches something out of the box.

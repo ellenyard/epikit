@@ -1,151 +1,162 @@
 /**
  * Excel file parsing utility using xlsx (SheetJS)
  */
-import type { DataColumn, CaseRecord } from '../types/analysis';
-import type { ParseResult } from './csvParser';
-import { matchingDateFormats, resolveUnambiguousFormat, parseDateWithFormat } from './dateDetection';
-import type { DateFormat } from './dateDetection';
-import { isNumericColumn } from './typeInference';
+import { buildDataset, emptyResult, locateHeaderRow } from './tableImport';
+import type { BuildOptions, ImportWarning, ParseResult, RawCell, RawTable } from './tableImport';
 
-export interface ExcelParseOptions {
+export interface ExcelParseOptions extends BuildOptions {
   sheetIndex?: number; // Default: 0 (first sheet)
   sheetName?: string; // Override sheet by name
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * Read one sheet of a workbook into a grid: header, rows, and notes about how
+ * it was read. Typing the columns is left to buildDataset, which the CSV
+ * route shares.
+ *
+ * Dates are read from the cell's serial number and number format rather than
+ * as JavaScript Date objects. A Date carries a time zone, and for a
+ * time-of-day cell (a serial below 1, which is a moment on 30 December 1899)
+ * the zone's nineteenth-century offset leaks into the result. The serial
+ * number is the calendar value the spreadsheet shows, in any zone, and it
+ * keeps what the Date route dropped: the time on a date-time cell, and a
+ * time-only cell as a time instead of as the date 1899-12-31.
+ */
+export async function extractExcelTable(
+  buffer: ArrayBuffer,
+  options: { sheetIndex?: number; sheetName?: string } = {}
+): Promise<RawTable | string> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, cellNF: true, cellText: true });
+
+  const sheetName = options.sheetName || workbook.SheetNames[options.sheetIndex || 0];
+  if (!sheetName) return 'No sheets found in workbook';
+
+  const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return `Sheet "${sheetName}" not found`;
+  if (!sheet['!ref']) return 'Sheet is empty';
+
+  const date1904 = Boolean(workbook.Workbook?.WBProps?.date1904);
+  const range = XLSX.utils.decode_range(sheet['!ref']);
+  const warnings: ImportWarning[] = [];
+  let errorCells = 0;
+
+  const readCell = (r: number, c: number): RawCell => {
+    const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+    if (!cell || cell.v === undefined || cell.v === null) return null;
+
+    switch (cell.t) {
+      case 'n': {
+        const value = cell.v as number;
+        const format = typeof cell.z === 'string' ? cell.z : '';
+        if (format && XLSX.SSF.is_date(format)) {
+          const d = XLSX.SSF.parse_date_code(value, { date1904 });
+          if (!d) return String(cell.w ?? value);
+          const time = `${pad(d.H)}:${pad(d.M)}${d.S ? `:${pad(d.S)}` : ''}`;
+          const hasTime = d.H + d.M + d.S > 0;
+          // A serial below 1 has no date part: it is a time of day.
+          if (value >= 0 && value < 1) return { temporal: 'time', text: time };
+          const date = `${String(d.y).padStart(4, '0')}-${pad(d.m)}-${pad(d.d)}`;
+          return hasTime
+            ? { temporal: 'datetime', text: `${date}T${time}` }
+            : { temporal: 'date', text: date };
+        }
+        // A format of nothing but zeros (00000) pads a code to a fixed width.
+        // The stored number has lost the padding; the displayed text has not.
+        if (/^0{2,}$/.test(format) && typeof cell.w === 'string') return cell.w;
+        return value;
+      }
+      case 'b':
+        // As Excel shows it. Kept as text so it is never mistaken for a
+        // yes/no answer the file did not give.
+        return cell.v ? 'TRUE' : 'FALSE';
+      case 'e':
+        errorCells++;
+        return null;
+      case 'd':
+        return String(cell.w ?? cell.v);
+      default:
+        return String(cell.v);
+    }
+  };
+
+  const grid: RawCell[][] = [];
+  const sheetRows: number[] = [];
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row: RawCell[] = [];
+    let any = false;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const value = readCell(r, c);
+      if (value !== null && !(typeof value === 'string' && value.trim() === '')) any = true;
+      row.push(value);
+    }
+    // Skip completely empty rows
+    if (any) { grid.push(row); sheetRows.push(r + 1); }
+  }
+
+  if (grid.length === 0) return 'Sheet is empty';
+
+  // The sheet's declared range often runs past the data. Drop the columns
+  // nothing is in, so they do not become empty "Column N" variables.
+  let width = 0;
+  for (const row of grid) {
+    for (let c = row.length - 1; c >= width; c--) {
+      const value = row[c];
+      if (value !== null && !(typeof value === 'string' && value.trim() === '')) { width = c + 1; break; }
+    }
+  }
+  for (const row of grid) row.length = width;
+
+  const headerIndex = locateHeaderRow(grid);
+  const cellText = (cell: RawCell): string =>
+    cell === null ? '' : typeof cell === 'object' ? cell.text : String(cell).trim();
+
+  if (headerIndex > 0) {
+    const title = cellText(grid[0].find(cell => cell !== null) ?? null);
+    warnings.push({
+      level: 'info',
+      message: `${headerIndex === 1 ? 'The first row was' : `The first ${headerIndex} rows were`} treated as a title, not as data ("${title.slice(0, 60)}"). Column names were read from row ${sheetRows[headerIndex]}.`,
+    });
+  }
+
+  const headers = grid[headerIndex].map(cellText);
+  if (headers.every(h => !h)) return 'No column headers found';
+
+  if (errorCells > 0) {
+    warnings.push({
+      level: 'check',
+      message: `${errorCells.toLocaleString('en-US')} ${errorCells === 1 ? 'cell holds' : 'cells hold'} a spreadsheet error such as #N/A or #DIV/0! and ${errorCells === 1 ? 'was' : 'were'} imported as empty.`,
+    });
+  }
+
+  // Add info about other sheets if multiple
+  if (workbook.SheetNames.length > 1) {
+    warnings.push({
+      level: 'info',
+      message: `Imported sheet "${sheetName}". Workbook has ${workbook.SheetNames.length} sheets total.`,
+    });
+  }
+
+  return {
+    headers,
+    rows: grid.slice(headerIndex + 1),
+    rowNumbers: sheetRows.slice(headerIndex + 1),
+    warnings,
+  };
 }
 
 /**
  * Parse an Excel file (.xlsx, .xls) and return structured data
  */
 export async function parseExcel(buffer: ArrayBuffer, options: ExcelParseOptions = {}): Promise<ParseResult> {
-  const errors: string[] = [];
-
   try {
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-
-    // Get sheet to parse
-    const sheetName = options.sheetName || workbook.SheetNames[options.sheetIndex || 0];
-    if (!sheetName) {
-      return { columns: [], records: [], errors: ['No sheets found in workbook'] };
-    }
-
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet) {
-      return { columns: [], records: [], errors: [`Sheet "${sheetName}" not found`] };
-    }
-
-    // Convert to JSON with header row (returns array of arrays)
-    const jsonData = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
-      header: 1, // Use first row as headers
-      defval: '', // Default value for empty cells
-      raw: true, // Keep native types (numbers stay numeric, dates stay Dates)
-    });
-
-    if (jsonData.length === 0) {
-      return { columns: [], records: [], errors: ['Sheet is empty'] };
-    }
-
-    // First row is headers
-    const headerRow = jsonData[0];
-    if (!headerRow || !Array.isArray(headerRow)) {
-      return { columns: [], records: [], errors: ['No column headers found'] };
-    }
-    const headers = headerRow.map(h => String(h ?? '').trim());
-    if (headers.length === 0 || headers.every(h => !h)) {
-      return { columns: [], records: [], errors: ['No column headers found'] };
-    }
-
-    // Infer column types from sample data
-    const sampleRows = jsonData.slice(1, Math.min(11, jsonData.length));
-    const columnKeys = buildColumnKeys(headers);
-    const columns: DataColumn[] = headers.map((header, index) => {
-      const sampleValues = sampleRows
-        .map(row => Array.isArray(row) ? row[index] : undefined)
-        .filter(v => v !== undefined && v !== null && v !== '');
-
-      return {
-        key: columnKeys[index],
-        label: header || `Column ${index + 1}`,
-        type: inferColumnType(sampleValues),
-      };
-    });
-
-    // Pick a normalization format for unambiguous date columns (string values
-    // only; real date cells arrive as Date objects and are converted in
-    // parseValue). Ambiguous columns keep raw values for the import wizard.
-    const dateNormalization = new Map<string, DateFormat>();
-    columns.forEach((col, index) => {
-      if (col.type !== 'date') return;
-      const stringSamples = sampleRows
-        .map(row => Array.isArray(row) ? row[index] : undefined)
-        .filter((v): v is string => typeof v === 'string' && v.trim() !== '');
-      const resolved = resolveUnambiguousFormat(matchingDateFormats(stringSamples));
-      if (resolved) dateNormalization.set(col.key, resolved);
-    });
-
-    // Parse data rows
-    const records: CaseRecord[] = [];
-    let unparseableNumberCount = 0;
-    const unparseableNumberExamples: string[] = [];
-    for (let i = 1; i < jsonData.length; i++) {
-      const row = jsonData[i];
-
-      // Skip completely empty rows
-      if (!row || !Array.isArray(row) || row.every(cell => cell === '' || cell === null || cell === undefined)) {
-        continue;
-      }
-
-      const record: CaseRecord = { id: crypto.randomUUID() };
-      columns.forEach((col, index) => {
-        const rawValue = row[index];
-
-        if (col.type === 'number' && rawValue !== '' && rawValue !== null && rawValue !== undefined) {
-          // Values that fail numeric parsing become empty instead of silent NaN
-          const num = typeof rawValue === 'number' ? rawValue : Number(rawValue);
-          if (isNaN(num)) {
-            unparseableNumberCount++;
-            if (unparseableNumberExamples.length < 3) {
-              unparseableNumberExamples.push(`row ${i + 1} ("${String(rawValue)}")`);
-            }
-            record[col.key] = null;
-          } else {
-            record[col.key] = num;
-          }
-          return;
-        }
-
-        if (col.type === 'date' && typeof rawValue === 'string' && rawValue.trim() !== '') {
-          const format = dateNormalization.get(col.key);
-          // Skip values with time components so times are not silently dropped
-          if (format && !/[T:]/.test(rawValue)) {
-            record[col.key] = parseDateWithFormat(rawValue, format) ?? rawValue;
-            return;
-          }
-        }
-
-        record[col.key] = parseValue(rawValue, col.type);
-      });
-
-      records.push(record);
-    }
-
-    if (unparseableNumberCount > 0) {
-      errors.push(
-        `${unparseableNumberCount} numeric value${unparseableNumberCount === 1 ? '' : 's'} could not be parsed and ${unparseableNumberCount === 1 ? 'was' : 'were'} set to empty (${unparseableNumberExamples.join('; ')}${unparseableNumberCount > unparseableNumberExamples.length ? '; …' : ''})`
-      );
-    }
-
-    // Add info about other sheets if multiple
-    if (workbook.SheetNames.length > 1) {
-      errors.push(`Note: Imported sheet "${sheetName}". Workbook has ${workbook.SheetNames.length} sheets total.`);
-    }
-
-    return { columns, records, errors };
+    const table = await extractExcelTable(buffer, options);
+    if (typeof table === 'string') return emptyResult(table);
+    return buildDataset(table, options);
   } catch (e) {
-    return {
-      columns: [],
-      records: [],
-      errors: [`Failed to parse Excel file: ${e instanceof Error ? e.message : 'Unknown error'}`]
-    };
+    return emptyResult(`Failed to parse Excel file: ${e instanceof Error ? e.message : 'Unknown error'}`);
   }
 }
 
@@ -155,103 +166,9 @@ export async function parseExcel(buffer: ArrayBuffer, options: ExcelParseOptions
 export async function getSheetNames(buffer: ArrayBuffer): Promise<string[]> {
   try {
     const XLSX = await import('xlsx');
-    const workbook = XLSX.read(buffer, { type: 'array' });
+    const workbook = XLSX.read(buffer, { type: 'array', bookSheets: true });
     return workbook.SheetNames;
   } catch {
     return [];
-  }
-}
-
-function sanitizeColumnKey(header: string): string {
-  return header
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_|_$/g, '') || 'column';
-}
-
-/**
- * Build unique, collision-free column keys. 'id' is reserved for record UUIDs,
- * duplicate keys get numeric suffixes, and empty headers get a fallback key.
- */
-function buildColumnKeys(headers: string[]): string[] {
-  const used = new Set<string>();
-  return headers.map((header, index) => {
-    let base = (header ? sanitizeColumnKey(header) : '') || `column_${index + 1}`;
-    if (base === 'id') base = 'id_';
-    let key = base;
-    let suffix = 2;
-    while (used.has(key)) {
-      key = `${base}_${suffix}`;
-      suffix++;
-    }
-    used.add(key);
-    return key;
-  });
-}
-
-function inferColumnType(values: unknown[]): DataColumn['type'] {
-  if (values.length === 0) return 'text';
-
-  // Check for numbers. Zero-padded values are identifiers, not quantities:
-  // treating "007" as 7 destroys participant IDs and codes on import.
-  if (isNumericColumn(values)) return 'number';
-
-  // Check for dates (Excel date cells arrive as Date objects with cellDates;
-  // string dates use the shared format validators to avoid Date.parse's US bias)
-  const isDate = values.every(v => {
-    if (v instanceof Date) return true;
-    if (typeof v === 'string') {
-      return v.trim() !== '' && matchingDateFormats([v.trim()]).length > 0;
-    }
-    return false;
-  });
-  if (isDate) return 'date';
-
-  // Check for booleans
-  const isBoolean = values.every(v => {
-    if (typeof v === 'boolean') return true;
-    if (typeof v === 'string') {
-      return ['true', 'false', 'yes', 'no', '1', '0'].includes(v.toLowerCase());
-    }
-    return false;
-  });
-  if (isBoolean) return 'boolean';
-
-  return 'text';
-}
-
-/**
- * Format a Date as an ISO yyyy-mm-dd string using local components
- * (avoids the UTC shift of toISOString).
- */
-function formatLocalDate(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function parseValue(value: unknown, type: DataColumn['type']): unknown {
-  if (value === '' || value === null || value === undefined) {
-    return null;
-  }
-
-  switch (type) {
-    case 'number': {
-      if (typeof value === 'number') return value;
-      const num = Number(value);
-      return isNaN(num) ? null : num;
-    }
-    case 'date':
-      if (value instanceof Date) {
-        return formatLocalDate(value); // Return as YYYY-MM-DD string
-      }
-      return String(value);
-    case 'boolean':
-      if (typeof value === 'boolean') return value;
-      return ['true', 'yes', '1'].includes(String(value).toLowerCase());
-    default:
-      return String(value);
   }
 }

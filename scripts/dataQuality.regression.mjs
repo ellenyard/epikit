@@ -234,6 +234,186 @@ try {
       'age in months must not be capped at 120, which would flag every child over ten');
   }
 
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localIso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const dupOnly = { ...base, enabledChecks: ['duplicate'] };
+  const dups = (records, cols, config = dupOnly) => of(runDataQualityChecks(records, cols, config), 'duplicate');
+
+  // 13. The bundled sample datasets hold no duplicates, and the default
+  //     check must say so. It used to raise 3 false pairs on the outbreak
+  //     sample and 55 on the surveillance sample.
+  {
+    const demoBundle = path.join(tempDir, 'demoData.mjs');
+    await build({
+      entryPoints: [path.join(root, 'src/data/demoData.ts')],
+      bundle: true, format: 'esm', platform: 'node', outfile: demoBundle, logLevel: 'silent',
+    });
+    const demo = await import(pathToFileURL(demoBundle).href);
+    for (const [name, cols, records] of [
+      ['outbreak', demo.demoColumns, demo.demoCaseRecords],
+      ['nutrition', demo.nutritionDemoColumns, demo.nutritionDemoRecords],
+      ['surveillance', demo.surveillanceDemoColumns, demo.surveillanceDemoRecords],
+    ]) {
+      assert.equal(dups(records, cols).length, 0, `the ${name} sample has no duplicates`);
+    }
+  }
+
+  const lineList = [
+    { key: 'case_id', label: 'Case ID', type: 'text' },
+    { key: 'name', label: 'Name', type: 'text' },
+    { key: 'age', label: 'Age', type: 'number' },
+    { key: 'sex', label: 'Sex', type: 'categorical' },
+    { key: 'village', label: 'Village', type: 'categorical' },
+    { key: 'onset', label: 'Onset', type: 'date' },
+    { key: 'hosp', label: 'Hospitalised', type: 'date' },
+  ];
+  // Enough distinct people that names and IDs read as the varied columns they are.
+  const people = ['Amina Yusuf', 'John Otieno', 'Mary Wanjiru', 'Peter Mwangi', 'Ali Hassan', 'Grace Achieng', 'Musa Kamara', 'Fatou Diop'];
+  const background = people.map((name, i) => ({
+    id: `b${i}`, case_id: `C1${String(i).padStart(2, '0')}`, name, age: 20 + i * 7, sex: i % 2 ? 'M' : 'F',
+    village: i % 3 ? 'Kibera' : 'Mathare', onset: `2025-03-${String(i + 2).padStart(2, '0')}`, hosp: '',
+  }));
+
+  // 14. Blanks are not evidence. Two people who were not cases, with the
+  //     same sex and village, blank dates and different ages, are two people.
+  {
+    const records = [
+      ...background,
+      { id: 'x', case_id: 'C020', name: 'Zainab Bello', age: 25, sex: 'F', village: 'Kibera', onset: '', hosp: '' },
+      { id: 'y', case_id: 'C088', name: 'Zainab Okoro', age: 31, sex: 'F', village: 'Kibera', onset: '', hosp: '' },
+    ];
+    assert.equal(dups(records, lineList).length, 0, 'shared blanks must not make two records similar');
+  }
+
+  // 15. What is a duplicate, in decreasing certainty.
+  {
+    const original = { case_id: 'C001', name: 'Halima Abdi', age: 34, sex: 'F', village: 'Kibera', onset: '2025-03-01', hosp: '2025-03-03' };
+    const records = [
+      ...background,
+      { id: 'a', ...original },
+      { id: 'a2', ...original },                                           // entered twice, same ID
+      { id: 'c', ...original, case_id: 'C047' },                           // same person, second ID
+      { id: 'd', ...original, case_id: 'C050', name: 'Halima Abdii' },     // and a slipped key
+      { id: 'e', ...original, case_id: 'C051', hosp: '' },                 // and one incomplete
+      { id: 'f', ...original, case_id: 'C052', age: 35 },                  // a different age: someone else
+      { id: 'g', ...original, case_id: 'C053', name: 'Hussein Abdi' },     // a different name: someone else
+      { id: 'h', case_id: 'C100', name: 'Entirely Different', age: 60, sex: 'M', village: 'Mathare', onset: '2025-03-20', hosp: '' }, // an ID used twice
+    ];
+    const found = dups(records, lineList);
+    const group = (pred) => found.filter(pred).map(i => [...i.recordIds].sort());
+
+    assert.deepEqual(group(i => i.severity === 'error'), [['a', 'a2']], 'identical records are an error');
+    assert.deepEqual(group(i => /share Case ID/.test(i.message)), [['b0', 'h']], 'a repeated ID on different records is reported');
+    const similar = found.filter(i => i.severity === 'warning' && !/share/.test(i.message));
+    assert.equal(similar.length, 1);
+    assert.deepEqual([...similar[0].recordIds].sort(), ['c', 'd', 'e'],
+      'same person under another ID, a near-miss name, or an incomplete copy; not a different age or name');
+    assert.ok(/Name/.test(similar[0].details), 'the issue says which field was only close');
+
+    // With fuzzy matching off, records must be the same in every field.
+    const exact = dups(records, lineList, { ...dupOnly, fuzzyMatching: { enabled: false, textThreshold: 0.85, dateTolerance: 0 } });
+    assert.ok(!exact.some(i => i.recordIds.includes('d')), 'a near-miss name is not a match when fuzzy matching is off');
+    assert.ok(!exact.some(i => i.recordIds.includes('e')), 'nor is a record with a field left blank');
+    assert.ok(exact.some(i => i.severity === 'error' && i.recordIds.includes('a2')));
+
+    // A date tolerance lets onset differ by that many days.
+    const shifted = [...background, { id: 'a', ...original }, { id: 'z', ...original, case_id: 'C060', onset: '2025-03-02' }];
+    assert.equal(dups(shifted, lineList).length, 0, 'one day apart is a different record by default');
+    const tolerant = dups(shifted, lineList, { ...dupOnly, fuzzyMatching: { enabled: true, textThreshold: 0.85, dateTolerance: 1 } });
+    assert.equal(tolerant.length, 1);
+    assert.deepEqual([...tolerant[0].recordIds].sort(), ['a', 'z']);
+  }
+
+  // 16. A different house number is a different address, not a typo.
+  {
+    const cols = [
+      { key: 'name', label: 'Name', type: 'text' },
+      { key: 'address', label: 'Address', type: 'text' },
+      { key: 'age', label: 'Age', type: 'number' },
+    ];
+    const records = [
+      { id: '1', name: 'Halima Abdi', address: 'House 12 Kibera', age: 34 },
+      { id: '2', name: 'Halima Abdi', address: 'House 47 Kibera', age: 34 },
+      { id: '3', name: 'John Otieno', address: 'Plot 9 Mathare', age: 50 },
+      { id: '4', name: 'Mary Wanjiru', address: 'Flat 3 Kawangware', age: 41 },
+    ];
+    assert.equal(dups(records, cols).length, 0);
+  }
+
+  // 17. Large datasets: rows are only called duplicates on every field apart
+  //     from the ID. Comparing a subset of columns reported 1,200 distinct
+  //     people as two blocks of 600 duplicates.
+  {
+    const cols = ['district', 'facility', 'sex', 'age_group', 'status', 'outcome', 'week', 'year', 'source', 'lab']
+      .map(key => ({ key, label: key, type: 'categorical' }))
+      .concat([{ key: 'patient_name', label: 'Patient name', type: 'text' }, { key: 'case_id', label: 'Case ID', type: 'text' }]);
+    const row = (i) => ({
+      id: String(i), district: 'North', facility: 'HC1', sex: i % 2 ? 'F' : 'M', age_group: '15-49', status: 'Confirmed',
+      outcome: 'Alive', week: 'W12', year: '2025', source: 'IDSR', lab: 'Pos', patient_name: `Person ${i}`, case_id: `C${i}`,
+    });
+    const records = Array.from({ length: 2500 }, (_, i) => row(i));
+    assert.equal(dups(records, cols).length, 0, 'distinct people in a large file are not duplicates');
+
+    // The same person twice under two IDs is still found.
+    const withCopy = [...records, { ...row(7), id: 'copy', case_id: 'C9999' }];
+    const found = dups(withCopy, cols);
+    assert.equal(found.length, 1);
+    assert.deepEqual([...found[0].recordIds].sort(), ['7', 'copy']);
+    assert.equal(found[0].severity, 'warning');
+  }
+
+  // 18. Date checks do not depend on the time zone. Details used to print a
+  //     day early west of UTC; tomorrow was not "future" there; and east of
+  //     UTC a date was "before" a time on the same day.
+  {
+    const rule = { id: 'r1', firstDateField: 'onset', secondDateField: 'hosp', firstDateLabel: 'Onset', secondDateLabel: 'Hospitalised' };
+    const config = { ...base, enabledChecks: ['date_order'], dateOrderRules: [rule] };
+    const records = [
+      { id: 'order', onset: '2025-03-05', hosp: '2025-03-04' },
+      { id: 'sameday-time', onset: '2025-03-04', hosp: '2025-03-04T00:30' },
+      { id: 'sameday-time-2', onset: '2025-03-04T23:30', hosp: '2025-03-04' },
+      { id: 'times', onset: '2025-03-04T10:00', hosp: '2025-03-04T09:00' },
+      { id: 'fine', onset: '2025-03-04', hosp: '2025-03-05' },
+    ];
+    const order = of(runDataQualityChecks(records, columns, config, { dateFormat: 'DD/MM/YYYY' }), 'date_order');
+    assert.deepEqual(order.map(i => i.recordIds[0]).sort(), ['order', 'times'],
+      `a date and a time on that date are the same day (TZ=${tz})`);
+    assert.equal(order.find(i => i.recordIds[0] === 'order').details, 'Onset: 05/03/2025, Hospitalised: 04/03/2025',
+      `details show the stored days, in the user's format (TZ=${tz})`);
+    const usDetails = of(runDataQualityChecks(records.slice(0, 1), columns, config, { dateFormat: 'MM/DD/YYYY' }), 'date_order');
+    assert.equal(usDetails[0].details, 'Onset: 03/05/2025, Hospitalised: 03/04/2025');
+
+    const today = new Date();
+    const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+    const future = of(runDataQualityChecks(
+      [{ id: 'today', onset: localIso(today) }, { id: 'tomorrow', onset: localIso(tomorrow) },
+       { id: 'tonight', onset: `${localIso(today)}T23:59` }],
+      columns, base), 'future_date');
+    assert.equal(future.length, 1, `TZ=${tz}`);
+    assert.deepEqual(future[0].recordIds, ['tomorrow'], `tomorrow is the future and today is not, in every zone (TZ=${tz})`);
+  }
+
+  // 19. A value in a date column that is not a date is reported. It is not
+  //     read month-first, and so cannot raise a false order or future issue.
+  {
+    const rule = { id: 'r1', firstDateField: 'onset', secondDateField: 'hosp', firstDateLabel: 'Onset', secondDateLabel: 'Hospitalised' };
+    const records = [
+      { id: 'ok', onset: '2025-04-01', hosp: '2025-04-20' },
+      { id: 'dmy', onset: '05/04/2025', hosp: '2025-04-20' },   // 5 April; month-first it is 4 May, "after" the 20th
+      { id: 'far', onset: '15/03/2099', hosp: '' },
+      { id: 'note', onset: 'see notes', hosp: '' },
+      { id: 'blank', onset: '', hosp: '' },
+    ];
+    const issues = runDataQualityChecks(records, columns, { ...base, enabledChecks: ['date_order'], dateOrderRules: [rule] });
+    const unreadable = issues.filter(i => /cannot be read as a date/.test(i.message));
+    assert.equal(unreadable.length, 1);
+    assert.deepEqual(unreadable[0].recordIds.sort(), ['dmy', 'far', 'note']);
+    assert.equal(unreadable[0].field, 'onset');
+    assert.ok(/05\/04\/2025/.test(unreadable[0].details));
+    assert.equal(issues.filter(i => /before/.test(i.message)).length, 0, 'an unreadable date is not guessed at');
+    assert.equal(of(issues, 'future_date').length, 0);
+  }
+
   console.log('dataQuality regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

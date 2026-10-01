@@ -2,6 +2,8 @@
  * String similarity utilities for fuzzy duplicate detection
  * Implements Jaro-Winkler similarity, optimized for name matching
  */
+import { parseStoredDate, dayNumber, comparableTime } from './dateValue';
+import type { DateParts } from './dateValue';
 
 /**
  * Calculate Jaro similarity between two strings
@@ -111,22 +113,18 @@ export function datesWithinRange(
 
   if (!d1 || !d2) return false;
 
-  const diffMs = Math.abs(d1.getTime() - d2.getTime());
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
-
-  return diffDays <= toleranceDays;
+  // Calendar days, so a date and a time on that date are zero days apart in
+  // every time zone.
+  return Math.abs(dayNumber(d1) - dayNumber(d2)) <= toleranceDays;
 }
 
 /**
- * Parse a date value from various formats
+ * Read a stored date. Not the Date constructor, which reads 03/04/2025
+ * month-first and a bare 2025-03-04 as UTC.
  */
-function parseDate(value: unknown): Date | null {
-  if (!value) return null;
-  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
-  const str = String(value).trim();
-  if (!str) return null;
-  const date = new Date(str);
-  return isNaN(date.getTime()) ? null : date;
+function parseDate(value: unknown): DateParts | null {
+  if (value === null || value === undefined || value === '') return null;
+  return parseStoredDate(value);
 }
 
 /**
@@ -152,7 +150,9 @@ function calculateFieldSimilarity(
   const isEmpty1 = val1 === null || val1 === undefined || String(val1).trim() === '';
   const isEmpty2 = val2 === null || val2 === undefined || String(val2).trim() === '';
 
-  if (isEmpty1 && isEmpty2) return 1; // Both empty = match
+  // Two blanks are not evidence that two records are the same: counting them
+  // as a match made any two sparse records look alike.
+  if (isEmpty1 && isEmpty2) return null;
   if (isEmpty1 || isEmpty2) return 0; // One empty = no match
 
   switch (fieldType) {
@@ -169,7 +169,7 @@ function calculateFieldSimilarity(
         const d1 = parseDate(val1);
         const d2 = parseDate(val2);
         if (!d1 || !d2) return null;
-        return d1.getTime() === d2.getTime() ? 1 : 0;
+        return comparableTime(d1) === comparableTime(d2) ? 1 : 0;
       }
       return datesWithinRange(val1, val2, tolerance) ? 1 : 0;
     }

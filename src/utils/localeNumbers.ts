@@ -1,61 +1,248 @@
 import type { LocaleConfig } from '../contexts/LocaleContext';
 
 /**
- * Parse a number string that may use locale-specific formatting
- * Handles both period and comma as decimal separators
- * @param value - The string to parse (e.g., "1,5" or "1.5" or "1.234,56")
- * @param config - Locale configuration
- * @returns Parsed number or NaN if invalid
+ * Reading numbers out of text.
+ *
+ * The decimal mark cannot be taken from the browser's locale. An analyst whose
+ * browser is set to German still receives period-decimal files from R, DHIS2
+ * and this app's own export, and one whose browser is in English still opens
+ * semicolon files from French Excel. Trusting the locale turned a latitude of
+ * 9.082 into 9082 in the first case and a birth weight of 3,250 kg into 3250
+ * in the second, with nothing on screen to say so.
+ *
+ * What a mark means is decided from the text instead:
+ *
+ *   1.234,56   1,234.56   both marks: the last one is the decimal mark
+ *   1.234.567             a repeated mark groups thousands
+ *   12,5   0,125   1234,567   a group that is not exactly three digits, a
+ *                         leading zero, or more than three leading digits
+ *                         cannot be thousands, so the mark is a decimal mark
+ *   1 234,5               a space groups thousands
+ *
+ * Only one shape stays open: one to three digits, one mark, exactly three
+ * digits ("9.082", "3,250"). A column usually settles it through its other
+ * values. Where nothing does, the value is read as a decimal and the importer
+ * asks the user, since nothing here can tell a latitude from a population.
  */
+export type DecimalMark = '.' | ',';
+
+/** How an open-shaped value ("1.234") is to be read. */
+export type NumberReading = 'decimal' | 'thousands';
+
+/** One value's shape, and what it proves about the marks it uses. */
+export type NumberShape =
+  /** No mark whose meaning is in question. */
+  | { kind: 'plain'; value: number }
+  /** `mark` is proven to be the decimal mark; `groupMark` proven to group. */
+  | { kind: 'decimal'; mark: DecimalMark; groupMark?: DecimalMark; value: number }
+  /** `mark` is proven to group thousands. */
+  | { kind: 'grouped'; mark: DecimalMark; value: number }
+  /** The open shape: `mark` could be either. */
+  | { kind: 'open'; mark: DecimalMark; asDecimal: number; asThousands: number };
+
+const ARABIC_INDIC_ZERO = 0x0660;
+const EXTENDED_ARABIC_INDIC_ZERO = 0x06f0;
+
+/** Fold the characters that mean the same thing as ASCII ones. */
+function normalizeNumberText(raw: string): string {
+  let text = raw.trim().replace(/\u2212/g, '-');
+  // Arabic-Indic digits, and the Arabic marks, which are never ambiguous.
+  if (/[\u0660-\u0669\u06f0-\u06f9\u066b\u066c]/.test(text)) {
+    text = text
+      .replace(/[\u0660-\u0669]/g, c => String(c.charCodeAt(0) - ARABIC_INDIC_ZERO))
+      .replace(/[\u06f0-\u06f9]/g, c => String(c.charCodeAt(0) - EXTENDED_ARABIC_INDIC_ZERO))
+      .replace(/\u066c/g, '')
+      .replace(/\u066b/g, '.');
+  }
+  return text;
+}
+
+/**
+ * Work out what a piece of text is as a number. Returns null when it is not
+ * one. Hexadecimal, and an exponent written without a sign or a decimal point
+ * ("1E5", "12E10"), are not numbers here: in a line list those are sample and
+ * lab codes far more often than quantities.
+ */
+export function classifyNumber(raw: string): NumberShape | null {
+  let text = normalizeNumberText(raw);
+  if (!text) return null;
+
+  // Space, no-break space, narrow no-break space or apostrophe between groups
+  // of three can only be grouping, which makes any other mark the decimal one.
+  let spaceGrouped = false;
+  if (/^[+-]?\d{1,3}(?:[ \u00a0\u202f']\d{3})+(?:[.,]\d+)?$/.test(text)) {
+    text = text.replace(/[ \u00a0\u202f']/g, '');
+    spaceGrouped = true;
+  }
+
+  if (/^[+-]?\d+\.?$/.test(text)) return { kind: 'plain', value: Number(text) };
+  if (/^[+-]?\d+(?:\.\d+)?[eE][+-]\d{1,3}$/.test(text) || /^[+-]?\d+\.\d+[eE]\d{1,3}$/.test(text)) {
+    const value = Number(text);
+    return isFinite(value) ? { kind: 'plain', value } : null;
+  }
+  if (!/^[+-]?[\d.,]+$/.test(text)) return null;
+
+  const dots = text.split('.').length - 1;
+  const commas = text.split(',').length - 1;
+
+  if (dots > 0 && commas > 0) {
+    const mark: DecimalMark = text.lastIndexOf('.') > text.lastIndexOf(',') ? '.' : ',';
+    const groupMark: DecimalMark = mark === '.' ? ',' : '.';
+    if ((mark === '.' ? dots : commas) !== 1 || spaceGrouped) return null;
+    const [whole, fraction] = text.split(mark);
+    const grouping = new RegExp(`^[+-]?\\d{1,3}(?:\\${groupMark}\\d{3})+$`);
+    if (!grouping.test(whole) || !/^\d+$/.test(fraction)) return null;
+    return { kind: 'decimal', mark, groupMark, value: Number(`${whole.split(groupMark).join('')}.${fraction}`) };
+  }
+
+  const mark: DecimalMark = dots > 0 ? '.' : ',';
+  const count = dots + commas;
+
+  if (count > 1) {
+    if (spaceGrouped) return null;
+    const grouping = new RegExp(`^[+-]?\\d{1,3}(?:\\${mark}\\d{3})+$`);
+    if (!grouping.test(text)) return null;
+    return { kind: 'grouped', mark, value: Number(text.split(mark).join('')) };
+  }
+
+  const [whole, fraction] = text.split(mark);
+  if (!/^[+-]?\d*$/.test(whole) || !/^\d+$/.test(fraction)) return null;
+  const digits = whole.replace(/[+-]/, '');
+  const asDecimal = Number(`${whole === '' || whole === '+' || whole === '-' ? `${whole}0` : whole}.${fraction}`);
+  if (isNaN(asDecimal)) return null;
+  const mustBeDecimal =
+    spaceGrouped || fraction.length !== 3 || digits === '' || digits.startsWith('0') || digits.length > 3;
+  if (mustBeDecimal) return { kind: 'decimal', mark, value: asDecimal };
+  return { kind: 'open', mark, asDecimal, asThousands: Number(`${whole}${fraction}`) };
+}
+
+/** The number a shape stands for, given how to read each mark's open values. */
+export function numberFromShape(
+  shape: NumberShape,
+  readings: Partial<Record<DecimalMark, NumberReading>> = {}
+): number {
+  if (shape.kind !== 'open') return shape.value;
+  return readings[shape.mark] === 'thousands' ? shape.asThousands : shape.asDecimal;
+}
+
+export interface NumberColumnAnalysis {
+  /** False when the values contradict each other about what a mark means. */
+  consistent: boolean;
+  /** How open-shaped values are read for each mark, from the column's evidence. */
+  readings: Partial<Record<DecimalMark, NumberReading>>;
+  /**
+   * Set when open-shaped values exist and nothing in the column, nor the file's
+   * delimiter, says how to read them. The reading in `readings` is then only a
+   * default, and the user should be asked.
+   */
+  openMark: DecimalMark | null;
+  openCount: number;
+  openExamples: string[];
+}
+
+/**
+ * Decide what the marks mean across a column of number text.
+ *
+ * `delimiter` is the field delimiter of the file the column came from, which
+ * is evidence in its own right: a semicolon-delimited file is one written with
+ * decimal commas, and in a comma-delimited file a period is the decimal mark.
+ */
+export function analyzeNumberColumn(values: string[], delimiter?: string): NumberColumnAnalysis {
+  const proven: Record<DecimalMark, { decimal: boolean; thousands: boolean }> = {
+    '.': { decimal: false, thousands: false },
+    ',': { decimal: false, thousands: false },
+  };
+  const open: Record<DecimalMark, string[]> = { '.': [], ',': [] };
+
+  for (const value of values) {
+    const shape = classifyNumber(value);
+    if (!shape || shape.kind === 'plain') continue;
+    if (shape.kind === 'decimal') {
+      proven[shape.mark].decimal = true;
+      if (shape.groupMark) proven[shape.groupMark].thousands = true;
+    } else if (shape.kind === 'grouped') {
+      proven[shape.mark].thousands = true;
+    } else {
+      open[shape.mark].push(value.trim());
+    }
+  }
+
+  const result: NumberColumnAnalysis = {
+    consistent: true, readings: {}, openMark: null, openCount: 0, openExamples: [],
+  };
+
+  const contradictory =
+    (proven['.'].decimal && proven['.'].thousands) ||
+    (proven[','].decimal && proven[','].thousands) ||
+    (proven['.'].thousands && proven[','].thousands);
+  if (contradictory) return { ...result, consistent: false };
+
+  const unresolved: DecimalMark[] = [];
+  for (const mark of ['.', ','] as const) {
+    if (open[mark].length === 0) continue;
+    if (proven[mark].decimal) result.readings[mark] = 'decimal';
+    else if (proven[mark].thousands) result.readings[mark] = 'thousands';
+    else unresolved.push(mark);
+  }
+
+  // "1.234" and "5,678" in one column with nothing else to go on: one of the
+  // marks must be grouping, and there is no telling which.
+  if (unresolved.length > 1) return { ...result, consistent: false };
+
+  if (unresolved.length === 1) {
+    const mark = unresolved[0];
+    const other: DecimalMark = mark === '.' ? ',' : '.';
+    const delimiterSaysDecimal =
+      (delimiter === ';' && mark === ',') || (delimiter === ',' && mark === '.');
+    if (proven[other].decimal) {
+      // The other mark is this column's decimal mark, so this one most likely
+      // groups. Still asked about, since a column typed by several people can
+      // use both marks as decimals.
+      result.readings[mark] = 'thousands';
+    } else {
+      result.readings[mark] = 'decimal';
+      if (delimiterSaysDecimal) return result;
+    }
+    result.openMark = mark;
+    result.openCount = open[mark].length;
+    result.openExamples = [...new Set(open[mark])].slice(0, 3);
+  }
+
+  return result;
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Parse one number written as text.
+ *
+ * The meaning of each mark is taken from the text itself (see above). The
+ * locale's own separators are honoured for the Arabic marks; for "." and ","
+ * an open-shaped value such as "1.234" is read as a decimal under every
+ * locale, so a value exported by this app reads back unchanged whatever the
+ * display setting is.
+ *
+ * @returns Parsed number or NaN if invalid
+ */
 export function parseLocaleNumber(value: string, config: LocaleConfig): number {
   if (!value || typeof value !== 'string') {
     return NaN;
   }
 
-  // Remove whitespace
-  let cleaned = value.trim();
-
-  const thousands = config.thousandsSeparator;
-  const decimal = config.decimalSeparator;
-
-  // If the thousands separator appears in valid grouping position (digit
-  // groups of exactly 3, e.g. "1.234.567,89"), strip it and treat the locale
-  // decimal separator as the decimal mark.
-  if (thousands) {
-    const grouped = new RegExp(
-      `^-?\\d{1,3}(${escapeRegExp(thousands)}\\d{3})+(${escapeRegExp(decimal)}\\d+)?$`
-    );
-    if (grouped.test(cleaned)) {
-      cleaned = cleaned.replace(new RegExp(escapeRegExp(thousands), 'g'), '');
-      if (decimal !== '.') {
-        cleaned = cleaned.replace(new RegExp(escapeRegExp(decimal), 'g'), '.');
-      }
-      return parseFloat(cleaned);
-    }
+  let text = value;
+  // A locale whose separators are not "." or "," (Arabic) writes them
+  // unambiguously, so they can simply be mapped.
+  if (config.thousandsSeparator && !'., '.includes(config.thousandsSeparator)) {
+    text = text.replace(new RegExp(escapeRegExp(config.thousandsSeparator), 'g'), '');
+  }
+  if (config.decimalSeparator && !'.,'.includes(config.decimalSeparator)) {
+    text = text.replace(new RegExp(escapeRegExp(config.decimalSeparator), 'g'), '.');
   }
 
-  // Otherwise treat the thousands separator as a decimal mark. This keeps
-  // period-decimal values (e.g. "1.5", as written by exportToCSV) intact
-  // under comma-decimal locales instead of mangling them ("1.5" -> 15).
-  if (thousands && thousands !== decimal) {
-    cleaned = cleaned.replace(new RegExp(escapeRegExp(thousands), 'g'), '.');
-  }
-  if (decimal !== '.') {
-    cleaned = cleaned.replace(new RegExp(escapeRegExp(decimal), 'g'), '.');
-  }
-
-  // parseFloat accepts numeric prefixes ("2026-07-01" -> 2026), which would
-  // mistype ISO date columns as numbers. Require the whole string to be a
-  // valid number instead.
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(cleaned)) {
-    return NaN;
-  }
-
-  return parseFloat(cleaned);
+  const shape = classifyNumber(text);
+  return shape ? numberFromShape(shape) : NaN;
 }
 
 /**
@@ -192,13 +379,14 @@ export function getNumberInputPattern(config: LocaleConfig): string {
 export function formatSigFigs(n: number, sigFigs: number = 3): string {
   if (!isFinite(n)) return '-';
   if (n === 0) return '0';
-  const magnitude = Math.floor(Math.log10(Math.abs(n)));
+  // Round first, then count decimals from the rounded value: 99.96 rounds up
+  // into the next power of ten, and sizing the decimals from the unrounded
+  // number printed it as "100.0", one figure more than asked for.
+  const rounded = Number(n.toPrecision(sigFigs));
+  const magnitude = Math.floor(Math.log10(Math.abs(rounded)));
   const precision = sigFigs - 1 - magnitude;
-  if (precision < 0) {
-    const factor = Math.pow(10, -precision);
-    return String(Math.round(n / factor) * factor);
-  }
-  return n.toFixed(Math.max(0, precision));
+  if (precision < 0) return String(rounded);
+  return rounded.toFixed(precision);
 }
 
 /**

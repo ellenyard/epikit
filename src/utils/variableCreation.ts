@@ -1,6 +1,7 @@
 import type { Dataset, DataColumn, CaseRecord, VariableConfig, CategoryRule } from '../types/analysis';
 import type { LocaleConfig } from '../contexts/LocaleContext';
-import { parseFlexibleNumber } from './localeNumbers';
+import { classifyNumber, numberFromShape, parseFlexibleNumber } from './localeNumbers';
+import { parseStoredDate, dayNumber } from './dateValue';
 
 /**
  * Converts a label to a valid variable name for analysis variables.
@@ -19,32 +20,31 @@ export function toVariableName(label: string): string {
     || 'variable';
 }
 
+/** A cell as a number, or NaN. The whole text must be a number: "6 months" is not 6. */
+function toNumber(value: unknown, localeConfig?: LocaleConfig): number {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return NaN;
+  if (localeConfig) return parseFlexibleNumber(value, localeConfig);
+  const shape = classifyNumber(value);
+  return shape ? numberFromShape(shape) : NaN;
+}
+
 /**
- * Categorizes a numeric value based on category rules
+ * The category a number falls in, or null when no range takes it.
+ *
+ * Ranges include both ends. Groups are normally written in whole units,
+ * "0-4" then "5-17", which leaves the values between 4 and 5 belonging to
+ * neither: an age of 4.5 years or a temperature of 37.45 fell through to
+ * "Other". By the usual reading of such labels a child of four and a half is
+ * in the 0-4 group, so a value in the gap between two adjacent ranges goes to
+ * the lower one. Only a gap of one unit or less is closed this way; a wider
+ * gap is a range the user chose to leave out.
  */
-function categorizeNumericValue(
-  value: unknown,
-  categories: CategoryRule[],
-  localeConfig?: LocaleConfig
-): string {
-  if (value === null || value === undefined || value === '') {
-    return '';
-  }
-
-  let numValue: number;
-  if (typeof value === 'number') {
-    numValue = value;
-  } else if (localeConfig) {
-    numValue = parseFlexibleNumber(value as string | number | undefined | null, localeConfig);
-  } else {
-    numValue = parseFloat(String(value));
-  }
-
-  if (isNaN(numValue)) {
-    return '';
-  }
-
+function rangeCategory(numValue: number, categories: CategoryRule[]): string | null {
   for (const category of categories) {
+    const hasRange = (category.min !== undefined && category.min !== null) ||
+      (category.max !== undefined && category.max !== null);
+    if (!hasRange) continue;
     const min = category.min ?? -Infinity;
     const max = category.max ?? Infinity;
 
@@ -53,26 +53,47 @@ function categorizeNumericValue(
     }
   }
 
-  return 'Other';
+  let below: CategoryRule | null = null;
+  let nextMin = Infinity;
+  for (const category of categories) {
+    const { min, max } = category;
+    if (max !== undefined && max !== null && max < numValue && (!below || max > below.max!)) below = category;
+    if (min !== undefined && min !== null && min > numValue && min < nextMin) nextMin = min;
+  }
+  if (below && nextMin - below.max! <= 1) return below.label;
+
+  return null;
 }
 
 /**
- * Categorizes a text value based on category rules
+ * The category one value belongs to.
+ *
+ * A category can list the values it takes, give a numeric range, or both.
+ * Listed values are matched first, so "<1" can be put in the youngest age
+ * group alongside the range that takes the numbers. Missing stays missing;
+ * anything no category takes is "Other", so it shows up in a table instead of
+ * vanishing.
  */
-function categorizeTextValue(value: unknown, categories: CategoryRule[]): string {
+function categorizeValue(
+  value: unknown,
+  categories: CategoryRule[],
+  localeConfig?: LocaleConfig
+): string {
   if (value === null || value === undefined || value === '') {
     return '';
   }
-
   const strValue = String(value).toLowerCase().trim();
+  if (strValue === '') return '';
 
   for (const category of categories) {
-    if (category.values) {
-      const matchValues = category.values.map(v => v.toLowerCase().trim());
-      if (matchValues.includes(strValue)) {
-        return category.label;
-      }
+    if (category.values && category.values.some(v => v.toLowerCase().trim() === strValue)) {
+      return category.label;
     }
+  }
+
+  const numValue = toNumber(value, localeConfig);
+  if (!isNaN(numValue)) {
+    return rangeCategory(numValue, categories) ?? 'Other';
   }
 
   return 'Other';
@@ -88,14 +109,17 @@ export function categorizeVariable(
   sourceColumnType: DataColumn['type'],
   localeConfig?: LocaleConfig
 ): unknown[] {
+  // A numeric column holds numbers or blanks; text that is not a number there
+  // is unusable and stays missing, as it always has.
+  const numericSource = sourceColumnType === 'number';
   return records.map(record => {
     const value = record[sourceColumn];
-
-    if (sourceColumnType === 'number') {
-      return categorizeNumericValue(value, categories, localeConfig);
-    } else {
-      return categorizeTextValue(value, categories);
+    if (numericSource && typeof value === 'string' && value.trim() !== '' &&
+        isNaN(toNumber(value, localeConfig)) &&
+        !categories.some(c => c.values?.some(v => v.toLowerCase().trim() === value.toLowerCase().trim()))) {
+      return '';
     }
+    return categorizeValue(value, categories, localeConfig);
   });
 }
 
@@ -116,16 +140,56 @@ export function createBlankVariable(records: CaseRecord[]): unknown[] {
   return records.map(() => '');
 }
 
-function evaluateArithmeticExpression(expression: string): number | null {
+/**
+ * A value inside a formula. `dates` counts how many dates it is made of: 1 for
+ * a date, 0 for a plain number, and 0 again for the difference of two dates,
+ * which is a number of days.
+ */
+interface Operand {
+  value: number;
+  dates: number;
+}
+
+/** Thrown to stop evaluation when an operand is missing. */
+const MISSING = Symbol('missing operand');
+
+/**
+ * Turn a cell into a formula operand.
+ *
+ * A date becomes a day count, so that subtracting two dates gives the days
+ * between them. Dates used to be pasted into the expression as text, where
+ * "2025-03-10 - 2025-03-01" is the arithmetic 2025 - 3 - 10 - 2025 - 3 - 1,
+ * and a reporting delay of nine days came out as -17.
+ */
+function toOperand(value: unknown): Operand | null | typeof MISSING {
+  if (value === null || value === undefined || value === '') return MISSING;
+  if (typeof value === 'number') return isFinite(value) ? { value, dates: 0 } : null;
+  if (typeof value !== 'string') return null;
+  if (value.trim() === '') return MISSING;
+
+  const date = parseStoredDate(value);
+  if (date) {
+    const fraction = (date.hour * 3600 + date.minute * 60 + date.second) / 86400;
+    return { value: dayNumber(date) + fraction, dates: 1 };
+  }
+  const shape = classifyNumber(value);
+  return shape ? { value: numberFromShape(shape), dates: 0 } : null;
+}
+
+function evaluateArithmeticExpression(
+  expression: string,
+  record: Record<string, unknown>
+): number | null | typeof MISSING {
   let index = 0;
+  let missing = false;
 
   const skipSpaces = () => {
     while (expression[index] === ' ') index++;
   };
 
-  const parseExpression = (): number | null => {
-    let value = parseTerm();
-    if (value === null) return null;
+  const parseExpression = (): Operand | null => {
+    let left = parseTerm();
+    if (left === null) return null;
 
     while (true) {
       skipSpaces();
@@ -134,15 +198,17 @@ function evaluateArithmeticExpression(expression: string): number | null {
       index++;
       const right = parseTerm();
       if (right === null) return null;
-      value = operator === '+' ? value + right : value - right;
+      left = operator === '+'
+        ? { value: left.value + right.value, dates: left.dates + right.dates }
+        : { value: left.value - right.value, dates: left.dates - right.dates };
     }
 
-    return value;
+    return left;
   };
 
-  const parseTerm = (): number | null => {
-    let value = parseFactor();
-    if (value === null) return null;
+  const parseTerm = (): Operand | null => {
+    let left = parseFactor();
+    if (left === null) return null;
 
     while (true) {
       skipSpaces();
@@ -151,13 +217,15 @@ function evaluateArithmeticExpression(expression: string): number | null {
       index++;
       const right = parseFactor();
       if (right === null) return null;
-      value = operator === '*' ? value * right : value / right;
+      // A date can be subtracted from a date; it cannot be multiplied.
+      if (left.dates !== 0 || right.dates !== 0) return null;
+      left = { value: operator === '*' ? left.value * right.value : left.value / right.value, dates: 0 };
     }
 
-    return value;
+    return left;
   };
 
-  const parseFactor = (): number | null => {
+  const parseFactor = (): Operand | null => {
     skipSpaces();
     const char = expression[index];
 
@@ -168,42 +236,60 @@ function evaluateArithmeticExpression(expression: string): number | null {
 
     if (char === '-') {
       index++;
-      const value = parseFactor();
-      return value === null ? null : -value;
+      const operand = parseFactor();
+      return operand === null ? null : { value: -operand.value, dates: -operand.dates };
     }
 
     if (char === '(') {
       index++;
-      const value = parseExpression();
+      const operand = parseExpression();
       skipSpaces();
       if (expression[index] !== ')') return null;
       index++;
-      return value;
+      return operand;
     }
 
-    // A null token means a missing operand, which cannot yield a number.
-    // Returning 0 here silently substituted zero for missing data.
-    if (expression.slice(index, index + 4) === 'null') {
-      return null;
+    if (char === '{') {
+      const end = expression.indexOf('}', index);
+      if (end === -1) return null;
+      const name = expression.slice(index + 1, end);
+      if (!/^[a-zA-Z0-9_]+$/.test(name)) return null;
+      index = end + 1;
+      const operand = toOperand(record[name]);
+      if (operand === MISSING) {
+        // Arithmetic over a missing operand is missing, not zero. A blank
+        // weight is not a weight of nought: treating it as one produced a BMI
+        // of 0 that then entered every mean, median and distribution as a
+        // real observation. Parsing continues so the formula is still checked.
+        missing = true;
+        return { value: 0, dates: 0 };
+      }
+      return operand;
     }
 
     const match = /(?:\d+\.?\d*|\.\d+)/.exec(expression.slice(index));
     if (!match || match.index !== 0) return null;
     index += match[0].length;
-    return Number(match[0]);
+    return { value: Number(match[0]), dates: 0 };
   };
 
-  if (expression.trim() === 'null') return null;
-
-  const value = parseExpression();
+  const result = parseExpression();
   skipSpaces();
-  return index === expression.length ? value : null;
+  if (result === null || index !== expression.length) return null;
+  if (missing) return MISSING;
+  // What is left must be a number. A lone date, or a date plus a number, is
+  // still a date, and this function does not produce those.
+  return result.dates === 0 ? result.value : null;
 }
 
 /**
  * Evaluates a simple formula for a record
  * Currently supports basic arithmetic operations
  * Supports locale-aware decimal separators in formulas
+ *
+ * Variables are written {name}. A date variable can be subtracted from
+ * another to give the number of days between them, e.g.
+ * {report_date} - {onset_date}.
  */
 export function evaluateFormula(
   record: Record<string, unknown>,
@@ -211,24 +297,7 @@ export function evaluateFormula(
   localeConfig?: LocaleConfig
 ): unknown {
   try {
-    // Replace variable references with their values
-    // e.g., "{weight} / ({height} * {height})"
     let expression = formula;
-    const variablePattern = /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g;
-
-    // Arithmetic over a missing operand is missing, not zero. A blank weight is
-    // not a weight of nought: treating it as one produced a BMI of 0 that then
-    // entered every mean, median and distribution as a real observation.
-    let hasMissingOperand = false;
-    expression = expression.replace(variablePattern, (_, varName) => {
-      const value = record[varName];
-      if (value === null || value === undefined || value === '') {
-        hasMissingOperand = true;
-        return 'null';
-      }
-      return String(value);
-    });
-    if (hasMissingOperand) return '';
 
     // Normalize locale decimal separators to periods for JavaScript evaluation
     if (localeConfig && localeConfig.decimalSeparator !== '.') {
@@ -243,14 +312,15 @@ export function evaluateFormula(
       );
     }
 
-    // Basic validation: only allow numbers, operators, parentheses, decimal points, and spaces
-    if (!/^[\d+\-*/(). ]+$/.test(expression.replace(/null/g, ''))) {
+    // Basic validation: outside variable references, only numbers, operators,
+    // parentheses, decimal points, and spaces
+    if (!/^[\d+\-*/(). ]*$/.test(expression.replace(/\{[a-zA-Z0-9_]+\}/g, ''))) {
       return '';
     }
 
-    const result = evaluateArithmeticExpression(expression);
+    const result = evaluateArithmeticExpression(expression, record);
 
-    if (result === null || result === undefined || isNaN(result) || !isFinite(result)) {
+    if (result === MISSING || result === null || isNaN(result) || !isFinite(result)) {
       return '';
     }
 
@@ -387,6 +457,11 @@ export function validateVariableConfig(
     for (const category of config.categories) {
       if (!category.label.trim()) {
         return 'All categories must have a label';
+      }
+      const hasRange = (category.min !== undefined && category.min !== null) ||
+        (category.max !== undefined && category.max !== null);
+      if (!hasRange && !(category.values && category.values.length > 0)) {
+        return `Category "${category.label}" has no range and no values, so nothing can fall into it`;
       }
       if (
         category.min !== undefined && category.min !== null &&
