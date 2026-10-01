@@ -46,7 +46,7 @@ interface AreaMapProps {
   datasets: Dataset[];
 }
 
-type BaseMap = Exclude<BasemapId, 'satellite'> | 'none';
+type BaseMap = BasemapId | 'none';
 type ExportBaseMap = 'current' | 'quiet' | 'none';
 
 interface SampleBoundary {
@@ -171,7 +171,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const [manualBreaks, setManualBreaks] = useState<string>(() => (saved.manualBreaks as string) || '');
   const [baseMap, setBaseMap] = useState<BaseMap>(() => {
     const value = saved.baseMap;
-    return value === 'street' || value === 'quiet' || value === 'topo' || value === 'none' ? value : 'quiet';
+    return value === 'street' || value === 'quiet' || value === 'none' ? value : 'quiet';
   });
   const [basemapFailed, setBasemapFailed] = useState(false);
   const [exportBaseMap, setExportBaseMap] = useState<ExportBaseMap>(() => (saved.exportBaseMap as ExportBaseMap) || 'quiet');
@@ -916,7 +916,6 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               >
                 <option value="quiet">Quiet street map</option>
                 <option value="street">Street map</option>
-                <option value="topo">Topographic</option>
                 <option value="none">No base map</option>
               </select>
             </div>

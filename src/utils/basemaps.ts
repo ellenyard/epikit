@@ -6,7 +6,7 @@
  * the provider's terms require, and the zoom limits are what its servers hold.
  */
 
-export type BasemapId = 'street' | 'quiet' | 'satellite' | 'topo';
+export type BasemapId = 'street' | 'quiet';
 
 export interface Basemap {
   url: string;
@@ -38,24 +38,16 @@ const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 export const basemaps: Record<BasemapId, Basemap> = {
   street: { url: OSM_URL, attribution: OSM_ATTRIBUTION, maxNativeZoom: 19, opacity: 1 },
   quiet: { url: OSM_URL, attribution: OSM_ATTRIBUTION, maxNativeZoom: 19, opacity: 0.35 },
-  satellite: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    attribution:
-      'Powered by <a href="https://www.esri.com">Esri</a> | Imagery &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    maxNativeZoom: 18,
-    opacity: 1,
-  },
-  topo: {
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution:
-      'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
-      '<a href="https://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; ' +
-      '<a href="https://opentopomap.org">OpenTopoMap</a> ' +
-      '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
-    // OpenTopoMap has nothing below zoom 17. Asking for 18 returned a
-    // placeholder without CORS headers, which the browser refused, and the
-    // base map went blank.
-    maxNativeZoom: 17,
-    opacity: 1,
-  },
 };
+
+// Two sources that used to be offered are deliberately absent.
+//
+// Satellite imagery came from Esri's World Imagery without an account, which
+// Esri's terms do not allow. It is worth restoring for field work where street
+// maps are sparse, but only with an ArcGIS Location Platform API key
+// restricted to this site.
+//
+// The topographic layer came from OpenTopoMap, a volunteer-run server with no
+// availability guarantee that asks not to be loaded heavily.
+//
+// A saved setting naming either one falls back to the default map.

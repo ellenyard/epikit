@@ -555,8 +555,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
       if (isObjectRecord(recipe.customCategoryColors)) setCustomCategoryColors(recipe.customCategoryColors as Record<string, string>);
       if (Array.isArray(recipe.categoryOrder)) setCategoryOrder(recipe.categoryOrder.filter(value => typeof value === 'string'));
       if (typeof recipe.markerSize === 'number') setMarkerSize(recipe.markerSize);
-      if (recipe.mapStyle === 'street' || recipe.mapStyle === 'quiet' || recipe.mapStyle === 'satellite' || recipe.mapStyle === 'topo' || recipe.mapStyle === 'none') {
-        setMapStyle(recipe.mapStyle);
+      if (recipe.mapStyle === 'none' || (typeof recipe.mapStyle === 'string' && recipe.mapStyle in basemaps)) {
+        setMapStyle(recipe.mapStyle as MapStyle);
         setBasemapFailed(false);
       }
       if (typeof recipe.obfuscateLocations === 'boolean') setObfuscateLocations(recipe.obfuscateLocations);
@@ -1222,12 +1222,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
               >
                 <option value="quiet">Quiet publication map</option>
                 <option value="street">Street</option>
-                <option value="satellite">Satellite</option>
-                <option value="topo">Topographic</option>
                 <option value="none">No base map</option>
               </select>
               <p className="text-xs text-gray-500 mt-1">
-                Quiet and no-base options work best for slides and reports. Street works well for transport routes; satellite helps environmental exposures.
+                Quiet and no-base options work best for slides and reports. Street works well for transport routes. With no base map, nothing is requested from a map service.
               </p>
             </div>
 
