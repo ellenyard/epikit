@@ -70,7 +70,10 @@ export function composeSketchExport({
     : `translate(0, ${SKETCH_CANVAS_HEIGHT + SKETCH_EXPORT_GAP})`;
 
   const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    // The font is set on the root because the title and labels carry none of
+    // their own: on screen they inherit the page's, and in a file opened
+    // anywhere else they fell back to a serif face beside a sans-serif legend.
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="${SKETCH_EXPORT_FONT_STACK}">`,
     // Without this the file is transparent, which prints black in some viewers.
     `<rect width="${width}" height="${height}" fill="#FFFFFF"/>`,
     `<g>${sketchInner}</g>`,

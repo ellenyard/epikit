@@ -137,6 +137,22 @@ try {
       'explicit width and height let editors that ignore viewBox open it at the right size');
   }
 
+  // 9. The file names its font. The title and labels have no font of their
+  //    own: on screen they take the page's, and in a file opened elsewhere
+  //    they came out in a serif face next to a sans-serif legend. The same
+  //    file is what the PNG export is drawn from.
+  {
+    const r = composeSketchExport({
+      sketchInner: '<text x="600" y="38">Sketch of outbreak village</text>',
+      legendInner: LEGEND, legendPosition: 'side', legendItemCount: 2,
+    });
+    const rootTag = r.svg.slice(0, r.svg.indexOf('>') + 1);
+    const family = rootTag.match(/font-family="([^"]+)"/);
+    assert.ok(family, 'the root <svg> must set a font-family for text that has none');
+    assert.ok(/sans-serif\s*$/.test(family[1]), 'and it must end in a generic sans-serif fallback');
+    assert.ok(!family[1].includes('"') && !family[1].includes('<'), 'the font list must be safe inside an attribute');
+  }
+
   console.log('sketch export regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

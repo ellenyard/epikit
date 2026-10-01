@@ -45,8 +45,10 @@ export const SpotMapTutorial: React.FC = () => {
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">1.</span>
                 <div>
                   <strong>Select Latitude and Longitude Variables:</strong> Choose the variables containing geographic
-                  coordinates. Coordinates should be in decimal degrees format (e.g., 41.6639, -83.5552). Ensure
-                  latitude is between -90 and 90, and longitude is between -180 and 180.
+                  coordinates, one variable for each. Decimal degrees (41.6639 and -83.5552) work best; degrees,
+                  minutes and seconds (41°39'50"N and 83°33'19"W) are also read. Latitude must be between -90 and
+                  90, and longitude between -180 and 180. Records whose coordinates cannot be read are listed under
+                  Coordinate QA and left off the map.
                 </div>
               </li>
               <li className="flex items-start">
@@ -107,8 +109,10 @@ export const SpotMapTutorial: React.FC = () => {
                     to protect privacy.
                   </li>
                   <li>
-                    <strong>• Apply coordinate jittering:</strong> For sensitive data, add small random offsets to
-                    coordinates (e.g., ±0.001°) to obscure exact locations while preserving patterns.
+                    <strong>• Keep location obfuscation on:</strong> It is on by default and moves every point by
+                    up to the distance you choose (200 m to 2 km), and never by less than a quarter of it. The CSV
+                    and GeoJSON exports carry the moved positions, and leave out other variables that would give
+                    the location or the person away, such as a second set of coordinates, an address or a name.
                   </li>
                   <li>
                     <strong>• Use area-level aggregation:</strong> Consider mapping by ZIP code, census tract, or

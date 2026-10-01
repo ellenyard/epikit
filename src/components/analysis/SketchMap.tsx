@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactNode } from 'react';
-import html2canvas from 'html2canvas';
 import { ExportIcons, ResultsActions, TabHeader } from '../shared';
 import type {
   FillPattern,
@@ -29,6 +28,7 @@ import {
   composeSketchExport,
   legendExportHeight,
 } from '../../utils/sketchExport';
+import { downloadBlob, downloadText, svgToPngBlob } from '../../utils/mapExport';
 
 interface MarkerDefinition {
   id: string;
@@ -235,6 +235,9 @@ export function SketchMap({ datasetId }: SketchMapProps) {
   const [lineStyle, setLineStyle] = useState<LineStyle>('solid');
   const [background, setBackground] = useState<SketchBackground>(restored?.background ?? 'grid');
   const [labelText, setLabelText] = useState('Label');
+  // Legend entry for the next line or area drawn. Separate from the label
+  // text, whose default of "Label" would otherwise name every line.
+  const [legendLabelText, setLegendLabelText] = useState('');
   const [markerId, setMarkerId] = useState('case');
   const [showTitle, setShowTitle] = useState(restored?.showTitle ?? true);
   const [title, setTitle] = useState(restored?.title ?? 'Sketch map');
@@ -248,9 +251,13 @@ export function SketchMap({ datasetId }: SketchMapProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isDrawing, setIsDrawing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dragState, setDragState] = useState<{ id: string; lastPoint: Point } | null>(null);
+  const [dragState, setDragState] = useState<{ id: string; lastPoint: Point; moved: boolean } | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState('');
+  const [exportError, setExportError] = useState('');
+  // True when the last attempt to save the sketch in the browser failed.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const lastEditRef = useRef<{ id: string; fields: string; time: number } | null>(null);
 
   /**
    * Snapshot the current elements before a change so it can be undone. Called
@@ -265,26 +272,37 @@ export function SketchMap({ datasetId }: SketchMapProps) {
   // Save shortly after drawing stops. Dragging an element updates state on every
   // pointer move, so writing synchronously would hit storage dozens of times a
   // second.
+  const latestState = useRef({ elements, background, showTitle, title, subtitle, showLegend, legendPosition });
+  const savePending = useRef(false);
+  useEffect(() => {
+    latestState.current = { elements, background, showTitle, title, subtitle, showLegend, legendPosition };
+  });
+
   useEffect(() => {
     const storage = typeof localStorage === 'undefined' ? undefined : localStorage;
     if (!storage) return;
+    savePending.current = true;
     const timer = setTimeout(() => {
-      writeSketchState(storage, datasetId, {
-        elements,
-        background,
-        showTitle,
-        title,
-        subtitle,
-        showLegend,
-        legendPosition,
-      });
+      savePending.current = false;
+      // The save can fail when the browser's storage is full, which large
+      // datasets make likely. It used to fail silently, and the drawing was
+      // then lost on the next tab switch with nothing to say why.
+      setSaveFailed(!writeSketchState(storage, datasetId, latestState.current));
     }, 400);
     return () => clearTimeout(timer);
   }, [datasetId, elements, background, showTitle, title, subtitle, showLegend, legendPosition]);
 
+  // Leaving the tab within the delay used to drop the last change, because
+  // unmounting cancelled the timer. Whatever is still waiting is written now.
+  useEffect(() => () => {
+    if (!savePending.current || typeof localStorage === 'undefined') return;
+    writeSketchState(localStorage, datasetId, latestState.current);
+  }, [datasetId]);
+
   const selectedElement = selectedId ? elements.find(element => element.id === selectedId) ?? null : null;
 
   const legendItems = useMemo(() => buildLegendItems(elements), [elements]);
+  const legendLabelCount = useMemo(() => buildLegendItems(elements, Infinity).length, [elements]);
 
   const getPointFromRect = (rect: DOMRect | undefined, clientX: number, clientY: number): Point => {
     if (!rect || rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
@@ -341,6 +359,8 @@ export function SketchMap({ datasetId }: SketchMapProps) {
       lineStyle,
       filled: tool === 'area' || tool === 'irregularArea',
       opacity: 1,
+      // The "Legend label" box was shown for lines and areas but never used.
+      ...(legendLabelText.trim() ? { legendLabel: legendLabelText.trim() } : {}),
     };
 
     if (tool === 'marker' || tool === 'label') {
@@ -367,10 +387,14 @@ export function SketchMap({ datasetId }: SketchMapProps) {
     if (dragState) {
       const dx = point.x - dragState.lastPoint.x;
       const dy = point.y - dragState.lastPoint.y;
+      if (dx === 0 && dy === 0) return;
+      // Remembered on the first movement rather than on pointer down, so a
+      // click that only selects does not leave an undo step that changes nothing.
+      if (!dragState.moved) rememberForUndo();
       setElements(previous => previous.map(element => (
         element.id === dragState.id ? moveElement(element, dx, dy) : element
       )));
-      setDragState({ id: dragState.id, lastPoint: point });
+      setDragState({ id: dragState.id, lastPoint: point, moved: true });
       return;
     }
 
@@ -413,8 +437,7 @@ export function SketchMap({ datasetId }: SketchMapProps) {
     event.stopPropagation();
     const point = getElementPoint(event);
     setSelectedId(id);
-    rememberForUndo();
-    setDragState({ id, lastPoint: point });
+    setDragState({ id, lastPoint: point, moved: false });
     // Capture on the SVG so drags keep working when the pointer leaves the canvas
     event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);
   };
@@ -440,7 +463,16 @@ export function SketchMap({ datasetId }: SketchMapProps) {
 
   const updateSelected = (updates: Partial<SketchElement>) => {
     if (!selectedId) return;
-    rememberForUndo();
+    // Dragging a slider or the colour picker, or typing a label, fires a
+    // change for every step. One undo step per run of edits to the same
+    // property, not one per keystroke: fifty of those emptied the history.
+    const fields = Object.keys(updates).sort().join(',');
+    const now = Date.now();
+    const last = lastEditRef.current;
+    if (!last || last.id !== selectedId || last.fields !== fields || now - last.time > 1000) {
+      rememberForUndo();
+    }
+    lastEditRef.current = { id: selectedId, fields, time: now };
     setElements(previous => previous.map(element => (
       element.id === selectedId ? { ...element, ...updates } : element
     )));
@@ -501,66 +533,64 @@ export function SketchMap({ datasetId }: SketchMapProps) {
     setElements(previous => reorderElement(previous, selectedId, mode));
   };
 
+  // The file both exports are made from: the drawing with its legend beside
+  // or below it. Waits two frames so the selection box is gone first.
+  const buildExportSvg = async () => {
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    if (!svgRef.current) throw new Error('The sketch is not on screen.');
+    const serializer = new XMLSerializer();
+    const innerMarkup = (element: SVGSVGElement) =>
+      Array.from(element.childNodes)
+        .map(node => serializer.serializeToString(node))
+        .join('');
+    const legendElement =
+      showLegend && legendItems.length > 0 ? legendSvgRef.current : null;
+    return composeSketchExport({
+      sketchInner: innerMarkup(svgRef.current),
+      legendInner: legendElement ? innerMarkup(legendElement) : null,
+      legendPosition,
+      legendItemCount: legendItems.length,
+    });
+  };
+
+  const reportExport = (message: string) => {
+    setExportError('');
+    setExportStatus(message);
+    window.setTimeout(() => setExportStatus(''), 3000);
+  };
+
+  // The PNG is the SVG export drawn to a canvas. It used to be a capture of
+  // the page with html2canvas, which cannot read the colours the page is
+  // styled with and threw; nothing caught it, so the button did nothing.
   const exportPNG = async () => {
-    const exportElement = exportRef.current;
-    if (!exportElement) return;
     setIsExporting(true);
     try {
-      // Wait for the selection box to be removed before capturing
-      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      const canvas = await html2canvas(exportElement, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        logging: false,
-      });
-      const link = document.createElement('a');
-      link.download = `sketch-map-${new Date().toISOString().split('T')[0]}.png`;
-      link.href = canvas.toDataURL('image/png');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setExportStatus('PNG downloaded.');
-      window.setTimeout(() => setExportStatus(''), 3000);
+      const { svg, width, height } = await buildExportSvg();
+      const blob = await svgToPngBlob(svg, width, height);
+      downloadBlob(blob, `sketch-map-${new Date().toISOString().split('T')[0]}.png`);
+      reportExport('PNG downloaded.');
+    } catch (error) {
+      console.error('Failed to export sketch as PNG:', error);
+      setExportStatus('');
+      setExportError('PNG export did not finish. Try Export SVG instead, which opens in any browser.');
     } finally {
       setIsExporting(false);
     }
   };
 
-  const exportSVG = () => {
-    if (!svgRef.current) return;
+  const exportSVG = async () => {
     setIsExporting(true);
-    // Wait for the selection box to be removed before serializing
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      try {
-        if (!svgRef.current) return;
-        const serializer = new XMLSerializer();
-        const innerMarkup = (element: SVGSVGElement) =>
-          Array.from(element.childNodes)
-            .map(node => serializer.serializeToString(node))
-            .join('');
-        const legendElement =
-          showLegend && legendItems.length > 0 ? legendSvgRef.current : null;
-        const { svg } = composeSketchExport({
-          sketchInner: innerMarkup(svgRef.current),
-          legendInner: legendElement ? innerMarkup(legendElement) : null,
-          legendPosition,
-          legendItemCount: legendItems.length,
-        });
-        const blob = new Blob([svg], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = `sketch-map-${new Date().toISOString().split('T')[0]}.svg`;
-        link.href = url;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        setExportStatus('SVG downloaded.');
-        window.setTimeout(() => setExportStatus(''), 3000);
-      } finally {
-        setIsExporting(false);
-      }
-    }));
+    try {
+      const { svg } = await buildExportSvg();
+      downloadText(svg, `sketch-map-${new Date().toISOString().split('T')[0]}.svg`, 'image/svg+xml');
+      reportExport('SVG downloaded.');
+    } catch (error) {
+      console.error('Failed to export sketch as SVG:', error);
+      setExportStatus('');
+      setExportError('SVG export did not finish.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const loadTemplate = (templateId: string) => {
@@ -751,17 +781,29 @@ export function SketchMap({ datasetId }: SketchMapProps) {
             </section>
           )}
 
-          {(tool === 'label' || tool === 'area' || tool === 'irregularArea' || tool === 'line' || tool === 'curve' || tool === 'wavy') && (
+          {tool === 'label' && (
             <section className="space-y-2 border-t border-gray-200 pt-4">
-              <label className="block text-sm font-medium text-gray-700">
-                {tool === 'label' ? 'Label text' : 'Legend label'}
-              </label>
+              <label className="block text-sm font-medium text-gray-700">Label text</label>
               <input
                 type="text"
                 value={labelText}
                 onChange={(event) => setLabelText(event.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
               />
+            </section>
+          )}
+
+          {(lineTools.has(tool) || areaTools.has(tool)) && (
+            <section className="space-y-2 border-t border-gray-200 pt-4">
+              <label className="block text-sm font-medium text-gray-700">Legend label</label>
+              <input
+                type="text"
+                value={legendLabelText}
+                onChange={(event) => setLegendLabelText(event.target.value)}
+                placeholder="e.g., Footpath (leave empty for no legend entry)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white"
+              />
+              <p className="text-xs text-gray-500">Used for the next {lineTools.has(tool) ? 'line' : 'area'} you draw.</p>
             </section>
           )}
 
@@ -987,6 +1029,16 @@ export function SketchMap({ datasetId }: SketchMapProps) {
               {exportStatus}
             </div>
           )}
+          {exportError && (
+            <div className="bg-red-50 border border-red-200 text-red-800 rounded-md px-3 py-2 text-xs" role="alert">
+              {exportError}
+            </div>
+          )}
+          {legendItems.length < legendLabelCount && (
+            <p className="text-xs text-amber-700">
+              The legend shows the first {legendItems.length} of {legendLabelCount} labels. Reuse a label for similar features to shorten it.
+            </p>
+          )}
         </div>
         </>
         )}
@@ -999,6 +1051,11 @@ export function SketchMap({ datasetId }: SketchMapProps) {
         >
           {sidebarOpen ? 'Hide panel' : 'Show panel'}
         </button>
+        {saveFailed && elements.length > 0 && (
+          <div className="mx-auto mb-3 max-w-3xl bg-amber-50 border border-amber-300 text-amber-900 rounded-md px-3 py-2 text-xs" role="alert">
+            This sketch could not be saved in your browser, most likely because its storage is full. It will be lost if you leave this tab or reload. Export it as SVG now, or free space by removing a dataset you no longer need.
+          </div>
+        )}
         <div ref={exportRef} className="flex flex-col xl:flex-row gap-4 mx-auto" style={{ maxWidth: legendPosition === 'side' && showLegend && legendItems.length > 0 ? 1560 : 1200 }}>
           <div className="flex-1 bg-white shadow-sm min-w-0">
             <svg
@@ -1545,7 +1602,10 @@ function renderLegendSymbol(element: SketchElement, cx: number, cy: number) {
   return <rect x={cx - 12} y={cy - 9} width="24" height="18" fill={getElementFill(element)} stroke={element.color} strokeWidth="2" />;
 }
 
-function buildLegendItems(elements: SketchElement[]): LegendItem[] {
+// As many rows as fit beside the 800px canvas.
+const MAX_LEGEND_ITEMS = 24;
+
+function buildLegendItems(elements: SketchElement[], limit = MAX_LEGEND_ITEMS): LegendItem[] {
   const seen = new Set<string>();
   const items: LegendItem[] = [];
 
@@ -1558,7 +1618,7 @@ function buildLegendItems(elements: SketchElement[]): LegendItem[] {
     items.push({ key, label, element });
   }
 
-  return items.slice(0, 12);
+  return items.slice(0, limit);
 }
 
 function getElementFill(element: SketchElement) {

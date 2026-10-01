@@ -2,35 +2,51 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { GeoJSON, MapContainer, ScaleControl, TileLayer, useMap } from 'react-leaflet';
 import { geoJSON as createGeoJSONLayer } from 'leaflet';
-import html2canvas from 'html2canvas';
 import type { FeatureCollection } from 'geojson';
 import type { Dataset } from '../../types/analysis';
 import { AdvancedOptions, ExportIcons, HelpPanel, ResultsActions, TabHeader } from '../shared';
 import { exportToCSV } from '../../utils/csvParser';
 import { useLocale } from '../../contexts/LocaleContext';
+import { categoryValue, collectCategoryValues } from '../../utils/recordFilter';
+import { basemaps, MAP_MAX_ZOOM } from '../../utils/basemaps';
+import type { BasemapId } from '../../utils/basemaps';
+import { canvasToPngBlob, captureMapCanvas, downloadBlob, downloadText } from '../../utils/mapExport';
 import {
   buildAreaJoin,
   buildJoinReport,
+  buildLegendClasses,
+  classColor,
   SMALL_COUNT_THRESHOLD,
   suppressSmallCounts,
   classifyValues,
   formatAreaValue,
   getClassIndex,
   getGeoJsonPropertyKeys,
-  isFeatureCollection,
   joinReportColumns,
   normalizeAreaKey,
+  recallBoundaries,
+  rememberBoundaries,
   suggestAreaField,
   suggestBoundaryKey,
+  suggestJoinFields,
+  validateBoundaryGeoJson,
+  WITHHELD_LABEL,
 } from '../../utils/areaMap';
-import type { AreaMetric, ClassificationMethod, GeoJsonFeature, GeoJsonFeatureCollection, JoinedArea } from '../../utils/areaMap';
+import type {
+  AreaMetric,
+  ClassificationMethod,
+  DuplicateDenominatorRule,
+  GeoJsonFeature,
+  GeoJsonFeatureCollection,
+  JoinedArea,
+} from '../../utils/areaMap';
 
 interface AreaMapProps {
   dataset: Dataset;
   datasets: Dataset[];
 }
 
-type BaseMap = 'street' | 'quiet' | 'topo' | 'none';
+type BaseMap = Exclude<BasemapId, 'satellite'> | 'none';
 type ExportBaseMap = 'current' | 'quiet' | 'none';
 
 interface SampleBoundary {
@@ -53,30 +69,11 @@ const sampleBoundaries: SampleBoundary[] = [
   },
 ];
 
-const choroplethColors = [
-  '#EFF6FF',
-  '#BFDBFE',
-  '#93C5FD',
-  '#60A5FA',
-  '#2563EB',
-  '#1E3A8A',
-  '#172554',
-];
-
-const tileUrls: Record<Exclude<BaseMap, 'none'>, { url: string; attribution: string }> = {
-  street: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  },
-  quiet: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  },
-  topo: {
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenTopoMap',
-  },
-};
+// Areas with no value, and areas whose value is withheld, are different
+// statements and are drawn differently: grey for nothing to show, a dashed
+// sand fill for something deliberately not shown.
+const NO_DATA_FILL = '#D1D5DB';
+const WITHHELD_FILL = '#E7D8B1';
 
 function FitGeoJsonBounds({ boundaries }: { boundaries: GeoJsonFeatureCollection | null }) {
   const map = useMap();
@@ -98,6 +95,8 @@ function getAreaKey(feature: GeoJsonFeature | undefined, boundaryKey: string): s
 }
 
 function makeAreaProperties(area: JoinedArea, metric: AreaMetric, rateMultiplier: number) {
+  // One tag for every withheld area. Saying which were withheld for their own
+  // small count and which to protect a neighbour would hand back the answer.
   return {
     ...area.feature.properties,
     linelist_area_key: area.key,
@@ -107,37 +106,12 @@ function makeAreaProperties(area: JoinedArea, metric: AreaMetric, rateMultiplier
     linelist_metric: metric,
     linelist_rate_multiplier: metric === 'rate' ? rateMultiplier : null,
     linelist_mapped_value: area.value,
-    linelist_disclosure: area.suppressed
-      ? `suppressed_under_${SMALL_COUNT_THRESHOLD}`
-      : 'as_observed',
+    linelist_disclosure: area.suppressed ? 'withheld_small_count' : 'as_observed',
   };
 }
 
 function getPublicAssetUrl(path: string): string {
   return `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
-}
-
-function waitForNextPaint(): Promise<void> {
-  return new Promise(resolve => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-}
-
-async function waitForMapImages(element: HTMLElement): Promise<void> {
-  const images = Array.from(element.querySelectorAll('img'));
-  const pendingImages = images.filter(image => !image.complete);
-
-  if (pendingImages.length > 0) {
-    await Promise.race<void>([
-      Promise.all(pendingImages.map(image => new Promise<void>(resolve => {
-        image.addEventListener('load', () => resolve(), { once: true });
-        image.addEventListener('error', () => resolve(), { once: true });
-      }))).then(() => undefined),
-      new Promise(resolve => window.setTimeout(resolve, 2500)),
-    ]);
-  }
-
-  await waitForNextPaint();
 }
 
 export function AreaMap({ dataset, datasets }: AreaMapProps) {
@@ -155,9 +129,12 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     }
   });
 
-  const [boundaries, setBoundaries] = useState<GeoJsonFeatureCollection | null>(null);
-  const [boundaryFileName, setBoundaryFileName] = useState('');
+  // Boundaries survive a switch to another map tab and back; see rememberBoundaries.
+  const [recalled] = useState(() => recallBoundaries(dataset.id));
+  const [boundaries, setBoundaries] = useState<GeoJsonFeatureCollection | null>(recalled?.boundaries ?? null);
+  const [boundaryFileName, setBoundaryFileName] = useState(recalled?.fileName ?? '');
   const [boundaryError, setBoundaryError] = useState('');
+  const [boundaryWarnings, setBoundaryWarnings] = useState<string[]>([]);
 
   // Discard persisted column keys that no longer exist in the relevant dataset
   const validSavedColumn = (value: unknown, columns: Dataset['columns']): string => {
@@ -176,13 +153,27 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const [denominatorKey, setDenominatorKey] = useState<string>(() => validSavedColumn(saved.denominatorKey, initialDenominatorColumns));
   const [denominatorValue, setDenominatorValue] = useState<string>(() => validSavedColumn(saved.denominatorValue, initialDenominatorColumns));
   const [rateMultiplier, setRateMultiplier] = useState<number>(() => (saved.rateMultiplier as number) || 100000);
+  const [duplicateDenominators, setDuplicateDenominators] = useState<DuplicateDenominatorRule>(() =>
+    saved.duplicateDenominators === 'sum' ? 'sum' : 'block'
+  );
+  // The same record filter the spot map has, so a count or a rate can be
+  // limited to cases. Without it every row was counted, non-cases included.
+  const [filterBy, setFilterBy] = useState<string>(() => validSavedColumn(saved.filterBy, dataset.columns));
+  const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
+    const values = saved.selectedFilterValues;
+    return Array.isArray(values) ? new Set(values.filter((value): value is string => typeof value === 'string')) : new Set();
+  });
   // Off by default: hiding small counts mid-investigation would hide real
   // signal. Turned on when a map is being prepared to share.
   const [suppressSmall, setSuppressSmall] = useState<boolean>(() => saved.suppressSmall === true);
   const [classificationMethod, setClassificationMethod] = useState<ClassificationMethod>(() => (saved.classificationMethod as ClassificationMethod) || 'quantile');
   const [classCount, setClassCount] = useState<number>(() => (saved.classCount as number) || 5);
   const [manualBreaks, setManualBreaks] = useState<string>(() => (saved.manualBreaks as string) || '');
-  const [baseMap, setBaseMap] = useState<BaseMap>(() => (saved.baseMap as BaseMap) || 'quiet');
+  const [baseMap, setBaseMap] = useState<BaseMap>(() => {
+    const value = saved.baseMap;
+    return value === 'street' || value === 'quiet' || value === 'topo' || value === 'none' ? value : 'quiet';
+  });
+  const [basemapFailed, setBasemapFailed] = useState(false);
   const [exportBaseMap, setExportBaseMap] = useState<ExportBaseMap>(() => (saved.exportBaseMap as ExportBaseMap) || 'quiet');
   const [mapTitle, setMapTitle] = useState<string>(() => (saved.mapTitle as string) || '');
   const [mapCaption, setMapCaption] = useState<string>(() => (saved.mapCaption as string) || '');
@@ -207,6 +198,9 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
         denominatorKey,
         denominatorValue,
         rateMultiplier,
+        duplicateDenominators,
+        filterBy,
+        selectedFilterValues: Array.from(selectedFilterValues),
         suppressSmall,
         classificationMethod,
         classCount,
@@ -229,6 +223,9 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     denominatorKey,
     denominatorValue,
     rateMultiplier,
+    duplicateDenominators,
+    filterBy,
+    selectedFilterValues,
     suppressSmall,
     classificationMethod,
     classCount,
@@ -242,9 +239,9 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
 
   useEffect(() => {
     if (!boundaryKey && propertyKeys.length > 0) {
-      setBoundaryKey(suggestBoundaryKey(propertyKeys));
+      setBoundaryKey(suggestBoundaryKey(propertyKeys, boundaries));
     }
-  }, [boundaryKey, propertyKeys]);
+  }, [boundaryKey, propertyKeys, boundaries]);
 
   useEffect(() => {
     if (!areaField && dataset.columns.length > 0) {
@@ -266,11 +263,20 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     }
   }, [denominatorDataset, denominatorKey, denominatorNumericColumns, denominatorValue]);
 
+  const filterValues = useMemo(() => (
+    filterBy ? collectCategoryValues(dataset.records, filterBy) : []
+  ), [dataset.records, filterBy]);
+
+  const filteredRecords = useMemo(() => {
+    if (!filterBy || selectedFilterValues.size === 0) return dataset.records;
+    return dataset.records.filter(record => selectedFilterValues.has(categoryValue(record[filterBy])));
+  }, [dataset.records, filterBy, selectedFilterValues]);
+
   const joinResult = useMemo(() => {
     if (!boundaries || !boundaryKey || !areaField) return null;
 
     return buildAreaJoin({
-      records: dataset.records,
+      records: filteredRecords,
       areaField,
       boundaries,
       boundaryKey,
@@ -279,15 +285,17 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       denominatorKey,
       denominatorValue,
       rateMultiplier,
+      duplicateDenominators,
     });
   }, [
     areaField,
     boundaries,
     boundaryKey,
-    dataset.records,
+    filteredRecords,
     denominatorDataset,
     denominatorKey,
     denominatorValue,
+    duplicateDenominators,
     metric,
     rateMultiplier,
   ]);
@@ -331,26 +339,54 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   // remounts whenever counts, denominators, or rates change
   const joinVersion = useMemo(() => (
     displayResult?.areas
-      .map(area => `${area.key}:${area.count}:${area.denominator ?? ''}:${area.rate ?? ''}`)
+      .map(area => `${area.key}:${area.count}:${area.denominator ?? ''}:${area.rate ?? ''}:${area.suppressed ? 'w' : ''}`)
       .join('|') ?? ''
   ), [displayResult]);
   const activeBaseMap: BaseMap = isExporting && exportBaseMap !== 'current' ? exportBaseMap : baseMap;
+
+  // Take a validated set of boundaries and choose the fields to join on.
+  const adoptBoundaries = (
+    accepted: GeoJsonFeatureCollection,
+    fileName: string,
+    warnings: string[],
+    preferred?: { boundaryKey: string; areaField: string }
+  ) => {
+    setBoundaries(accepted);
+    setBoundaryFileName(fileName);
+    setBoundaryError('');
+    setBoundaryWarnings(warnings);
+    rememberBoundaries(dataset.id, { boundaries: accepted, fileName });
+
+    const keys = getGeoJsonPropertyKeys(accepted);
+    if (preferred && keys.includes(preferred.boundaryKey) && dataset.columns.some(col => col.key === preferred.areaField)) {
+      setBoundaryKey(preferred.boundaryKey);
+      setAreaField(preferred.areaField);
+      return;
+    }
+
+    // Prefer the pair of fields whose values actually agree. Failing that,
+    // keep the area field and pick the boundary property that best
+    // distinguishes the polygons.
+    const pair = suggestJoinFields(dataset.columns, dataset.records, accepted);
+    if (pair) {
+      setAreaField(pair.areaField);
+      setBoundaryKey(pair.boundaryKey);
+      return;
+    }
+    setBoundaryKey(suggestBoundaryKey(keys, accepted));
+  };
 
   const handleBoundaryFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
     try {
-      const parsed = JSON.parse(await file.text()) as unknown;
-      if (!isFeatureCollection(parsed)) {
-        setBoundaryError('This file is not a GeoJSON FeatureCollection.');
+      const validation = validateBoundaryGeoJson(JSON.parse(await file.text()) as unknown);
+      if (!validation.boundaries) {
+        setBoundaryError(validation.error);
         return;
       }
-      setBoundaries(parsed);
-      setBoundaryFileName(file.name);
-      setBoundaryError('');
-      const keys = getGeoJsonPropertyKeys(parsed);
-      setBoundaryKey(suggestBoundaryKey(keys));
+      adoptBoundaries(validation.boundaries, file.name, validation.warnings);
     } catch {
       setBoundaryError('The boundary file could not be read. Upload a valid GeoJSON file.');
     } finally {
@@ -363,39 +399,44 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       const response = await fetch(getPublicAssetUrl(sample.url));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const parsed = await response.json() as unknown;
-      if (!isFeatureCollection(parsed)) {
-        setBoundaryError('The sample boundary file is not a GeoJSON FeatureCollection.');
+      const validation = validateBoundaryGeoJson(await response.json() as unknown);
+      if (!validation.boundaries) {
+        setBoundaryError(validation.error);
         return;
       }
-
-      setBoundaries(parsed);
-      setBoundaryFileName(sample.fileName);
-      setBoundaryError('');
-
-      const keys = getGeoJsonPropertyKeys(parsed);
-      setBoundaryKey(keys.includes(sample.boundaryKey) ? sample.boundaryKey : suggestBoundaryKey(keys));
-
-      if (dataset.columns.some(col => col.key === sample.preferredAreaField)) {
-        setAreaField(sample.preferredAreaField);
-      }
+      adoptBoundaries(validation.boundaries, sample.fileName, validation.warnings, {
+        boundaryKey: sample.boundaryKey,
+        areaField: sample.preferredAreaField,
+      });
     } catch (error) {
       console.error('Failed to load sample boundary:', error);
       setBoundaryError('The sample boundary could not be loaded.');
     }
   };
 
+  const classTotal = breaks.length + 1;
+
   const getFillColor = (value: number | null): string => {
     const classIndex = getClassIndex(value, breaks);
-    if (classIndex === null) return '#E5E7EB';
-    return choroplethColors[Math.min(classIndex, choroplethColors.length - 1)];
+    if (classIndex === null) return NO_DATA_FILL;
+    return classColor(classIndex, classTotal);
   };
 
   const styleFeature = (feature: GeoJsonFeature | undefined) => {
     const area = areaByKey.get(getAreaKey(feature, boundaryKey));
+    if (area?.suppressed) {
+      return {
+        fillColor: WITHHELD_FILL,
+        fillOpacity: 0.75,
+        color: '#475569',
+        weight: 1.5,
+        opacity: 0.9,
+        dashArray: '4 3',
+      };
+    }
     return {
       fillColor: getFillColor(area?.value ?? null),
-      fillOpacity: area?.value === null || area === undefined ? 0.45 : 0.78,
+      fillOpacity: area?.value === null || area === undefined ? 0.55 : 0.8,
       color: '#475569',
       weight: 1,
       opacity: 0.9,
@@ -405,16 +446,22 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
   const bindFeaturePopup = (feature: GeoJsonFeature, layer: { bindPopup: (content: string) => void }) => {
     const area = areaByKey.get(getAreaKey(feature, boundaryKey));
     const title = area?.label || String(feature.properties?.[boundaryKey] ?? 'Area');
+    // A withheld count used to be shown here as "Count: 0", which is a
+    // different and false statement.
+    const countLabel = area?.suppressed
+      ? `withheld (fewer than ${SMALL_COUNT_THRESHOLD}, or hidden so that a small count cannot be worked out)`
+      : String(area?.count ?? 0);
     const rateLabel = metric === 'rate'
-      ? `<div><strong>Rate:</strong> ${formatAreaValue(area?.rate ?? null)} per ${rateMultiplier.toLocaleString()}</div>`
+      ? `<div><strong>Rate:</strong> ${area?.suppressed ? 'withheld' : formatAreaValue(area?.rate ?? null)} per ${rateMultiplier.toLocaleString()}</div>`
       : '';
+    const severalRows = area !== undefined && (joinResult?.summary.duplicateDenominatorKeys.includes(area.key) ?? false);
     const denominatorLabel = metric === 'rate'
-      ? `<div><strong>Denominator:</strong> ${area?.denominator?.toLocaleString() ?? 'No match'}</div>`
+      ? `<div><strong>Denominator:</strong> ${area?.denominator?.toLocaleString() ?? (severalRows ? 'several rows for this area, not used' : 'No match')}</div>`
       : '';
     layer.bindPopup(`
       <div>
         <div style="font-weight: 600; margin-bottom: 4px;">${escapeHtml(title)}</div>
-        <div><strong>Count:</strong> ${area?.count ?? 0}</div>
+        <div><strong>Count:</strong> ${countLabel}</div>
         ${denominatorLabel}
         ${rateLabel}
       </div>
@@ -429,24 +476,10 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
     setExportStatus('Preparing area map export...');
     setExportError('');
     try {
-      // Let React swap in the export base map, then wait for its tiles to load
-      await waitForNextPaint();
-      await waitForMapImages(exportElement);
-      const canvas = await html2canvas(exportElement, {
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: '#ffffff',
-        scale: 2,
-        logging: false,
-        imageTimeout: 15000,
-        ignoreElements: element => element.classList.contains('map-export-exclude'),
-      });
-      const link = document.createElement('a');
-      link.download = `area-map-${new Date().toISOString().split('T')[0]}.png`;
-      link.href = canvas.toDataURL('image/png');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // captureMapCanvas lets React swap in the export base map and waits for
+      // its tiles before drawing.
+      const canvas = await captureMapCanvas(exportElement);
+      downloadBlob(await canvasToPngBlob(canvas), `area-map-${new Date().toISOString().split('T')[0]}.png`);
       setExportStatus('PNG downloaded.');
       window.setTimeout(() => setExportStatus(''), 4000);
     } catch (error) {
@@ -460,37 +493,44 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
 
   const exportJoinReport = () => {
     if (!displayResult) return;
-    const csv = exportToCSV(joinReportColumns, buildJoinReport(displayResult), { localeConfig });
-    downloadText(csv, `area_map_join_report_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
+    try {
+      const csv = exportToCSV(joinReportColumns, buildJoinReport(displayResult), { localeConfig });
+      downloadText(csv, `area_map_join_report_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
+    } catch (error) {
+      console.error('Failed to export join report:', error);
+      setExportError('The join report could not be created.');
+    }
   };
 
   const exportJoinedGeoJSON = () => {
     if (!joinedFeatureCollection) return;
-    downloadText(
-      JSON.stringify(joinedFeatureCollection, null, 2),
-      `area_map_joined_${new Date().toISOString().split('T')[0]}.geojson`,
-      'application/geo+json'
-    );
+    try {
+      downloadText(
+        JSON.stringify(joinedFeatureCollection, null, 2),
+        `area_map_joined_${new Date().toISOString().split('T')[0]}.geojson`,
+        'application/geo+json'
+      );
+      setExportStatus('GeoJSON downloaded.');
+      setExportError('');
+      window.setTimeout(() => setExportStatus(''), 4000);
+    } catch (error) {
+      console.error('Failed to export GeoJSON:', error);
+      setExportStatus('');
+      setExportError('The GeoJSON file could not be created.');
+    }
   };
 
-  const legendItems = useMemo(() => {
-    if (mappedValues.length === 0) return [];
-    const min = Math.min(...mappedValues);
-    // Single class: every mapped area shares one value, so show one row
-    if (breaks.length === 0) {
-      return [{ label: formatAreaValue(min), color: choroplethColors[0] }];
-    }
-    const ranges: Array<{ label: string; color: string }> = [];
-    for (let i = 0; i <= breaks.length; i++) {
-      const lower = i === 0 ? min : breaks[i - 1];
-      const upper = breaks[i];
-      const label = upper === undefined
-        ? `> ${formatAreaValue(lower)}`
-        : `${formatAreaValue(lower)} - ${formatAreaValue(upper)}`;
-      ranges.push({ label, color: choroplethColors[Math.min(i, choroplethColors.length - 1)] });
-    }
-    return ranges;
-  }, [breaks, mappedValues]);
+  const legendItems = useMemo(() => (
+    buildLegendClasses(mappedValues, breaks).map(row => ({
+      label: row.label,
+      color: classColor(row.classIndex, breaks.length + 1),
+    }))
+  ), [breaks, mappedValues]);
+
+  const hasWithheldAreas = displayResult?.areas.some(area => area.suppressed) ?? false;
+  const hasNoDataAreas = displayResult?.areas.some(area => !area.suppressed && area.value === null) ?? false;
+  const summary = joinResult?.summary;
+  const suppression = suppressSmall ? displayResult?.summary : undefined;
 
   return (
     <div className="h-full flex flex-col lg:flex-row">
@@ -517,6 +557,9 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               className="hidden"
             />
             {boundaryError && <p className="text-xs text-red-700 mt-1">{boundaryError}</p>}
+            {boundaryWarnings.map(warning => (
+              <p key={warning} className="text-xs text-amber-700 mt-1">{warning}</p>
+            ))}
             <div className="mt-2 space-y-2">
               {sampleBoundaries.map(sample => (
                 <button
@@ -559,13 +602,77 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
           </div>
 
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filter Records</label>
+            <select
+              value={filterBy}
+              onChange={(event) => {
+                setFilterBy(event.target.value);
+                setSelectedFilterValues(new Set());
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              <option value="">None (count every record)</option>
+              {dataset.columns.map(col => (
+                <option key={col.key} value={col.key}>{col.label}</option>
+              ))}
+            </select>
+            {filterBy && filterValues.length > 0 && (
+              <div className="mt-2 p-3 bg-white border border-gray-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-gray-500">Count only:</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedFilterValues(new Set(filterValues))}
+                      className="text-xs text-gray-600 hover:text-gray-900"
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setSelectedFilterValues(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1 max-h-40 overflow-auto">
+                  {filterValues.map(value => (
+                    <label key={value} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedFilterValues.has(value)}
+                        onChange={(event) => {
+                          const next = new Set(selectedFilterValues);
+                          if (event.target.checked) next.add(value);
+                          else next.delete(value);
+                          setSelectedFilterValues(next);
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className="text-gray-700 truncate flex-1">{value}</span>
+                      <span className="text-gray-400 text-xs">
+                        ({dataset.records.filter(record => categoryValue(record[filterBy]) === value).length})
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              {filteredRecords.length === dataset.records.length
+                ? `All ${dataset.records.length} records are counted. To map cases only, filter on the case status variable.`
+                : `${filteredRecords.length} of ${dataset.records.length} records are counted.`}
+            </p>
+          </div>
+
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Map Value</label>
             <select
               value={metric}
               onChange={(event) => setMetric(event.target.value as AreaMetric)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
-              <option value="count">Observation count by area</option>
+              <option value="count">Record count by area</option>
               <option value="rate">Rate using denominator dataset</option>
             </select>
           </div>
@@ -633,12 +740,29 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                       ))}
                     </select>
                   </div>
+
+                  {summary && summary.duplicateDenominatorLabels.length > 0 && (
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Areas with several denominator rows</label>
+                      <select
+                        value={duplicateDenominators}
+                        onChange={(event) => setDuplicateDenominators(event.target.value as DuplicateDenominatorRule)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                      >
+                        <option value="block">Do not calculate a rate</option>
+                        <option value="sum">Add the rows together</option>
+                      </select>
+                      <p className="text-xs text-amber-700 mt-1">
+                        {summary.duplicateDenominatorLabels.length} area{summary.duplicateDenominatorLabels.length === 1 ? ' has' : 's have'} more than one row in the denominator table (for example {summary.duplicateDenominatorLabels[0].label}, {summary.duplicateDenominatorLabels[0].rows} rows). Add them together only if the rows are parts of one population, such as age groups. If they are different years, keep one year in the table instead.
+                      </p>
+                    </div>
+                  )}
                 </>
               )}
             </div>
           )}
 
-          {joinResult && (
+          {joinResult && summary && (
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium text-gray-800">Join QA</h3>
@@ -650,30 +774,53 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
+                <span className="text-gray-500">Records on the map</span>
+                <span className="text-right font-medium">{summary.matchedRecords} of {summary.totalRecords}</span>
+                <span className="text-gray-500">Records with no matching boundary</span>
+                <span className="text-right font-medium">{summary.unmatchedRecords}</span>
+                <span className="text-gray-500">Records with no area recorded</span>
+                <span className="text-right font-medium">{summary.blankAreaRecords}</span>
                 <span className="text-gray-500">Boundary areas</span>
-                <span className="text-right font-medium">{joinResult.summary.boundaryCount}</span>
+                <span className="text-right font-medium">{summary.boundaryCount}</span>
                 <span className="text-gray-500">Matched areas</span>
-                <span className="text-right font-medium">{joinResult.summary.matchedBoundaryCount}</span>
+                <span className="text-right font-medium">{summary.matchedBoundaryCount}</span>
                 <span className="text-gray-500">Unmatched data areas</span>
-                <span className="text-right font-medium">{joinResult.summary.unmatchedDataKeys.length}</span>
+                <span className="text-right font-medium">{summary.unmatchedDataKeys.length}</span>
                 <span className="text-gray-500">Unmatched boundaries</span>
-                <span className="text-right font-medium">{joinResult.summary.unmatchedBoundaryKeys.length}</span>
+                <span className="text-right font-medium">{summary.unmatchedBoundaryKeys.length}</span>
+                <span className="text-gray-500">Boundary names used more than once</span>
+                <span className="text-right font-medium">{summary.duplicateBoundaryLabels.length}</span>
                 {metric === 'rate' && (
                   <>
                     <span className="text-gray-500">Missing denominators</span>
-                    <span className="text-right font-medium">{joinResult.summary.missingDenominatorKeys.length}</span>
+                    <span className="text-right font-medium">{summary.missingDenominatorKeys.length}</span>
                     <span className="text-gray-500">Unmatched denominator areas</span>
-                    <span className="text-right font-medium">{joinResult.summary.unmatchedDenominatorKeys.length}</span>
+                    <span className="text-right font-medium">{summary.unmatchedDenominatorKeys.length}</span>
+                    <span className="text-gray-500">Areas with several denominator rows</span>
+                    <span className="text-right font-medium">{summary.duplicateDenominatorLabels.length}</span>
                   </>
                 )}
-                {joinResult.summary.smallCountKeys.length > 0 && (
+                {summary.smallCountKeys.length > 0 && (
                   <>
-                    <span className="text-gray-500">Areas with under {SMALL_COUNT_THRESHOLD} cases</span>
-                    <span className="text-right font-medium">{joinResult.summary.smallCountKeys.length}</span>
+                    <span className="text-gray-500">Areas with 1 to {SMALL_COUNT_THRESHOLD - 1} records</span>
+                    <span className="text-right font-medium">{summary.smallCountKeys.length}</span>
                   </>
                 )}
               </div>
-              {joinResult.summary.smallCountKeys.length > 0 && (
+              {summary.unmatchedRecords + summary.blankAreaRecords > 0 && (
+                <p className="text-xs text-amber-700 mt-2">
+                  {summary.unmatchedRecords + summary.blankAreaRecords} of {summary.totalRecords} records are not on the map
+                  {summary.unmatchedDataKeys.length > 0
+                    ? `, including area names with no boundary: ${summary.unmatchedDataKeys.slice(0, 4).join(', ')}${summary.unmatchedDataKeys.length > 4 ? ', ...' : ''}.`
+                    : '.'}
+                </p>
+              )}
+              {summary.duplicateBoundaryLabels.length > 0 && (
+                <p className="text-xs text-amber-700 mt-2">
+                  {summary.duplicateBoundaryLabels.length} boundary name{summary.duplicateBoundaryLabels.length === 1 ? ' is' : 's are'} shared by more than one polygon ({summary.duplicateBoundaryLabels.slice(0, 3).map(entry => `${entry.label} ×${entry.features}`).join(', ')}{summary.duplicateBoundaryLabels.length > 3 ? ', ...' : ''}). Every polygon with that name shows the combined count. If these are different places, join on a unique code or a finer boundary field.
+                </p>
+              )}
+              {summary.smallCountKeys.length > 0 && (
                 <label className="flex items-start gap-2 mt-2 text-xs text-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
@@ -682,21 +829,31 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                     className="mt-0.5 rounded border-gray-300"
                   />
                   <span>
-                    Withhold areas under {SMALL_COUNT_THRESHOLD} cases when sharing this map.
+                    Withhold areas under {SMALL_COUNT_THRESHOLD} when sharing this map.
                     Their values are blanked on the map, in the legend and in every export,
                     and marked as withheld rather than shown as zero.
                   </span>
                 </label>
               )}
-              {joinResult.summary.smallCountKeys.length > 0 && !suppressSmall && (
+              {suppression?.complementaryKeys && suppression.complementaryKeys.length > 0 && (
+                <p className="text-xs text-gray-600 mt-2">
+                  {suppression.complementaryKeys.length === 1 ? 'One larger area is' : `${suppression.complementaryKeys.length} larger areas are`} also withheld ({suppression.complementaryKeys.join(', ')}). Otherwise the hidden count could be worked out by subtracting the published counts from the total.
+                </p>
+              )}
+              {suppression?.withheldRecoverable && (
+                <p className="text-xs text-red-700 mt-2">
+                  The withheld count can still be worked out: there is no other area to withhold alongside it, so it equals the total minus the counts shown. Do not publish the total with this map, or combine areas first.
+                </p>
+              )}
+              {summary.smallCountKeys.length > 0 && !suppressSmall && (
                 <p className="text-xs text-amber-700 mt-2">
-                  {joinResult.summary.smallCountKeys.length} area
-                  {joinResult.summary.smallCountKeys.length === 1 ? ' holds' : 's hold'} fewer than{' '}
-                  {SMALL_COUNT_THRESHOLD} cases. Small counts combined with geography can identify
+                  {summary.smallCountKeys.length} area
+                  {summary.smallCountKeys.length === 1 ? ' holds' : 's hold'} fewer than{' '}
+                  {SMALL_COUNT_THRESHOLD} records. Small counts combined with geography can identify
                   individuals, so review these before publishing or sharing this map or its exports.
                 </p>
               )}
-              {(joinResult.summary.unmatchedDataKeys.length > 0 || joinResult.summary.missingDenominatorKeys.length > 0) && (
+              {(summary.unmatchedDataKeys.length > 0 || summary.missingDenominatorKeys.length > 0) && (
                 <p className="text-xs text-amber-700 mt-2">
                   Review the join report before using this map in teaching or reports.
                 </p>
@@ -741,6 +898,9 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                   placeholder="e.g., 10, 25, 50, 100"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Up to 6 breaks. If you write decimals with a comma, separate the values with semicolons (2,5; 7,5).
+                </p>
               </div>
             )}
 
@@ -748,7 +908,10 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Base Map</label>
               <select
                 value={baseMap}
-                onChange={(event) => setBaseMap(event.target.value as BaseMap)}
+                onChange={(event) => {
+                  setBaseMap(event.target.value as BaseMap);
+                  setBasemapFailed(false);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="quiet">Quiet street map</option>
@@ -849,20 +1012,30 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               <MapContainer
                 center={[0, 0]}
                 zoom={2}
+                maxZoom={MAP_MAX_ZOOM}
                 style={{ height: '100%', width: '100%' }}
               >
+                {/* Keyed by tile source so each provider is its own layer and
+                    takes its attribution with it when it goes. */}
                 {activeBaseMap !== 'none' && (
                   <TileLayer
-                    url={tileUrls[activeBaseMap].url}
-                    attribution={tileUrls[activeBaseMap].attribution}
-                    opacity={activeBaseMap === 'quiet' ? 0.35 : 1}
+                    key={basemaps[activeBaseMap].url}
+                    url={basemaps[activeBaseMap].url}
+                    attribution={basemaps[activeBaseMap].attribution}
+                    opacity={basemaps[activeBaseMap].opacity}
+                    maxZoom={MAP_MAX_ZOOM}
+                    maxNativeZoom={basemaps[activeBaseMap].maxNativeZoom}
                     crossOrigin="anonymous"
+                    eventHandlers={{
+                      tileerror: () => setBasemapFailed(true),
+                      tileload: () => setBasemapFailed(false),
+                    }}
                   />
                 )}
                 <ScaleControl position="bottomleft" imperial={false} metric={true} />
                 <FitGeoJsonBounds boundaries={boundaries} />
                 <GeoJSON
-                  key={`${boundaryFileName}-${boundaryKey}-${metric}-${breaks.join('|')}-${mappedValues.length}-${joinVersion}`}
+                  key={`${boundaryFileName}-${boundaryKey}-${metric}-${rateMultiplier}-${breaks.join('|')}-${mappedValues.length}-${joinVersion}-${summary?.duplicateDenominatorKeys.join(',') ?? ''}`}
                   data={boundaries as unknown as FeatureCollection}
                   style={(feature) => styleFeature(feature as unknown as GeoJsonFeature)}
                   onEachFeature={(feature, layer) => bindFeaturePopup(feature as unknown as GeoJsonFeature, layer)}
@@ -877,22 +1050,40 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 </div>
               )}
 
-              {showLegend && legendItems.length > 0 && (
-                <div className={`absolute ${mapCaption ? 'bottom-16' : 'bottom-4'} right-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-3 max-w-xs`}>
+              {showLegend && (legendItems.length > 0 || hasWithheldAreas || hasNoDataAreas) && (
+                <div className={`absolute ${mapCaption ? 'bottom-16' : 'bottom-6'} right-4 z-[1000] bg-white/95 rounded-lg shadow-lg p-3 max-w-xs`}>
                   <p className="text-xs font-semibold text-gray-700 mb-2">
-                    {metric === 'rate' ? `Rate per ${rateMultiplier.toLocaleString()}` : 'Observation count'}
+                    {metric === 'rate' ? `Rate per ${rateMultiplier.toLocaleString()}` : 'Record count'}
                   </p>
                   <div className="space-y-1">
                     {legendItems.map(item => (
                       <div key={`${item.color}-${item.label}`} className="flex items-center gap-2">
-                        <span className="w-4 h-3 rounded-sm border border-gray-300" style={{ backgroundColor: item.color }} />
+                        <span className="w-4 h-3 rounded-sm border border-gray-400" style={{ backgroundColor: item.color }} />
                         <span className="text-xs text-gray-700">{item.label}</span>
                       </div>
                     ))}
-                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                      <span className="w-4 h-3 rounded-sm border border-gray-300 bg-gray-200" />
-                      <span className="text-xs text-gray-500">No data</span>
-                    </div>
+                    {hasWithheldAreas && (
+                      <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                        <span className="w-4 h-3 rounded-sm border border-dashed border-gray-600" style={{ backgroundColor: WITHHELD_FILL }} />
+                        <span className="text-xs text-gray-700">{WITHHELD_LABEL}</span>
+                      </div>
+                    )}
+                    {hasNoDataAreas && (
+                      <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                        <span className="w-4 h-3 rounded-sm border border-gray-400" style={{ backgroundColor: NO_DATA_FILL }} />
+                        <span className="text-xs text-gray-500">No data</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {basemapFailed && activeBaseMap !== 'none' && (
+                <div className="map-export-exclude absolute bottom-16 left-1/2 -translate-x-1/2 z-[1000] max-w-md">
+                  <div className="bg-white/95 border border-gray-300 rounded-lg px-3 py-2 shadow-lg">
+                    <p className="text-xs text-gray-700">
+                      The base map could not be loaded. You may be offline, or the map provider may be unavailable. The areas are still drawn correctly; choose "No base map" to export without it.
+                    </p>
                   </div>
                 </div>
               )}
@@ -922,18 +1113,6 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       </div>
     </div>
   );
-}
-
-function downloadText(content: string, filename: string, type: string) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 function escapeHtml(value: string): string {

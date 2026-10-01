@@ -2,9 +2,25 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import type { ChangeEvent } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, ScaleControl } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
-import html2canvas from 'html2canvas';
 import type { Dataset, CaseRecord, DataColumn } from '../../types/analysis';
-import { jitterCoordinates } from '../../utils/geoPrivacy';
+import {
+  buildSpotMapExport,
+  createJitterSecret,
+  findWithheldColumns,
+  isJitterSecret,
+  jitterCoordinates,
+  jitterMinimumDistance,
+  jitterSeed,
+  normalizeJitterDistance,
+} from '../../utils/geoPrivacy';
+import {
+  analyzeCoordinateQuality,
+  isPlausibleCoordinateColumn,
+  suggestCoordinateColumns,
+} from '../../utils/coordinates';
+import { basemaps, FIT_MAX_ZOOM, MAP_MAX_ZOOM } from '../../utils/basemaps';
+import type { BasemapId } from '../../utils/basemaps';
+import { canvasToPngBlob, captureMapCanvas, downloadBlob, downloadText } from '../../utils/mapExport';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
@@ -19,8 +35,7 @@ interface SpotMapProps {
 }
 
 type ColorScheme = 'default' | 'classification' | 'colorblind' | 'sequential';
-type CoordinateAxis = 'lat' | 'lng';
-type MapStyle = 'street' | 'quiet' | 'satellite' | 'topo' | 'none';
+type MapStyle = BasemapId | 'none';
 
 interface MapCase {
   record: CaseRecord;
@@ -29,19 +44,6 @@ interface MapCase {
   displayLat: number;  // Jittered coordinates for display
   displayLng: number;
   classification: string;
-}
-
-interface CoordinateQAResult {
-  totalRecords: number;
-  validCoordinates: number;
-  missingLatitude: number;
-  missingLongitude: number;
-  zeroPlaceholders: number;
-  outOfRange: number;
-  likelySwapped: number;
-  duplicateCoordinates: number;
-  lowPrecision: number;
-  excludedRecords: CaseRecord[];
 }
 
 // Dynamic color palettes for any classification variable
@@ -62,13 +64,17 @@ const sequentialColors = [
 
 const spotMapExportScale = 2;
 
-// Known case status colors used when values match epidemiological terminology
+// Known case status colors used when values match epidemiological terminology.
+// Confirmed, probable and suspected match the epi curve's "by classification"
+// scheme. "Not a case" was green, which next to the red of "Confirmed" is the
+// one pairing a red-green colour-blind reader cannot separate, and it was the
+// default. Non-cases are now slate, which also lets the cases stand out.
 const caseStatusColors: Record<string, string> = {
   'Confirmed': '#DC2626',
   'Probable': '#F59E0B',
   'Suspected': '#3B82F6',
-  'Not a case': '#22C55E',
-  'Unknown': '#9CA3AF',
+  'Not a case': '#475569',
+  'Unknown': '#CBD5E1',
 };
 
 function getSemanticCategoryColor(classification: string): string | null {
@@ -114,101 +120,30 @@ function getMarkerColor(
   }
 }
 
-function parseCoordinateValue(value: unknown): number | null {
-  if (typeof value === 'number') {
-    return Number.isFinite(value) ? value : null;
-  }
-
-  if (value === null || value === undefined) return null;
-
-  const raw = String(value).trim();
-  if (!raw) return null;
-
-  const match = raw.match(/-?\d+(?:[.,]\d+)?/);
-  if (!match || match.index === undefined) return null;
-
-  let parsed = Number(match[0].replace(',', '.'));
-  if (!Number.isFinite(parsed)) return null;
-
-  // Hemisphere letters only count when directly adjacent to the number,
-  // so labels like "GPS 12.5" are not mistaken for south/west.
-  const before = raw.slice(0, match.index);
-  const after = raw.slice(match.index + match[0].length);
-  const direction = (
-    after.match(/^[\s°]*([NSEW])(?![A-Za-z])/i)?.[1]
-    ?? before.match(/(?:^|[^A-Za-z])([NSEW])[\s°]*$/i)?.[1]
-  )?.toUpperCase();
-
-  if ((direction === 'S' || direction === 'W') && parsed > 0) {
-    parsed = -parsed;
-  }
-
-  return parsed;
-}
-
-function hasMissingCoordinate(value: unknown): boolean {
-  return value === null || value === undefined || String(value).trim() === '';
-}
-
-function isCoordinateInRange(value: number, axis: CoordinateAxis): boolean {
-  return axis === 'lat'
-    ? value >= -90 && value <= 90
-    : value >= -180 && value <= 180;
-}
-
-function isZeroCoordinatePlaceholder(lat: number, lng: number): boolean {
-  return lat === 0 && lng === 0;
-}
-
-function coordinatePrecision(value: unknown): number {
-  const raw = String(value ?? '').trim();
-  const match = raw.match(/[.,](\d+)/);
-  return match ? match[1].length : 0;
-}
-
-function isLikelyCoordinateColumn(
-  column: DataColumn,
-  records: CaseRecord[],
-  axis: CoordinateAxis
-): boolean {
-  const name = `${column.key} ${column.label}`.toLowerCase();
-  const hasNameMatch = axis === 'lat'
-    ? /(^|[_\s-])(lat|latitude|gps_latitude|_latitude)([_\s-]|$)/.test(name) || name.includes('location-latitude')
-    : /(^|[_\s-])(lon|lng|long|longitude|gps_longitude|_longitude)([_\s-]|$)/.test(name) || name.includes('location-longitude');
-
-  if (hasNameMatch) return true;
-  if (column.type === 'number') return true;
-
-  const values = records
-    .map(record => record[column.key])
-    .filter(value => !hasMissingCoordinate(value));
-
-  if (values.length === 0) return false;
-
-  const parseable = values.filter(value => {
-    const parsed = parseCoordinateValue(value);
-    return parsed !== null && isCoordinateInRange(parsed, axis);
-  });
-
-  return parseable.length / values.length >= 0.8;
-}
-
-function getDefaultPopupColumns(columns: DataColumn[]): string[] {
+/**
+ * Popup fields to start with.
+ *
+ * The suggestions used to prefer anything named "location" and then fill up
+ * from the first columns of the dataset, which is where a name and the
+ * coordinates themselves usually are. Columns that locate or identify someone
+ * are never suggested; the user can still tick them.
+ */
+function getDefaultPopupColumns(columns: DataColumn[], neverSuggest: Set<string>): string[] {
   const preferredPatterns = [
     /(^|_)id($|_)/,
     /date/,
     /status|classification|case/,
-    /district|location|road|facility|village/,
     /outcome|severity|severe/,
   ];
 
-  const preferred = columns.filter(col => {
+  const candidates = columns.filter(col => !neverSuggest.has(col.key));
+  const preferred = candidates.filter(col => {
     const name = `${col.key} ${col.label}`.toLowerCase();
     return preferredPatterns.some(pattern => pattern.test(name));
   });
 
   const keys = preferred.map(col => col.key);
-  for (const col of columns) {
+  for (const col of candidates) {
     if (keys.length >= 6) break;
     if (!keys.includes(col.key)) keys.push(col.key);
   }
@@ -220,250 +155,14 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
-function waitForNextPaint(): Promise<void> {
-  return new Promise(resolve => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-  });
-}
-
-async function waitForMapImages(element: HTMLElement): Promise<void> {
-  const images = Array.from(element.querySelectorAll('img'));
-  const pendingImages = images.filter(image => !image.complete);
-
-  if (pendingImages.length > 0) {
-    await Promise.race<void>([
-      Promise.all(pendingImages.map(image => new Promise<void>(resolve => {
-        image.addEventListener('load', () => resolve(), { once: true });
-        image.addEventListener('error', () => resolve(), { once: true });
-      }))).then(() => undefined),
-      new Promise(resolve => window.setTimeout(resolve, 2500)),
-    ]);
-  }
-
-  await waitForNextPaint();
-}
-
-function addSpotMapExportStyles(clonedDocument: Document) {
-  const style = clonedDocument.createElement('style');
-  style.textContent = `
-    [data-spot-map-export="true"] *,
-    [data-spot-map-export="true"] *::before,
-    [data-spot-map-export="true"] *::after {
-      background-color: transparent !important;
-      border-color: #d1d5db !important;
-      box-shadow: none !important;
-      color: #111827 !important;
-      outline-color: #2563eb !important;
-      text-decoration-color: #111827 !important;
-      text-shadow: none !important;
-    }
-
-    [data-spot-map-export="true"],
-    [data-spot-map-export="true"] .leaflet-container {
-      background: #f3f4f6 !important;
-    }
-
-    [data-spot-map-export="true"] .leaflet-control,
-    [data-spot-map-export="true"] .leaflet-control a,
-    [data-spot-map-export="true"] .leaflet-control span {
-      background-color: #ffffff !important;
-      color: #111827 !important;
-    }
-
-    [data-spot-map-export="true"] .bg-white,
-    [data-spot-map-export="true"] .bg-white\\/90,
-    [data-spot-map-export="true"] .bg-white\\/95 {
-      background-color: rgba(255, 255, 255, 0.95) !important;
-    }
-
-    [data-spot-map-export="true"] .bg-amber-50 {
-      background-color: #fffbeb !important;
-      border-color: #fde68a !important;
-    }
-
-    [data-spot-map-export="true"] .bg-red-50 {
-      background-color: #fef2f2 !important;
-      border-color: #fca5a5 !important;
-    }
-
-    [data-spot-map-export="true"] .bg-blue-50 {
-      background-color: #eff6ff !important;
-      border-color: #bfdbfe !important;
-    }
-  `;
-  clonedDocument.head.appendChild(style);
-
-  const root = clonedDocument.querySelector('[data-spot-map-export="true"]');
-  if (!root) return;
-
-  const elements = [root, ...Array.from(root.querySelectorAll('*'))];
-  for (const element of elements) {
-    const inlineStyle = (element as HTMLElement | SVGElement).style;
-    if (!inlineStyle) continue;
-
-    inlineStyle.setProperty('background', 'transparent', 'important');
-    inlineStyle.setProperty('background-color', 'transparent', 'important');
-    inlineStyle.setProperty('background-image', 'none', 'important');
-    inlineStyle.setProperty('border-color', '#d1d5db', 'important');
-    inlineStyle.setProperty('box-shadow', 'none', 'important');
-    inlineStyle.setProperty('caret-color', '#111827', 'important');
-    inlineStyle.setProperty('color', '#111827', 'important');
-    inlineStyle.setProperty('outline-color', '#2563eb', 'important');
-    inlineStyle.setProperty('text-decoration-color', '#111827', 'important');
-    inlineStyle.setProperty('text-shadow', 'none', 'important');
-    inlineStyle.setProperty('--tw-ring-color', 'rgb(37 99 235)', 'important');
-    inlineStyle.setProperty('--tw-shadow-color', 'rgb(0 0 0 / 0.12)', 'important');
-
-    const className = element.getAttribute('class') ?? '';
-    if (
-      element === root
-      || className.includes('leaflet-container')
-    ) {
-      inlineStyle.setProperty('background', '#f3f4f6', 'important');
-      inlineStyle.setProperty('background-color', '#f3f4f6', 'important');
-    }
-
-    if (
-      className.includes('leaflet-control')
-      || className.includes('bg-white')
-    ) {
-      inlineStyle.setProperty('background', 'rgba(255, 255, 255, 0.95)', 'important');
-      inlineStyle.setProperty('background-color', 'rgba(255, 255, 255, 0.95)', 'important');
-    }
-
-    if (className.includes('bg-amber-50')) {
-      inlineStyle.setProperty('background', '#fffbeb', 'important');
-      inlineStyle.setProperty('background-color', '#fffbeb', 'important');
-      inlineStyle.setProperty('border-color', '#fde68a', 'important');
-    }
-
-    if (className.includes('bg-red-50')) {
-      inlineStyle.setProperty('background', '#fef2f2', 'important');
-      inlineStyle.setProperty('background-color', '#fef2f2', 'important');
-      inlineStyle.setProperty('border-color', '#fca5a5', 'important');
-    }
-
-    if (className.includes('bg-blue-50')) {
-      inlineStyle.setProperty('background', '#eff6ff', 'important');
-      inlineStyle.setProperty('background-color', '#eff6ff', 'important');
-      inlineStyle.setProperty('border-color', '#bfdbfe', 'important');
-    }
-  }
-}
-
-function triggerDownload(url: string, filename: string) {
-  const link = document.createElement('a');
-  link.download = filename;
-  link.href = url;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
-
-async function downloadCanvasAsPng(canvas: HTMLCanvasElement, filename: string): Promise<void> {
-  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
-
-  if (blob) {
-    const url = URL.createObjectURL(blob);
-    triggerDownload(url, filename);
-    window.setTimeout(() => URL.revokeObjectURL(url), 0);
-    return;
-  }
-
-  triggerDownload(canvas.toDataURL('image/png'), filename);
-}
-
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function analyzeCoordinateQuality(
-  records: CaseRecord[],
-  latColumn: string,
-  lngColumn: string
-): CoordinateQAResult {
-  const result: CoordinateQAResult = {
-    totalRecords: records.length,
-    validCoordinates: 0,
-    missingLatitude: 0,
-    missingLongitude: 0,
-    zeroPlaceholders: 0,
-    outOfRange: 0,
-    likelySwapped: 0,
-    duplicateCoordinates: 0,
-    lowPrecision: 0,
-    excludedRecords: [],
-  };
-
-  if (!latColumn || !lngColumn) return result;
-
-  const coordinateCounts = new Map<string, number>();
-  const validRows: Array<{ lat: number; lng: number; rawLat: unknown; rawLng: unknown }> = [];
-
-  records.forEach(record => {
-    const rawLat = record[latColumn];
-    const rawLng = record[lngColumn];
-    const reasons: string[] = [];
-
-    if (hasMissingCoordinate(rawLat)) {
-      result.missingLatitude++;
-      reasons.push('Missing latitude');
-    }
-
-    if (hasMissingCoordinate(rawLng)) {
-      result.missingLongitude++;
-      reasons.push('Missing longitude');
-    }
-
-    const lat = parseCoordinateValue(rawLat);
-    const lng = parseCoordinateValue(rawLng);
-
-    if (lat === null || lng === null) {
-      if (reasons.length === 0) reasons.push('Coordinates could not be parsed');
-      result.excludedRecords.push({ ...record, _map_exclusion_reason: reasons.join('; ') });
-      return;
-    }
-
-    const swappedLooksValid = isCoordinateInRange(lng, 'lat') && isCoordinateInRange(lat, 'lng');
-    const inRange = isCoordinateInRange(lat, 'lat') && isCoordinateInRange(lng, 'lng');
-
-    if (isZeroCoordinatePlaceholder(lat, lng)) {
-      result.zeroPlaceholders++;
-      reasons.push('Zero coordinate placeholder');
-    }
-
-    if (!inRange) {
-      result.outOfRange++;
-      reasons.push('Coordinates outside valid latitude/longitude range');
-      if (swappedLooksValid) {
-        result.likelySwapped++;
-        reasons.push('Latitude/longitude may be swapped');
-      }
-    }
-
-    if (reasons.length > 0) {
-      result.excludedRecords.push({ ...record, _map_exclusion_reason: reasons.join('; ') });
-      return;
-    }
-
-    const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
-    coordinateCounts.set(key, (coordinateCounts.get(key) ?? 0) + 1);
-    validRows.push({ lat, lng, rawLat, rawLng });
-  });
-
-  result.validCoordinates = validRows.length;
-  result.duplicateCoordinates = Array.from(coordinateCounts.values())
-    .filter(count => count > 1)
-    .reduce((sum, count) => sum + count, 0);
-  result.lowPrecision = validRows.filter(({ rawLat, rawLng }) =>
-    coordinatePrecision(rawLat) > 0 &&
-    coordinatePrecision(rawLng) > 0 &&
-    (coordinatePrecision(rawLat) <= 2 || coordinatePrecision(rawLng) <= 2)
-  ).length;
-
-  return result;
-}
-
+// The jitter secret for each dataset, for browsers where storage is refused.
+// Without it every remount would draw a new secret and the points would move
+// each time the Spot Map tab was reopened.
+const sessionJitterSecrets = new Map<string, string>();
 
 // Component to fit map bounds
 function FitBounds({ cases }: { cases: MapCase[] }) {
@@ -472,7 +171,7 @@ function FitBounds({ cases }: { cases: MapCase[] }) {
   useEffect(() => {
     if (cases.length > 0) {
       const bounds = cases.map(c => [c.displayLat, c.displayLng] as [number, number]);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: FIT_MAX_ZOOM });
     }
   }, [cases, map]);
 
@@ -516,9 +215,26 @@ export function SpotMap({ dataset }: SpotMapProps) {
     return key && dataset.columns.some(col => col.key === key) ? key : '';
   };
 
+  // The coordinate columns to start with. A saved pair is kept only if it is
+  // still believable: an earlier version chose the first numeric column for
+  // both axes, and that choice was saved in the browsers of everyone who
+  // opened the map on a dataset without coordinates.
+  const [initialCoordinates] = useState(() => {
+    const savedLat = validSavedColumn(saved.latColumn);
+    const savedLng = validSavedColumn(saved.lngColumn);
+    const plausible = (key: string, axis: 'lat' | 'lng') => {
+      const column = dataset.columns.find(col => col.key === key);
+      return column !== undefined && isPlausibleCoordinateColumn(column, dataset.records, axis);
+    };
+    if (savedLat && savedLng && savedLat !== savedLng && plausible(savedLat, 'lat') && plausible(savedLng, 'lng')) {
+      return { lat: savedLat, lng: savedLng };
+    }
+    return suggestCoordinateColumns(dataset.columns, dataset.records);
+  });
+
   // State initialized from localStorage
-  const [latColumn, setLatColumn] = useState<string>(() => validSavedColumn(saved.latColumn));
-  const [lngColumn, setLngColumn] = useState<string>(() => validSavedColumn(saved.lngColumn));
+  const [latColumn, setLatColumn] = useState<string>(initialCoordinates.lat);
+  const [lngColumn, setLngColumn] = useState<string>(initialCoordinates.lng);
   const [classificationColumn, setClassificationColumn] = useState<string>(() => validSavedColumn(saved.classificationColumn));
   const [filterBy, setFilterBy] = useState<string>(() => validSavedColumn(saved.filterBy));
   const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => {
@@ -527,11 +243,16 @@ export function SpotMap({ dataset }: SpotMapProps) {
   });
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'classification');
   const [markerSize, setMarkerSize] = useState<number>(() => (saved.markerSize as number) ?? 8);
-  const [mapStyle, setMapStyle] = useState<MapStyle>(() => (saved.mapStyle as MapStyle) || 'street');
+  const [mapStyle, setMapStyle] = useState<MapStyle>(() => {
+    const style = saved.mapStyle;
+    return style === 'none' || (typeof style === 'string' && style in basemaps) ? style as MapStyle : 'street';
+  });
   const [showAllFilterValues, setShowAllFilterValues] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<string>('');
   const [exportError, setExportError] = useState<string>('');
+  // True once any tile of the current base map has failed to load.
+  const [basemapFailed, setBasemapFailed] = useState(false);
   const [customCategoryColors, setCustomCategoryColors] = useState<Record<string, string>>(() => {
     return isObjectRecord(saved.customCategoryColors) ? saved.customCategoryColors as Record<string, string> : {};
   });
@@ -541,12 +262,26 @@ export function SpotMap({ dataset }: SpotMapProps) {
   });
   const [popupColumns, setPopupColumns] = useState<string[]>(() => {
     const arr = saved.popupColumns;
-    return Array.isArray(arr) ? arr as string[] : getDefaultPopupColumns(dataset.columns);
+    return Array.isArray(arr) ? arr as string[] : [];
   });
+  // Whether the popup fields are still the suggested ones. Suggestions depend
+  // on which columns turn out to be sensitive, so they are filled in below.
+  const [popupColumnsChosen, setPopupColumnsChosen] = useState<boolean>(() => Array.isArray(saved.popupColumns));
 
   // Privacy safeguards
   const [obfuscateLocations, setObfuscateLocations] = useState<boolean>(() => saved.obfuscateLocations !== undefined ? saved.obfuscateLocations as boolean : true);
-  const [jitterDistance, setJitterDistance] = useState<number>(() => (saved.jitterDistance as number) ?? 500);
+  const [jitterDistance, setJitterDistance] = useState<number>(() => normalizeJitterDistance(saved.jitterDistance));
+  // The secret the jitter is seeded from. It is saved with this dataset's map
+  // settings, and so travels in a project file alongside the true coordinates
+  // it protects, which keeps a colleague's copy of the map identical. It is
+  // never written to a recipe, a CSV, a GeoJSON file or an image.
+  const [jitterSecret] = useState<string>(() => {
+    const secret = isJitterSecret(saved.jitterSecret)
+      ? saved.jitterSecret
+      : sessionJitterSecrets.get(dataset.id) ?? createJitterSecret();
+    sessionJitterSecrets.set(dataset.id, secret);
+    return secret;
+  });
 
   // Map title and caption
   const [mapTitle, setMapTitle] = useState<string>(() => (saved.mapTitle as string) ?? '');
@@ -574,6 +309,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
         mapStyle,
         obfuscateLocations,
         jitterDistance,
+        jitterSecret,
         mapTitle,
         mapCaption,
         showNorthArrow,
@@ -582,16 +318,18 @@ export function SpotMap({ dataset }: SpotMapProps) {
         selectedFilterValues: Array.from(selectedFilterValues),
         customCategoryColors,
         categoryOrder,
-        popupColumns,
+        // Suggested fields are not saved, so they are worked out afresh if the
+        // dataset's columns change.
+        ...(popupColumnsChosen ? { popupColumns } : {}),
       };
       localStorage.setItem(persistenceKey, JSON.stringify(toSave));
     } catch (e) {
       console.error('Failed to save spot map settings:', e);
     }
   }, [persistenceKey, latColumn, lngColumn, classificationColumn, colorScheme, markerSize,
-    mapStyle, obfuscateLocations, jitterDistance, mapTitle, mapCaption, showNorthArrow,
+    mapStyle, obfuscateLocations, jitterDistance, jitterSecret, mapTitle, mapCaption, showNorthArrow,
     enableClustering, filterBy, selectedFilterValues, customCategoryColors,
-    categoryOrder, popupColumns]);
+    categoryOrder, popupColumns, popupColumnsChosen]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -617,25 +355,65 @@ export function SpotMap({ dataset }: SpotMapProps) {
   }, [isResizing]);
 
   const latitudeOptions = useMemo(() => (
-    dataset.columns.filter(col => isLikelyCoordinateColumn(col, dataset.records, 'lat'))
+    dataset.columns.filter(col => isPlausibleCoordinateColumn(col, dataset.records, 'lat'))
   ), [dataset.columns, dataset.records]);
 
   const longitudeOptions = useMemo(() => (
-    dataset.columns.filter(col => isLikelyCoordinateColumn(col, dataset.records, 'lng'))
+    dataset.columns.filter(col => isPlausibleCoordinateColumn(col, dataset.records, 'lng'))
   ), [dataset.columns, dataset.records]);
 
-  const coordinateQA = useMemo(() => (
-    analyzeCoordinateQuality(dataset.records, latColumn, lngColumn)
-  ), [dataset.records, latColumn, lngColumn]);
+  // One column cannot be both axes, and plotting it against itself draws a
+  // diagonal line of points that looks like a result.
+  const sameColumnForBoth = latColumn !== '' && latColumn === lngColumn;
+  const coordinatesChosen = latColumn !== '' && lngColumn !== '' && !sameColumnForBoth;
 
-  useEffect(() => {
-    setPopupColumns(previous => {
-      const validKeys = new Set(dataset.columns.map(col => col.key));
-      const next = previous.filter(key => validKeys.has(key));
-      const withFallback = next.length > 0 ? next : getDefaultPopupColumns(dataset.columns);
-      return arraysEqual(previous, withFallback) ? previous : withFallback;
-    });
-  }, [dataset.columns]);
+  const coordinateQA = useMemo(() => (
+    analyzeCoordinateQuality(
+      dataset.records,
+      coordinatesChosen ? latColumn : '',
+      coordinatesChosen ? lngColumn : '',
+      dataset.columns
+    )
+  ), [dataset.records, dataset.columns, latColumn, lngColumn, coordinatesChosen]);
+
+  // Columns that would give a location or a person away beside a jittered
+  // point: other coordinate fields, names, phone numbers, addresses.
+  const withheldColumns = useMemo(() => (
+    findWithheldColumns(dataset.columns, dataset.records, latColumn, lngColumn, coordinateQA.usable)
+  ), [dataset.columns, dataset.records, latColumn, lngColumn, coordinateQA.usable]);
+
+  // What a popup may not show while locations are obfuscated. The selected
+  // coordinate columns are on this list too: they hold the true position.
+  const hiddenWhenObfuscated = useMemo(() => (
+    new Set([...withheldColumns.map(col => col.key), latColumn, lngColumn].filter(Boolean))
+  ), [withheldColumns, latColumn, lngColumn]);
+
+  const suggestedPopupColumns = useMemo(() => (
+    getDefaultPopupColumns(dataset.columns, hiddenWhenObfuscated)
+  ), [dataset.columns, hiddenWhenObfuscated]);
+
+  const activePopupColumns = useMemo(() => {
+    const validKeys = new Set(dataset.columns.map(col => col.key));
+    const chosen = popupColumnsChosen ? popupColumns.filter(key => validKeys.has(key)) : [];
+    return chosen.length > 0 ? chosen : suggestedPopupColumns;
+  }, [dataset.columns, popupColumns, popupColumnsChosen, suggestedPopupColumns]);
+
+  const popupDisplayColumns = useMemo(() => (
+    dataset.columns.filter(col =>
+      activePopupColumns.includes(col.key) && !(obfuscateLocations && hiddenWhenObfuscated.has(col.key))
+    )
+  ), [dataset.columns, activePopupColumns, obfuscateLocations, hiddenWhenObfuscated]);
+
+  const withheldNote = obfuscateLocations && withheldColumns.length > 0
+    ? ` Withheld because they could reveal a location or a person: ${withheldColumns.map(col => col.label).join(', ')}.`
+    : '';
+
+  const showExportStatus = (message: string) => {
+    setExportStatus(message);
+    setExportError('');
+    // Long enough to read a list of withheld columns.
+    window.setTimeout(() => setExportStatus(current => (current === message ? '' : current)), withheldNote ? 12000 : 4000);
+  };
 
   // Export map as PNG
   const exportMap = async () => {
@@ -646,28 +424,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
     setExportError('');
     setExportStatus('');
     try {
-      const bounds = exportElement.getBoundingClientRect();
-      if (bounds.width === 0 || bounds.height === 0) {
-        throw new Error('Map has no visible size.');
-      }
-
-      await waitForNextPaint();
-      await waitForMapImages(exportElement);
-
-      const canvas = await html2canvas(exportElement, {
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: '#ffffff',
-        scale: spotMapExportScale,
-        imageTimeout: 15000,
-        logging: false,
-        ignoreElements: element => element.classList.contains('map-export-exclude'),
-        onclone: addSpotMapExportStyles,
-      });
-
-      await downloadCanvasAsPng(canvas, `spot-map-${new Date().toISOString().split('T')[0]}.png`);
-      setExportStatus('PNG downloaded.');
-      window.setTimeout(() => setExportStatus(''), 4000);
+      const canvas = await captureMapCanvas(exportElement, { scale: spotMapExportScale });
+      downloadBlob(await canvasToPngBlob(canvas), `spot-map-${new Date().toISOString().split('T')[0]}.png`);
+      showExportStatus('PNG downloaded.');
     } catch (error) {
       console.error('Failed to export map:', error);
       setExportError(
@@ -679,29 +438,37 @@ export function SpotMap({ dataset }: SpotMapProps) {
     }
   };
 
+  // When locations are obfuscated the exported rows must carry the jittered
+  // coordinates, not the originals, and nothing else that gives the position
+  // away. This is the data behind a map the user has chosen to publish with
+  // locations protected.
+  const buildExport = () => buildSpotMapExport({
+    cases: filteredCases,
+    columns: dataset.columns,
+    latColumn,
+    lngColumn,
+    obfuscate: obfuscateLocations,
+    jitterDistance,
+    withheldKeys: withheldColumns.map(col => col.key),
+  });
+
+  const exportPrivacyNote = () => obfuscateLocations
+    ? ` Coordinates are jittered (${jitterMinimumDistance(jitterDistance)}–${jitterDistance} m).${withheldNote}`
+    : ' Coordinates are exact.';
+
   // Export filtered dataset as CSV
   const exportDatasetCSV = () => {
     if (filteredCases.length === 0) return;
 
-    // When locations are obfuscated the exported rows must carry the jittered
-    // coordinates, not the originals. This is the data behind a map the user
-    // has chosen to publish with locations protected.
-    const filteredRecords = filteredCases.map(c =>
-      obfuscateLocations
-        ? { ...c.record, [latColumn]: c.displayLat, [lngColumn]: c.displayLng }
-        : c.record
-    );
-    const csv = exportToCSV(dataset.columns, filteredRecords, { localeConfig });
-
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `spot_map_data_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const { columns, records } = buildExport();
+      const csv = exportToCSV(columns, records, { localeConfig });
+      downloadText(csv, `spot_map_data_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
+      showExportStatus(`CSV downloaded.${exportPrivacyNote()}`);
+    } catch (error) {
+      console.error('Failed to export CSV:', error);
+      setExportError('The CSV file could not be created.');
+    }
   };
 
   const exportExcludedRecordsCSV = () => {
@@ -712,57 +479,29 @@ export function SpotMap({ dataset }: SpotMapProps) {
       { key: '_map_exclusion_reason', label: 'Map Exclusion Reason', type: 'text' },
     ];
     const csv = exportToCSV(columns, coordinateQA.excludedRecords, { localeConfig });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `spot_map_excluded_records_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadText(csv, `spot_map_excluded_records_${new Date().toISOString().split('T')[0]}.csv`, 'text/csv');
   };
 
   const exportGeoJSON = () => {
     if (filteredCases.length === 0) return;
 
-    const featureCollection = {
-      type: 'FeatureCollection',
-      features: filteredCases.map(caseData => ({
-        type: 'Feature',
-        geometry: {
-          type: 'Point',
-          coordinates: [caseData.displayLng, caseData.displayLat],
-        },
-        // The geometry was already jittered, but the true position was also
-        // written into the properties twice: explicitly as _original_*, and
-        // again via the spread record's own latitude/longitude columns. The
-        // file was labelled jittered while carrying exact coordinates, so a
-        // map shared in good faith leaked the locations it claimed to protect.
-        properties: {
-          ...caseData.record,
-          ...(obfuscateLocations
-            ? { [latColumn]: caseData.displayLat, [lngColumn]: caseData.displayLng }
-            : { _original_latitude: caseData.lat, _original_longitude: caseData.lng }),
-          _display_latitude: caseData.displayLat,
-          _display_longitude: caseData.displayLng,
-          _location_privacy: obfuscateLocations ? `jittered_${jitterDistance}m` : 'exact',
-        },
-      })),
-    };
-
-    const blob = new Blob([JSON.stringify(featureCollection, null, 2)], { type: 'application/geo+json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `spot_map_points_${new Date().toISOString().split('T')[0]}.geojson`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    try {
+      const { geojson } = buildExport();
+      downloadText(
+        JSON.stringify(geojson, null, 2),
+        `spot_map_points_${new Date().toISOString().split('T')[0]}.geojson`,
+        'application/geo+json'
+      );
+      showExportStatus(`GeoJSON downloaded.${exportPrivacyNote()}`);
+    } catch (error) {
+      console.error('Failed to export GeoJSON:', error);
+      setExportError('The GeoJSON file could not be created.');
+    }
   };
 
   const saveMapRecipe = () => {
+    // A recipe is passed around without the data, so it carries the settings
+    // and never the jitter secret.
     const recipe = {
       version: 1,
       module: 'spot-map',
@@ -783,18 +522,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
       mapCaption,
       showNorthArrow,
       enableClustering,
-      popupColumns,
+      popupColumns: activePopupColumns,
     };
 
-    const blob = new Blob([JSON.stringify(recipe, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${dataset.name || 'spot-map'}_recipe.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadText(JSON.stringify(recipe, null, 2), `${dataset.name || 'spot-map'}_recipe.json`, 'application/json');
   };
 
   const loadMapRecipe = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -824,15 +555,21 @@ export function SpotMap({ dataset }: SpotMapProps) {
       if (isObjectRecord(recipe.customCategoryColors)) setCustomCategoryColors(recipe.customCategoryColors as Record<string, string>);
       if (Array.isArray(recipe.categoryOrder)) setCategoryOrder(recipe.categoryOrder.filter(value => typeof value === 'string'));
       if (typeof recipe.markerSize === 'number') setMarkerSize(recipe.markerSize);
-      if (recipe.mapStyle === 'street' || recipe.mapStyle === 'quiet' || recipe.mapStyle === 'satellite' || recipe.mapStyle === 'topo' || recipe.mapStyle === 'none') setMapStyle(recipe.mapStyle);
+      if (recipe.mapStyle === 'street' || recipe.mapStyle === 'quiet' || recipe.mapStyle === 'satellite' || recipe.mapStyle === 'topo' || recipe.mapStyle === 'none') {
+        setMapStyle(recipe.mapStyle);
+        setBasemapFailed(false);
+      }
       if (typeof recipe.obfuscateLocations === 'boolean') setObfuscateLocations(recipe.obfuscateLocations);
-      if (typeof recipe.jitterDistance === 'number') setJitterDistance(recipe.jitterDistance);
+      // Only the distances the map offers. A recipe carrying 0 would otherwise
+      // show exact locations under a notice saying they were jittered.
+      if (typeof recipe.jitterDistance === 'number') setJitterDistance(normalizeJitterDistance(recipe.jitterDistance));
       if (typeof recipe.mapTitle === 'string') setMapTitle(recipe.mapTitle);
       if (typeof recipe.mapCaption === 'string') setMapCaption(recipe.mapCaption);
       if (typeof recipe.showNorthArrow === 'boolean') setShowNorthArrow(recipe.showNorthArrow);
       if (typeof recipe.enableClustering === 'boolean') setEnableClustering(recipe.enableClustering);
       if (Array.isArray(recipe.popupColumns)) {
         setPopupColumns(recipe.popupColumns.filter(value => typeof value === 'string' && validKeys.has(value)));
+        setPopupColumnsChosen(true);
       }
       setExportStatus('Map recipe loaded.');
       setExportError('');
@@ -844,17 +581,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
     }
   };
 
-  // Auto-detect lat/lng and classification columns
+  // Auto-detect the classification column. Coordinate columns are chosen once,
+  // at mount, and only when the dataset convincingly has them.
   useEffect(() => {
-    const latCol = latitudeOptions.find(c =>
-      c.key.toLowerCase().includes('lat') ||
-      c.label.toLowerCase().includes('latitude')
-    ) || latitudeOptions[0];
-    const lngCol = longitudeOptions.find(c =>
-      c.key.toLowerCase().includes('lng') ||
-      c.key.toLowerCase().includes('lon') ||
-      c.label.toLowerCase().includes('longitude')
-    ) || longitudeOptions[0];
     const classCol = dataset.columns.find(c =>
       c.key.toLowerCase().includes('case_status') ||
       c.key.toLowerCase().includes('classification') ||
@@ -862,53 +591,32 @@ export function SpotMap({ dataset }: SpotMapProps) {
       c.key.toLowerCase().includes('severity')
     );
 
-    if (latCol && !latColumn) setLatColumn(latCol.key);
-    if (lngCol && !lngColumn) setLngColumn(lngCol.key);
     if (classCol && !classificationColumn) setClassificationColumn(classCol.key);
-  }, [
-    dataset.columns,
-    latitudeOptions,
-    longitudeOptions,
-    latColumn,
-    lngColumn,
-    classificationColumn,
-  ]);
+  }, [dataset.columns, classificationColumn]);
 
-  // Process cases with coordinates
-  const mapCases: MapCase[] = useMemo(() => {
-    if (!latColumn || !lngColumn) return [];
+  // The records that can be mapped, with the position each is drawn at
+  const mapCases: MapCase[] = useMemo(() => (
+    coordinateQA.usable.map(({ record, lat, lng }) => {
+      // Use selected classification field for coloring
+      const classification = classificationColumn
+        ? categoryValue(record[classificationColumn])
+        : 'Unknown';
 
-    return dataset.records
-      .map(record => {
-        const lat = parseCoordinateValue(record[latColumn]);
-        const lng = parseCoordinateValue(record[lngColumn]);
+      // Apply jitter if obfuscation is enabled
+      const jittered = obfuscateLocations
+        ? jitterCoordinates(lat, lng, jitterDistance, jitterSeed(jitterSecret, lat, lng, jitterDistance))
+        : { lat, lng };
 
-        if (lat === null || lng === null) return null;
-        if (!isCoordinateInRange(lat, 'lat') || !isCoordinateInRange(lng, 'lng')) return null;
-        if (isZeroCoordinatePlaceholder(lat, lng)) return null;
-
-        // Use selected classification field for coloring
-        const classification = classificationColumn
-          ? categoryValue(record[classificationColumn])
-          : 'Unknown';
-
-        // Apply jitter if obfuscation is enabled
-        const seed = `${String(record.id ?? `${lat},${lng}`)}|${lat}|${lng}|${jitterDistance}`;
-        const jittered = obfuscateLocations
-          ? jitterCoordinates(lat, lng, jitterDistance, seed)
-          : { lat, lng };
-
-        return {
-          record,
-          lat,
-          lng,
-          displayLat: jittered.lat,
-          displayLng: jittered.lng,
-          classification,
-        };
-      })
-      .filter((c): c is MapCase => c !== null);
-  }, [dataset.records, latColumn, lngColumn, classificationColumn, obfuscateLocations, jitterDistance]);
+      return {
+        record,
+        lat,
+        lng,
+        displayLat: jittered.lat,
+        displayLng: jittered.lng,
+        classification,
+      };
+    })
+  ), [coordinateQA.usable, classificationColumn, obfuscateLocations, jitterDistance, jitterSecret]);
 
   // Apply filters if selected
   const filteredCases = useMemo(() => {
@@ -922,11 +630,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
     });
   }, [mapCases, filterBy, selectedFilterValues]);
 
-  // Calculate missing records
-  const missingRecordsCount = useMemo(() => {
-    if (!latColumn || !lngColumn) return 0;
-    return dataset.records.length - mapCases.length;
-  }, [dataset.records.length, mapCases.length, latColumn, lngColumn]);
+  // Records left off the map because their coordinates are missing or unusable
+  const missingRecordsCount = coordinatesChosen ? dataset.records.length - mapCases.length : 0;
+  const filteredOutCount = mapCases.length - filteredCases.length;
 
   // Get unique classification values for legend (use filteredCases so legend reflects active filters)
   const classificationValues = useMemo(() => {
@@ -991,30 +697,35 @@ export function SpotMap({ dataset }: SpotMapProps) {
     setShowAllFilterValues(false);
   }, [filterBy]);
 
-  // Map tile URLs
-  const tileUrls: Record<Exclude<MapStyle, 'none'>, { url: string; attribution: string }> = {
-    street: {
-      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-    quiet: {
-      url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    },
-    satellite: {
-      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      attribution: '&copy; Esri',
-    },
-    topo: {
-      url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-      attribution: '&copy; OpenTopoMap',
-    },
-  };
-
   // Default center (US)
   const defaultCenter: [number, number] = [39.8283, -98.5795];
   const defaultZoom = 4;
   const activeMapStyle: MapStyle = mapStyle;
+
+  // One popup for both the clustered and the plain markers. While locations
+  // are obfuscated it shows no field that holds, or could stand in for, the
+  // true position.
+  const renderPopup = (caseData: MapCase) => (
+    <Popup>
+      <div className="text-sm">
+        <p className="font-semibold mb-2">Record Details</p>
+        {popupDisplayColumns.map(col => {
+          const value = caseData.record[col.key];
+          if (value === null || value === undefined) return null;
+          return (
+            <p key={col.key} className="text-gray-600">
+              <span className="font-medium">{col.label}:</span> {String(value)}
+            </p>
+          );
+        })}
+        {!obfuscateLocations && (
+          <p className="text-gray-500 mt-2 text-xs">
+            Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
+          </p>
+        )}
+      </div>
+    </Popup>
+  );
 
   // Info icon component with tooltip (appears below to avoid cutoff)
   const InfoTooltip = ({ text, link }: { text: string; link?: string }) => (
@@ -1060,9 +771,20 @@ export function SpotMap({ dataset }: SpotMapProps) {
             description="Map case locations using latitude/longitude and optional case status styling."
           />
 
-          {/* Case count summary */}
+          {/* Record count summary. "Records", not "cases": a line list usually
+              holds people who turned out not to be cases as well. */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
-            <span className="font-medium">{filteredCases.length}</span> of {mapCases.length} cases mapped
+            <span className="font-medium">{filteredCases.length}</span> of {dataset.records.length} records mapped
+            {(missingRecordsCount > 0 || filteredOutCount > 0) && (
+              <ul className="mt-1 text-xs text-gray-500 space-y-0.5">
+                {missingRecordsCount > 0 && (
+                  <li>{missingRecordsCount} not mapped: coordinates missing or unusable</li>
+                )}
+                {filteredOutCount > 0 && (
+                  <li>{filteredOutCount} hidden by the filter</li>
+                )}
+              </ul>
+            )}
           </div>
 
           {/* Filter By */}
@@ -1185,10 +907,15 @@ export function SpotMap({ dataset }: SpotMapProps) {
             {longitudeOptions.some(col => col.type !== 'number') && (
               <p className="text-xs text-gray-500 mt-1">Text fields are included when most values look like coordinates.</p>
             )}
+            {sameColumnForBoth && (
+              <p className="text-xs text-amber-700 mt-1">
+                Latitude and longitude are set to the same variable. Choose a different variable for one of them.
+              </p>
+            )}
           </div>
 
           {/* Coordinate QA */}
-          {latColumn && lngColumn && (
+          {coordinatesChosen && (
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium text-gray-800">Coordinate QA</h3>
@@ -1210,6 +937,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 <div className="text-right font-medium text-gray-800">{coordinateQA.missingLatitude}</div>
                 <div className="text-gray-500">Missing longitude</div>
                 <div className="text-right font-medium text-gray-800">{coordinateQA.missingLongitude}</div>
+                <div className="text-gray-500">Could not be read</div>
+                <div className="text-right font-medium text-gray-800">{coordinateQA.unparseable}</div>
                 <div className="text-gray-500">Out of range</div>
                 <div className="text-right font-medium text-gray-800">{coordinateQA.outOfRange}</div>
                 <div className="text-gray-500">Likely swapped</div>
@@ -1221,9 +950,27 @@ export function SpotMap({ dataset }: SpotMapProps) {
                 <div className="text-gray-500">Low precision</div>
                 <div className="text-right font-medium text-gray-800">{coordinateQA.lowPrecision}</div>
               </div>
+              {coordinateQA.columnsLookSwapped && (
+                <p className="mt-2 text-xs text-amber-700">
+                  The latitude field is named like a longitude and the longitude field like a latitude. Check that they are not the wrong way round.
+                </p>
+              )}
               {coordinateQA.likelySwapped > 0 && (
                 <p className="mt-2 text-xs text-amber-700">
-                  Some records look like latitude and longitude may be reversed. Review before interpreting the map.
+                  {coordinateQA.likelySwapped} record{coordinateQA.likelySwapped !== 1 ? 's look' : ' looks'} as if latitude and longitude are reversed, and {coordinateQA.likelySwapped !== 1 ? 'are' : 'is'} left off the map. Download the excluded records to review them.
+                </p>
+              )}
+              {coordinateQA.unparseable > 0 && (
+                <p className="mt-2 text-xs text-amber-700">
+                  {coordinateQA.unparseable} record{coordinateQA.unparseable !== 1 ? 's have' : ' has'} coordinates that could not be read and {coordinateQA.unparseable !== 1 ? 'are' : 'is'} left off the map.
+                  {coordinateQA.combinedValues > 0
+                    ? ' Some cells hold latitude and longitude together; split them into two columns.'
+                    : ' Use decimal degrees (41.6639) or degrees, minutes and seconds (41°39\'50"N).'}
+                </p>
+              )}
+              {coordinateQA.duplicateCoordinates > 0 && obfuscateLocations && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Records that share a coordinate are moved together and overlap. Turn on clustering to see how many are at each point.
                 </p>
               )}
               {coordinateQA.lowPrecision > 0 && (
@@ -1272,7 +1019,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
               {obfuscateLocations && (
                 <div>
                   <label className="block text-xs text-gray-600 mb-1">
-                    Jitter distance: {jitterDistance}m
+                    Jitter distance: up to {jitterDistance}m
                   </label>
                   <select
                     value={jitterDistance}
@@ -1284,12 +1031,27 @@ export function SpotMap({ dataset }: SpotMapProps) {
                     <option value={1000}>1 kilometer</option>
                     <option value={2000}>2 kilometers</option>
                   </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Each location is moved between {jitterMinimumDistance(jitterDistance)} m and {jitterDistance} m in a direction that cannot be worked out from the map or its exports.
+                  </p>
                 </div>
               )}
 
               <p className="text-xs text-gray-500">
                 Jittered maps should not be used for exact household, road-segment, or small-neighborhood interpretation.
               </p>
+
+              {obfuscateLocations && withheldColumns.length > 0 && (
+                <div className="text-xs text-gray-600 bg-white border border-gray-200 rounded-lg p-2">
+                  <p className="font-medium text-gray-700">Withheld from popups and exports</p>
+                  <p className="mt-1">
+                    {withheldColumns.map(col => col.label).join(', ')}
+                  </p>
+                  <p className="mt-1 text-gray-500">
+                    These variables look like coordinates, addresses, names or contact details, which would undo the jitter. They are left out of the CSV and GeoJSON while locations are obfuscated.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1323,25 +1085,41 @@ export function SpotMap({ dataset }: SpotMapProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Popup Fields</label>
               <div className="max-h-40 overflow-auto border border-gray-200 rounded-lg bg-white p-2 space-y-1">
-                {dataset.columns.map(col => (
-                  <label key={col.key} className="flex items-center gap-2 text-sm cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={popupColumns.includes(col.key)}
-                      onChange={(e) => {
-                        setPopupColumns(previous => {
-                          if (e.target.checked) return [...previous, col.key];
-                          return previous.filter(key => key !== col.key);
-                        });
-                      }}
-                      className="rounded border-gray-300"
-                    />
-                    <span className="text-gray-700 truncate">{col.label}</span>
-                  </label>
-                ))}
+                {dataset.columns.map(col => {
+                  const hidden = obfuscateLocations && hiddenWhenObfuscated.has(col.key);
+                  return (
+                    <label key={col.key} className={`flex items-center gap-2 text-sm ${hidden ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                      <input
+                        type="checkbox"
+                        checked={!hidden && activePopupColumns.includes(col.key)}
+                        disabled={hidden}
+                        onChange={(e) => {
+                          setPopupColumns(
+                            e.target.checked
+                              ? [...activePopupColumns, col.key]
+                              : activePopupColumns.filter(key => key !== col.key)
+                          );
+                          setPopupColumnsChosen(true);
+                        }}
+                        className="rounded border-gray-300"
+                      />
+                      <span className={`truncate ${hidden ? 'text-gray-400' : 'text-gray-700'}`}>
+                        {col.label}{hidden ? ' (withheld)' : ''}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
+              {obfuscateLocations && hiddenWhenObfuscated.size > 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Withheld variables are not shown in popups while locations are obfuscated.
+                </p>
+              )}
               <button
-                onClick={() => setPopupColumns(getDefaultPopupColumns(dataset.columns))}
+                onClick={() => {
+                  setPopupColumns([]);
+                  setPopupColumnsChosen(false);
+                }}
                 className="mt-2 text-xs text-blue-600 hover:text-blue-700"
               >
                 Reset suggested fields
@@ -1436,7 +1214,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
               <select
                 value={mapStyle}
-                onChange={(e) => setMapStyle(e.target.value as MapStyle)}
+                onChange={(e) => {
+                  setMapStyle(e.target.value as MapStyle);
+                  setBasemapFailed(false);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               >
                 <option value="quiet">Quiet publication map</option>
@@ -1509,8 +1290,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
 
       {/* Right Panel - Map */}
       <div className="flex-1 relative min-h-[400px] lg:min-h-0">
-        {latColumn && lngColumn ? (
-          <div ref={mapContainerRef} className="h-full w-full relative" data-spot-map-export="true">
+        {coordinatesChosen ? (
+          <div ref={mapContainerRef} className="h-full w-full relative">
             {/* Map Title Overlay */}
             {mapTitle && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] max-w-lg pointer-events-none">
@@ -1525,10 +1306,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
               <div className={`absolute ${mapTitle ? 'top-16' : 'top-4'} left-1/2 -translate-x-1/2 z-[1000] max-w-lg`}>
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 shadow-lg">
                   <p className="text-xs text-amber-900">
-                    <span className="font-semibold">Privacy notice:</span> Map locations are jittered by {jitterDistance}m for display. Do not interpret as exact household locations.
+                    <span className="font-semibold">Privacy notice:</span> Map locations are jittered by up to {jitterDistance}m for display. Do not interpret as exact household locations.
                     {missingRecordsCount > 0 && (
                       <span className="block mt-1 text-amber-800">
-                        {missingRecordsCount} record{missingRecordsCount !== 1 ? 's' : ''} missing lat/lon coordinates.
+                        {missingRecordsCount} record{missingRecordsCount !== 1 ? 's are' : ' is'} not shown: coordinates missing or unusable.
                       </span>
                     )}
                   </p>
@@ -1544,7 +1325,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                     <span className="font-semibold">Privacy Risk:</span> Displaying exact locations may allow re-identification of individuals. Consider enabling location obfuscation before sharing this map.
                     {missingRecordsCount > 0 && (
                       <span className="block mt-1 text-red-800">
-                        {missingRecordsCount} record{missingRecordsCount !== 1 ? 's' : ''} missing lat/lon coordinates.
+                        {missingRecordsCount} record{missingRecordsCount !== 1 ? 's are' : ' is'} not shown: coordinates missing or unusable.
                       </span>
                     )}
                   </p>
@@ -1565,14 +1346,24 @@ export function SpotMap({ dataset }: SpotMapProps) {
             <MapContainer
               center={defaultCenter}
               zoom={defaultZoom}
+              maxZoom={MAP_MAX_ZOOM}
               style={{ height: '100%', width: '100%' }}
             >
+              {/* Keyed by style so each base map is its own layer. Reusing one
+                  layer left the previous provider's attribution on the map. */}
               {activeMapStyle !== 'none' && (
                 <TileLayer
-                  url={tileUrls[activeMapStyle].url}
-                  attribution={tileUrls[activeMapStyle].attribution}
-                  opacity={activeMapStyle === 'quiet' ? 0.35 : 1}
+                  key={activeMapStyle}
+                  url={basemaps[activeMapStyle].url}
+                  attribution={basemaps[activeMapStyle].attribution}
+                  opacity={basemaps[activeMapStyle].opacity}
+                  maxZoom={MAP_MAX_ZOOM}
+                  maxNativeZoom={basemaps[activeMapStyle].maxNativeZoom}
                   crossOrigin="anonymous"
+                  eventHandlers={{
+                    tileerror: () => setBasemapFailed(true),
+                    tileload: () => setBasemapFailed(false),
+                  }}
                 />
               )}
               <ScaleControl position="bottomleft" imperial={true} metric={true} />
@@ -1597,25 +1388,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                         weight: 1,
                       }}
                     >
-                      <Popup>
-                        <div className="text-sm">
-                          <p className="font-semibold mb-2">Case Details</p>
-                          {dataset.columns.filter(col => popupColumns.includes(col.key)).map(col => {
-                            const value = caseData.record[col.key];
-                            if (value === null || value === undefined) return null;
-                            return (
-                              <p key={col.key} className="text-gray-600">
-                                <span className="font-medium">{col.label}:</span> {String(value)}
-                              </p>
-                            );
-                          })}
-                          {!obfuscateLocations && (
-                            <p className="text-gray-500 mt-2 text-xs">
-                              Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
-                            </p>
-                          )}
-                        </div>
-                      </Popup>
+                      {renderPopup(caseData)}
                     </CircleMarker>
                   ))}
                 </MarkerClusterGroup>
@@ -1632,25 +1405,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
                       weight: 1,
                     }}
                   >
-                    <Popup>
-                      <div className="text-sm">
-                        <p className="font-semibold mb-2">Case Details</p>
-                        {dataset.columns.filter(col => popupColumns.includes(col.key)).map(col => {
-                          const value = caseData.record[col.key];
-                          if (value === null || value === undefined) return null;
-                          return (
-                            <p key={col.key} className="text-gray-600">
-                              <span className="font-medium">{col.label}:</span> {String(value)}
-                            </p>
-                          );
-                        })}
-                        {!obfuscateLocations && (
-                          <p className="text-gray-500 mt-2 text-xs">
-                            Coordinates: {caseData.lat.toFixed(4)}, {caseData.lng.toFixed(4)}
-                          </p>
-                        )}
-                      </div>
-                    </Popup>
+                    {renderPopup(caseData)}
                   </CircleMarker>
                 ))
               )}
@@ -1667,7 +1422,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
 
             {/* Legend Overlay */}
             {orderedClassificationValues.length > 0 && colorScheme !== 'default' && (
-              <div className={`absolute ${mapCaption ? 'bottom-16' : 'bottom-4'} left-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-[1000]`}>
+              // bottom-16 keeps the legend clear of the scale bar, which sits in the same corner.
+              <div className="absolute bottom-16 left-4 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-3 z-[1000]">
                 <p className="text-xs font-semibold text-gray-700 mb-2">Legend</p>
                 <div className="space-y-1">
                   {orderedClassificationValues.map(value => (
@@ -1686,6 +1442,17 @@ export function SpotMap({ dataset }: SpotMapProps) {
               </div>
             )}
 
+            {/* Base map could not be loaded. Shown on screen only. */}
+            {basemapFailed && activeMapStyle !== 'none' && (
+              <div className="map-export-exclude absolute bottom-16 left-1/2 -translate-x-1/2 z-[1000] max-w-md">
+                <div className="bg-white/95 border border-gray-300 rounded-lg px-3 py-2 shadow-lg">
+                  <p className="text-xs text-gray-700">
+                    The base map could not be loaded. You may be offline, or the map provider may be unavailable. The points are still in the right place; choose "No base map" to export without it.
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Export Status */}
             {(exportStatus || exportError) && (
               <div className="map-export-exclude absolute top-4 right-4 z-[1100] max-w-sm">
@@ -1696,7 +1463,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
             )}
 
             {/* Results Actions - Export */}
-            {latColumn && lngColumn && mapCases.length > 0 && !isExporting && (
+            {mapCases.length > 0 && !isExporting && (
               <div className="map-export-exclude absolute bottom-4 right-4 z-[1000]">
                 <ResultsActions
                   className="mt-0 pt-0 border-t-0 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg p-2"
@@ -1731,19 +1498,32 @@ export function SpotMap({ dataset }: SpotMapProps) {
               <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
-              <p className="text-lg text-gray-500">Select Latitude and Longitude</p>
-              <p className="text-sm text-gray-400 mt-1">
-                Choose the variables containing coordinate data
-              </p>
+              {latitudeOptions.length === 0 && longitudeOptions.length === 0 ? (
+                <>
+                  <p className="text-lg text-gray-600">No coordinates in this dataset</p>
+                  <p className="text-sm text-gray-500 mt-1 max-w-md">
+                    A spot map needs a latitude and a longitude variable, and none of the variables here look like coordinates. To map counts by district or another named area instead, use the Area Map.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg text-gray-600">Select Latitude and Longitude</p>
+                  <p className="text-sm text-gray-500 mt-1 max-w-md">
+                    {sameColumnForBoth
+                      ? 'Latitude and longitude are set to the same variable. Choose a different variable for one of them.'
+                      : 'Choose the variables containing coordinate data. They were not selected for you because no pair of variables is clearly a latitude and a longitude.'}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         )}
 
         {/* No coordinates warning overlay */}
-        {latColumn && lngColumn && mapCases.length === 0 && (
-          <div className="absolute bottom-4 left-4 right-4 bg-yellow-50 border border-yellow-200 rounded-lg p-3 shadow-lg">
+        {coordinatesChosen && mapCases.length === 0 && (
+          <div className="absolute bottom-4 left-4 right-4 z-[1000] bg-yellow-50 border border-yellow-200 rounded-lg p-3 shadow-lg">
             <p className="text-sm text-yellow-800">
-              No valid coordinates found. Latitude must be -90 to 90, longitude -180 to 180.
+              No usable coordinates found in these variables. Latitude must be -90 to 90 and longitude -180 to 180, in decimal degrees or degrees, minutes and seconds.
             </p>
           </div>
         )}
