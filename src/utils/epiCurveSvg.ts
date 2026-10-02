@@ -156,7 +156,7 @@ export function generateEpiCurveSVG(input: EpiCurveSvgInput): string {
     if (stratified) {
       let cumHeight = 0;
       data.strataKeys.forEach((key, keyIndex) => {
-        const count = bin.strata.get(key)?.length || 0;
+        const count = bin.strataTotals.get(key) ?? 0;
         if (count > 0) {
           const barHeight = (count / yMax) * PLOT_HEIGHT;
           const y = plotBottom - cumHeight - barHeight;

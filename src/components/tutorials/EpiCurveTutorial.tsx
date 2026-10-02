@@ -54,9 +54,18 @@ export const EpiCurveTutorial: React.FC = () => {
               <li className="flex items-start">
                 <span className="font-bold text-gray-600 mr-2 mt-0.5">2.</span>
                 <div>
-                  <strong>Choose the Bin Size:</strong> Hourly, 6-hour, 12-hour, daily or weekly. For acute
-                  outbreaks, use hours or days; bins shorter than a day need a Time Column. For longer
-                  investigations, use weeks: CDC/MMWR weeks run Sunday to Saturday and ISO weeks Monday to Sunday.
+                  <strong>Choose the Bin Size:</strong> Hourly, 6-hour, 12-hour, daily, weekly or monthly. LineList
+                  suggests one from the data; change it to suit the incubation period. For acute outbreaks, use
+                  hours or days; bins shorter than a day need a Time Column. For longer investigations, use weeks
+                  (CDC/MMWR weeks run Sunday to Saturday and ISO weeks Monday to Sunday) or months.
+                </div>
+              </li>
+              <li className="flex items-start">
+                <span className="font-bold text-gray-600 mr-2 mt-0.5">&bull;</span>
+                <div>
+                  <strong>Aggregated data:</strong> If each record is a report with a number of cases (for
+                  example one row per district and month), set <em>Each Record Is</em> to the column that holds
+                  the count. The bars then add up cases instead of counting rows.
                 </div>
               </li>
               <li className="flex items-start">

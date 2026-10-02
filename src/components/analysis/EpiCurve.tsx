@@ -12,6 +12,7 @@ import {
   ANNOTATION_CATEGORIES, PATHOGEN_INCUBATION, BIN_SIZE_NAMES, parseLocalDate, parseWallClock, parseTimeString,
   isBinSize, isSubDailyBinSize, serializeAnnotation, reviveAnnotation, annotationSpan, spanInBins,
   chooseAxisLabels, fullBinLabel, binSizeNote, estimateExposureWindow, formatIncubationRange, incubationHours,
+  suggestBinSize, niceAxisMax,
 } from '../../utils/epiCurve';
 import type { BinSize, ColorScheme, Annotation, EpiCurveData, AnnotationType } from '../../utils/epiCurve';
 import { generateEpiCurveSVG } from '../../utils/epiCurveSvg';
@@ -20,6 +21,8 @@ import { TabHeader, ResultsActions, ExportIcons, AdvancedOptions, HelpPanel } fr
 import { exportChartPNG, exportChartSVG, chartFilename, downloadBlob } from '../../utils/chartExport';
 import { exportToCSV } from '../../utils/csvParser';
 import { pickOutcomeColumn, readsAsNonCase } from '../../utils/caseDefinition';
+import { findCountColumn, countColumnCandidates } from '../../utils/countColumn';
+import { formatLocaleNumber } from '../../utils/localeNumbers';
 import { useLocale } from '../../contexts/LocaleContext';
 import {
   categoryValue, collectCategoryValues, countInCategory, filterByCategoryValues, isMissingValue,
@@ -119,8 +122,10 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     }
   });
 
-  // Tracks manual bin-size changes; a bin size restored from storage counts as a user choice.
-  const userChangedBinSize = useRef(isSampleOutbreakPreset || saved.binSize !== undefined);
+  // Tracks manual bin-size changes. Only a size the user picked is kept from
+  // storage: the suggested size is saved too, and treating that as a choice
+  // froze whatever was suggested the first time the dataset was opened.
+  const userChangedBinSize = useRef(isSampleOutbreakPreset || saved.binSizeChosen === true);
 
   // Resizable panel
   const [panelWidth, setPanelWidth] = useState(288); // 18rem = 288px
@@ -157,6 +162,10 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   const [binSize, setBinSize] = useState<BinSize>(() => isSampleOutbreakPreset ? '12hour' : (isBinSize(saved.binSize) ? saved.binSize : 'daily'));
   const [stratifyBy, setStratifyBy] = useState<string>(() => isSampleOutbreakPreset ? 'case_status' : (saved.stratifyBy as string) ?? '');
   const [colorScheme, setColorScheme] = useState<ColorScheme>(() => (saved.colorScheme as ColorScheme) || 'default');
+  // The column saying how many cases each record stands for, for aggregated
+  // data; '' when each record is one case, null until the user has chosen.
+  const [countColumnChoice, setCountColumnChoice] = useState<string | null>(() =>
+    isSampleOutbreakPreset ? '' : typeof saved.countColumn === 'string' ? saved.countColumn : null);
 
   // Filter state
   const [filterBy, setFilterBy] = useState<string>(() => isSampleOutbreakPreset ? '' : (saved.filterBy as string) ?? '');
@@ -218,6 +227,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
         dateColumn,
         timeColumn,
         binSize,
+        binSizeChosen: userChangedBinSize.current,
+        countColumn: countColumnChoice ?? undefined,
         stratifyBy,
         colorScheme,
         showGridLines,
@@ -236,9 +247,23 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       console.error('Failed to save epi curve settings:', e);
     }
   }, [persistenceKey, annotations, manualStartDate, manualEndDate, useManualDateRange,
-    dateColumn, timeColumn, binSize, stratifyBy, colorScheme, showGridLines, showCaseCounts,
+    dateColumn, timeColumn, binSize, countColumnChoice, stratifyBy, colorScheme, showGridLines, showCaseCounts,
     chartTitle, xAxisLabel, yAxisLabel, selectedPathogen, showExposureWindow,
     filterBy, selectedFilterValues, includeNonCases]);
+
+  // Columns that could hold a count of cases. A dataset with
+  // one row per report (district, month, cases) is recognised and its count
+  // column used from the start; counting its rows drew the same bar every month.
+  const numericColumns = useMemo(
+    () => countColumnCandidates(dataset.columns, dataset.records),
+    [dataset.columns, dataset.records]
+  );
+  const detectedCountColumn = useMemo(
+    () => findCountColumn(dataset.columns, dataset.records)?.key ?? '',
+    [dataset.columns, dataset.records]
+  );
+  const requestedCountColumn = countColumnChoice ?? detectedCountColumn;
+  const countColumn = numericColumns.some(c => c.key === requestedCountColumn) ? requestedCountColumn : '';
 
   // Find date columns (memoized to prevent unnecessary re-renders)
   const dateColumns = useMemo(
@@ -315,51 +340,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       return timeColumn !== '' && parseTimeString(String(r[timeColumn] ?? '')) !== null;
     });
   }, [dataset.records, dateColumn, timeColumn]);
-
-  // Auto-suggest bin size based on date range (only if user hasn't manually changed it)
-  useEffect(() => {
-    if (!dateColumn || userChangedBinSize.current) return;
-
-    // Extract valid dates from the data (use full dataset for range estimation)
-    const validDates = dataset.records
-      .map(r => {
-        const dateVal = r[dateColumn];
-        if (!dateVal) return null;
-        const date = parseLocalDate(String(dateVal));
-        return isNaN(date.getTime()) ? null : date;
-      })
-      .filter((d): d is Date => d !== null);
-
-    if (validDates.length === 0) return;
-
-    // Calculate date range in days (loop-based min/max avoids call-stack overflow on very large datasets)
-    let minTime = Infinity;
-    let maxTime = -Infinity;
-    validDates.forEach(d => {
-      const t = d.getTime();
-      if (t < minTime) minTime = t;
-      if (t > maxTime) maxTime = t;
-    });
-    const daysDiff = (maxTime - minTime) / (1000 * 60 * 60 * 24);
-
-    // Suggest bin size based on date range. Hourly only when there are times
-    // to bin by: a dates-only line list spanning under a week used to open as
-    // a row of spikes at midnight with 23 empty bars between each.
-    let suggestedBinSize: BinSize;
-    if (daysDiff < 7 && hasUsableTimes) {
-      suggestedBinSize = 'hourly';
-    } else if (daysDiff < 60) {
-      suggestedBinSize = 'daily';
-    } else {
-      suggestedBinSize = 'weekly-cdc';
-    }
-
-    // Only update if different from current
-    if (suggestedBinSize !== binSize) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- A suggestion from the data, applied until the user chooses a bin size.
-      setBinSize(suggestedBinSize);
-    }
-  }, [dateColumn, dataset.records, binSize, hasUsableTimes]);
 
   // Get unique values for the filter dropdown
   const filterValues = useMemo(() => {
@@ -440,9 +420,61 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     };
   }, [filteredRecords, caseColumn, filterBy, includeNonCases]);
 
-  // "Cases" only when non-cases have been identified and left out.
-  const recordNoun = caseColumn && !includeNonCases && filterBy !== caseColumn.key ? 'case' : 'record';
+  // "Cases" when a column counts them, or when non-cases have been identified
+  // and left out. What is left out is always counted in records.
+  const recordNoun = countColumn || (caseColumn && !includeNonCases && filterBy !== caseColumn.key) ? 'case' : 'record';
+  const rowNoun = countColumn ? 'record' : recordNoun;
   const curveTimeColumn = isSubDailyBin ? timeColumn || undefined : undefined;
+
+  // Suggest a bin size from the data, until the user chooses one.
+  useEffect(() => {
+    if (!dateColumn || userChangedBinSize.current) return;
+
+    const DAY = 24 * 60 * 60 * 1000;
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    let cases = 0;
+    const days = new Set<number>();
+    for (const record of curveRecords) {
+      const raw = record[dateColumn];
+      if (isMissingValue(raw)) continue;
+      const w = parseWallClock(raw instanceof Date ? raw : String(raw));
+      if (!w) continue;
+      let weight = 1;
+      if (countColumn) {
+        const count = Number(record[countColumn]);
+        if (!Number.isInteger(count) || count <= 0) continue;
+        weight = count;
+      }
+      const day = Date.UTC(w.year, w.month, w.day);
+      const time = w.hasTime ? { hours: w.hours, minutes: w.minutes }
+        : timeColumn ? parseTimeString(String(record[timeColumn] ?? '')) : null;
+      const at = day + (time ? time.hours * 3600000 + time.minutes * 60000 : 0);
+      if (at < minTime) minTime = at;
+      if (at > maxTime) maxTime = at;
+      days.add(day);
+      cases += weight;
+    }
+    if (cases === 0) return;
+
+    const sortedDays = Array.from(days).sort((a, b) => a - b);
+    let minGapDays: number | null = null;
+    for (let i = 1; i < sortedDays.length; i++) {
+      const gap = (sortedDays[i] - sortedDays[i - 1]) / DAY;
+      if (minGapDays === null || gap < minGapDays) minGapDays = gap;
+    }
+
+    const suggestedBinSize = suggestBinSize({
+      spanDays: (maxTime - minTime) / DAY,
+      cases,
+      hasTimes: hasUsableTimes,
+      minGapDays,
+    });
+    if (suggestedBinSize !== binSize) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- A suggestion from the data, applied until the user chooses a bin size.
+      setBinSize(suggestedBinSize);
+    }
+  }, [dateColumn, timeColumn, countColumn, curveRecords, binSize, hasUsableTimes]);
 
   // Calculate exposure window dates directly from records (before curveData processing)
   // This allows us to include them in the date range calculation
@@ -455,7 +487,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     // First onset among the records the curve plots, with its time of day when
     // the curve is using one.
     const { firstOnset, onsetHasTime } = processEpiCurveData(
-      curveRecords, dateColumn, binSize, undefined, undefined, curveTimeColumn
+      curveRecords, dateColumn, binSize, undefined, undefined, curveTimeColumn,
+      { countColumn: countColumn || undefined }
     ).summary;
     if (!firstOnset) return null;
 
@@ -466,7 +499,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       firstCaseDate: firstOnset,
       onsetHasTime,
     };
-  }, [selectedPathogen, showExposureWindow, dateColumn, curveRecords, binSize, curveTimeColumn]);
+  }, [selectedPathogen, showExposureWindow, dateColumn, curveRecords, binSize, curveTimeColumn, countColumn]);
 
   // The custom date range, when one is set and complete.
   const manualRange = useMemo(() => {
@@ -505,9 +538,9 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     // widen it.
     return processEpiCurveData(
       curveRecords, dateColumn, binSize, stratifyBy || undefined, dateRangeAnnotations,
-      curveTimeColumn, { range: manualRange }
+      curveTimeColumn, { range: manualRange, countColumn: countColumn || undefined }
     );
-  }, [curveRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, curveTimeColumn, manualRange]);
+  }, [curveRecords, dateColumn, binSize, stratifyBy, annotations, exposureWindowDates, curveTimeColumn, manualRange, countColumn]);
 
   // Calculate exposure window for display (after curveData is available)
   const exposureWindow = useMemo(() => {
@@ -800,17 +833,14 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   // band. Without this a tall bar grows straight through the labels, which is
   // most likely on exactly the charts that are annotated.
   const yAxisMax = useMemo(() => {
-    const base = Math.max(
-      displayData.maxCount + 1,
-      Math.ceil((displayData.maxCount + 1) / 5) * 5
-    );
+    const base = niceAxisMax(displayData.maxCount + 1);
     if (annotationBandHeight === 0 || displayData.maxCount === 0) return base;
 
     const usable = chartHeight - COUNT_LABEL_HEIGHT - annotationBandHeight;
     if (usable <= 0) return base;
 
     const needed = (displayData.maxCount * chartHeight) / usable;
-    return Math.max(base, Math.ceil(needed / 5) * 5);
+    return Math.max(base, niceAxisMax(needed));
   }, [displayData.maxCount, annotationBandHeight, chartHeight]);
 
   // Which x-axis labels are shown (thinned when there are too many bins), keyed
@@ -893,7 +923,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
   const filteredOutCount = dataset.records.length - filteredRecords.length;
   const hiddenNonCases = includeNonCases ? 0 : nonCaseCount;
   const hasExclusions = filteredOutCount + hiddenNonCases + summary.missingDate + summary.unrecognisedDate
-    + summary.missingTime + summary.unrecognisedTime + summary.outsideRange > 0;
+    + summary.missingTime + summary.unrecognisedTime + summary.outsideRange + summary.missingCount > 0;
+  const countColumnLabel = numericColumns.find(c => c.key === countColumn)?.label ?? countColumn;
   const example = (examples: string[]) => examples.length > 0 ? ` (e.g. "${examples[0]}")` : '';
   const binName = BIN_SIZE_NAMES[displayData.binSize];
   const requestedBinName = BIN_SIZE_NAMES[displayData.requestedBinSize];
@@ -960,7 +991,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
           {/* Summary: what the bars hold, and what was left out and why */}
           <div className="text-sm text-gray-600 pb-3 border-b border-gray-200">
             <div>
-              <span className="font-medium">{plural(summary.plotted, recordNoun)}</span> plotted
+              <span className="font-medium">{formatLocaleNumber(summary.plotted, localeConfig, 0)} {recordNoun}{summary.plotted === 1 ? '' : 's'}</span> plotted
+              {countColumn && <span> from {plural(summary.plottedRecords, 'record')}</span>}
               {peakBin && (
                 <span className="text-gray-400"> · Peak: {displayData.maxCount} ({axisSpansYears ? fullBinLabel(peakBin, displayData.binSize) : peakBin.label})</span>
               )}
@@ -988,24 +1020,29 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                       </button>
                     </li>
                   )}
+                  {summary.missingCount > 0 && (
+                    <li>
+                      {plural(summary.missingCount, 'record')} with no whole number of cases in {countColumnLabel}{example(summary.missingCountExamples)}
+                    </li>
+                  )}
                   {summary.missingDate > 0 && (
-                    <li>{plural(summary.missingDate, recordNoun)} with nothing in {dateColumnLabel}</li>
+                    <li>{plural(summary.missingDate, rowNoun)} with nothing in {dateColumnLabel}</li>
                   )}
                   {summary.unrecognisedDate > 0 && (
                     <li>
-                      {plural(summary.unrecognisedDate, recordNoun)} with a value in {dateColumnLabel} that could not be read as a date{example(summary.unrecognisedDateExamples)}
+                      {plural(summary.unrecognisedDate, rowNoun)} with a value in {dateColumnLabel} that could not be read as a date{example(summary.unrecognisedDateExamples)}
                     </li>
                   )}
                   {summary.missingTime > 0 && (
-                    <li>{plural(summary.missingTime, recordNoun)} with nothing in {timeColumnLabel}, which {binName} bins need</li>
+                    <li>{plural(summary.missingTime, rowNoun)} with nothing in {timeColumnLabel}, which {binName} bins need</li>
                   )}
                   {summary.unrecognisedTime > 0 && (
                     <li>
-                      {plural(summary.unrecognisedTime, recordNoun)} with a value in {timeColumnLabel} that could not be read as a time{example(summary.unrecognisedTimeExamples)}
+                      {plural(summary.unrecognisedTime, rowNoun)} with a value in {timeColumnLabel} that could not be read as a time{example(summary.unrecognisedTimeExamples)}
                     </li>
                   )}
                   {summary.outsideRange > 0 && (
-                    <li>{plural(summary.outsideRange, recordNoun)} outside the custom date range</li>
+                    <li>{plural(summary.outsideRange, rowNoun)} outside the custom date range</li>
                   )}
                 </ul>
               </div>
@@ -1110,6 +1147,29 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
             </select>
           </div>
 
+          {/* What a record stands for: one case, or a count of them */}
+          {numericColumns.length > 0 && (
+            <div>
+              <label htmlFor="epi-curve-count-column" className="block text-sm font-medium text-gray-700 mb-1">Each Record Is</label>
+              <select
+                id="epi-curve-count-column"
+                value={countColumn}
+                onChange={(e) => setCountColumnChoice(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              >
+                <option value="">One case</option>
+                {numericColumns.map(col => (
+                  <option key={col.key} value={col.key}>A count, in {col.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">
+                {countColumn
+                  ? `Bars add up ${countColumnLabel}. Use this for aggregated data, such as one row per district and month.`
+                  : 'For aggregated data, such as one row per district and month, choose the column that holds the number of cases.'}
+              </p>
+            </div>
+          )}
+
           {/* Bin Size */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Bin Size</label>
@@ -1127,6 +1187,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
               <option value="daily">Daily</option>
               <option value="weekly-cdc">Weekly (CDC/MMWR)</option>
               <option value="weekly-iso">Weekly (ISO)</option>
+              <option value="monthly">Monthly</option>
             </select>
           </div>
 
@@ -1553,7 +1614,8 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                     onClick={() => {
                       // The extent of the data itself, not of the range now drawn.
                       const fitted = processEpiCurveData(
-                        curveRecords, dateColumn, binSize, undefined, annotations, curveTimeColumn
+                        curveRecords, dateColumn, binSize, undefined, annotations, curveTimeColumn,
+                        { countColumn: countColumn || undefined }
                       );
                       if (fitted.bins.length > 0) {
                         setManualStartDate(formatLocalDate(fitted.dateRange.start));
@@ -1755,7 +1817,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                             // Stacked bars
                             <div className="flex flex-col-reverse border-l border-white">
                               {displayData.strataKeys.map((strataKey, strataIndex) => {
-                                const count = bin.strata.get(strataKey)?.length || 0;
+                                const count = bin.strataTotals.get(strataKey) ?? 0;
                                 if (count === 0) return null;
                                 const height = (count / yAxisMax) * chartHeight;
                                 return (

@@ -2,10 +2,10 @@ import type { CaseRecord } from '../types/analysis';
 import { categoryValue, isMissingValue, sortCategoryValues, MISSING_CATEGORY_LABEL } from './recordFilter';
 import { readsAsNonCase } from './caseDefinition';
 
-export type BinSize = 'hourly' | '6hour' | '12hour' | 'daily' | 'weekly-cdc' | 'weekly-iso';
+export type BinSize = 'hourly' | '6hour' | '12hour' | 'daily' | 'weekly-cdc' | 'weekly-iso' | 'monthly';
 
 export const BIN_SIZES: readonly BinSize[] = [
-  'hourly', '6hour', '12hour', 'daily', 'weekly-cdc', 'weekly-iso',
+  'hourly', '6hour', '12hour', 'daily', 'weekly-cdc', 'weekly-iso', 'monthly',
 ] as const;
 
 /**
@@ -246,14 +246,11 @@ function clockKeyToLocal(key: number): Date {
   );
 }
 
-function floorTo(value: number, unit: number): number {
-  return Math.floor(value / unit) * unit;
-}
-
 function mod(value: number, by: number): number {
   return ((value % by) + by) % by;
 }
 
+/** The width of a bin, for the sizes that have one. A month does not. */
 function binStepMs(binSize: BinSize): number {
   switch (binSize) {
     case 'hourly': return HOUR_MS;
@@ -265,32 +262,50 @@ function binStepMs(binSize: BinSize): number {
   }
 }
 
-function binStartKey(key: number, binSize: BinSize): number {
+/**
+ * Which bar a moment falls in, as a whole number counted from a fixed origin.
+ *
+ * Bars are found and laid out by this number rather than by a width in
+ * milliseconds, because months are not all the same length. Consecutive bars
+ * have consecutive numbers, so the bar a record belongs in is a subtraction.
+ */
+function binOrdinal(key: number, binSize: BinSize): number {
   switch (binSize) {
-    case 'hourly':
-    case '6hour':
-    case '12hour':
-      // The count starts at a midnight, so these fall on 0:00, 6:00, 12:00...
-      return floorTo(key, binStepMs(binSize));
-    case 'weekly-cdc': {
-      // CDC (MMWR) weeks start on Sunday. Day 0 of the count was a Thursday.
-      const dayNumber = Math.floor(key / DAY_MS);
-      return (dayNumber - mod(dayNumber + 4, 7)) * DAY_MS;
+    case 'monthly': {
+      const u = new Date(key);
+      return u.getUTCFullYear() * 12 + u.getUTCMonth();
     }
-    case 'weekly-iso': {
-      // ISO weeks start on Monday
-      const dayNumber = Math.floor(key / DAY_MS);
-      return (dayNumber - mod(dayNumber + 3, 7)) * DAY_MS;
-    }
-    default:
-      return floorTo(key, DAY_MS);
+    // CDC (MMWR) weeks start on Sunday. Day 0 of the count was a Thursday.
+    case 'weekly-cdc': return Math.floor((Math.floor(key / DAY_MS) + 4) / 7) - 1;
+    // ISO weeks start on Monday.
+    case 'weekly-iso': return Math.floor((Math.floor(key / DAY_MS) + 3) / 7) - 1;
+    // The count starts at a midnight, so hourly sizes fall on 0:00, 6:00, 12:00...
+    default: return Math.floor(key / binStepMs(binSize));
   }
+}
+
+/** The moment a numbered bar starts. */
+function ordinalStartKey(ordinal: number, binSize: BinSize): number {
+  switch (binSize) {
+    case 'monthly': return clockKey(Math.floor(ordinal / 12), mod(ordinal, 12), 1);
+    case 'weekly-cdc': return (ordinal * 7 + 3) * DAY_MS;
+    case 'weekly-iso': return (ordinal * 7 + 4) * DAY_MS;
+    default: return ordinal * binStepMs(binSize);
+  }
+}
+
+function binStartKey(key: number, binSize: BinSize): number {
+  return ordinalStartKey(binOrdinal(key, binSize), binSize);
 }
 
 const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function formatBinLabel(key: number, binSize: BinSize, withYear = false): string {
   const u = new Date(key);
+  if (binSize === 'monthly') {
+    const month = MONTH_ABBREVIATIONS[u.getUTCMonth()];
+    return withYear ? `${month} ${u.getUTCFullYear()}` : month;
+  }
   const day = `${MONTH_ABBREVIATIONS[u.getUTCMonth()]} ${u.getUTCDate()}`;
   const dated = withYear ? `${day}, ${u.getUTCFullYear()}` : day;
   return isSubDailyBinSize(binSize) ? `${dated} ${u.getUTCHours()}:00` : dated;
@@ -304,13 +319,24 @@ export interface EpiCurveBin {
   label: string;
   cases: CaseRecord[];
   strata: Map<string, CaseRecord[]>;
+  /** Height of each stratum's segment: its records, or their counts added up. */
+  strataTotals: Map<string, number>;
+  /** Height of the bar. */
   total: number;
 }
 
 /** What was drawn, what was left out and why. The chart shows all of it. */
 export interface EpiCurveSummary {
-  /** Records in the bars. Bar heights add up to this. */
+  /**
+   * What the bars add up to: the number of records, or, with a count column,
+   * the cases those records report.
+   */
   plotted: number;
+  /** Records that went into the bars. Equal to `plotted` without a count column. */
+  plottedRecords: number;
+  /** With a count column: records whose count is blank or not a whole number of zero or more. */
+  missingCount: number;
+  missingCountExamples: string[];
   /** Nothing in the date column. */
   missingDate: number;
   /** A value in the date column that could not be read as a date. */
@@ -372,11 +398,20 @@ export interface EpiCurveOptions {
    */
   range?: { start: Date; end: Date };
   maxBins?: number;
+  /**
+   * A column saying how many cases each record stands for, for aggregated data
+   * such as one row per district and month. Bars then add up that column
+   * instead of counting rows.
+   */
+  countColumn?: string;
 }
 
 function emptySummary(): EpiCurveSummary {
   return {
     plotted: 0,
+    plottedRecords: 0,
+    missingCount: 0,
+    missingCountExamples: [],
     missingDate: 0,
     unrecognisedDate: 0,
     unrecognisedDateExamples: [],
@@ -871,13 +906,30 @@ export function processEpiCurveData(
   // Read every record's date once, and its time where a time column is given.
   interface Dated {
     record: CaseRecord;
+    /** How many cases the record stands for: 1 unless a count column is in use. */
+    weight: number;
     dayKey: number;
     /** Date and time together, or null when no time of day is known. */
     timedKey: number | null;
     timeProblem: 'missing' | 'unrecognised' | null;
   }
   const dated: Dated[] = [];
+  const { countColumn } = options;
   for (const record of records) {
+    let weight = 1;
+    if (countColumn) {
+      const rawCount = record[countColumn];
+      const count = typeof rawCount === 'number' ? rawCount
+        : typeof rawCount === 'string' && rawCount.trim() !== '' ? Number(rawCount) : NaN;
+      if (!Number.isInteger(count) || count < 0) {
+        // A report with no usable count says nothing about how many cases there
+        // were; guessing one would put a case on the curve that nobody reported.
+        summary.missingCount++;
+        if (!isMissingValue(rawCount)) pushExample(summary.missingCountExamples, rawCount);
+        continue;
+      }
+      weight = count;
+    }
     const rawDate = record[dateColumn];
     if (isMissingValue(rawDate)) {
       summary.missingDate++;
@@ -907,7 +959,7 @@ export function processEpiCurveData(
         }
       }
     }
-    dated.push({ record, dayKey, timedKey, timeProblem });
+    dated.push({ record, weight, dayKey, timedKey, timeProblem });
   }
 
   const outlierDays = findOutlierDays(dated.map(d => d.dayKey));
@@ -926,14 +978,13 @@ export function processEpiCurveData(
     isSubDailyBinSize(binSize) ? (d.timedKey ?? d.dayKey) : d.dayKey;
 
   // The first and last bar for a bin size, or null when nothing can be plotted.
+  // `first` and `last` are bar numbers (see binOrdinal), not moments.
   const extentFor = (binSize: BinSize): { first: number; last: number; count: number } | null => {
-    const step = binStepMs(binSize);
-
     if (options.range) {
-      const first = binStartKey(clockKeyOfDate(options.range.start), binSize);
-      const last = binStartKey(clockKeyOfDate(options.range.end), binSize);
+      const first = binOrdinal(clockKeyOfDate(options.range.start), binSize);
+      const last = binOrdinal(clockKeyOfDate(options.range.end), binSize);
       if (isNaN(first) || isNaN(last) || last < first) return null;
-      return { first, last, count: Math.round((last - first) / step) + 1 };
+      return { first, last, count: last - first + 1 };
     }
 
     let minKey = Infinity;
@@ -962,14 +1013,14 @@ export function processEpiCurveData(
     // One empty bin each side, so the curve visibly starts from and returns to
     // zero without burying a short outbreak in blank space. A wider window is
     // what the custom date range is for.
-    let first = binStartKey(annotationMin, binSize) - step;
-    let last = binStartKey(annotationMax, binSize) + step;
+    let first = binOrdinal(annotationMin, binSize) - 1;
+    let last = binOrdinal(annotationMax, binSize) + 1;
 
     // If annotations extend beyond data range, add 1 extra bin for padding
-    if (annotationMin < binStartKey(minKey, binSize)) first -= step;
-    if (annotationMax > binStartKey(maxKey, binSize) + step) last += step;
+    if (annotationMin < binStartKey(minKey, binSize)) first -= 1;
+    if (annotationMax > ordinalStartKey(binOrdinal(maxKey, binSize) + 1, binSize)) last += 1;
 
-    return { first, last, count: Math.round((last - first) / step) + 1 };
+    return { first, last, count: last - first + 1 };
   };
 
   // Coarsen a request that needs more bars than can be drawn.
@@ -1009,17 +1060,17 @@ export function processEpiCurveData(
   }
   countTimeProblems();
 
-  const step = binStepMs(binSize);
   const bins: EpiCurveBin[] = [];
   for (let i = 0; i < extent.count; i++) {
-    const startKey = extent.first + i * step;
+    const startKey = ordinalStartKey(extent.first + i, binSize);
     bins.push({
       startDate: clockKeyToLocal(startKey),
-      endDate: clockKeyToLocal(startKey + step),
+      endDate: clockKeyToLocal(ordinalStartKey(extent.first + i + 1, binSize)),
       startKey,
       label: formatBinLabel(startKey, binSize),
       cases: [],
       strata: new Map<string, CaseRecord[]>(),
+      strataTotals: new Map<string, number>(),
       total: 0,
     });
   }
@@ -1031,27 +1082,32 @@ export function processEpiCurveData(
   for (const d of dated) {
     if (!isPlottable(d, binSize)) continue;
     const key = keyFor(d, binSize);
-    const index = Math.round((binStartKey(key, binSize) - extent.first) / step);
+    const index = binOrdinal(key, binSize) - extent.first;
     if (index < 0 || index >= bins.length) {
       summary.outsideRange++;
       continue;
     }
     const bin = bins[index];
     bin.cases.push(d.record);
-    bin.total++;
+    bin.total += d.weight;
     if (stratifyBy) {
       const strataValue = categoryValue(d.record[stratifyBy]);
       const group = bin.strata.get(strataValue);
       if (group) group.push(d.record);
       else bin.strata.set(strataValue, [d.record]);
+      bin.strataTotals.set(strataValue, (bin.strataTotals.get(strataValue) ?? 0) + d.weight);
     }
-    if (key < firstKey) firstKey = key;
-    if (key > lastKey) lastKey = key;
-    if (isSubDailyBinSize(binSize) && d.timedKey !== null) anyTimed = true;
-    summary.plotted++;
+    // A report of zero cases is on the curve but is not an onset.
+    if (d.weight > 0) {
+      if (key < firstKey) firstKey = key;
+      if (key > lastKey) lastKey = key;
+      if (isSubDailyBinSize(binSize) && d.timedKey !== null) anyTimed = true;
+    }
+    summary.plotted += d.weight;
+    summary.plottedRecords++;
   }
 
-  if (summary.plotted > 0) {
+  if (firstKey !== Infinity) {
     summary.firstOnset = clockKeyToLocal(firstKey);
     summary.lastOnset = clockKeyToLocal(lastKey);
     summary.onsetHasTime = anyTimed;
@@ -1077,9 +1133,80 @@ export function processEpiCurveData(
     bins,
     maxCount,
     strataKeys: sortStrataKeys(Array.from(strataKeysSet)),
-    dateRange: { start: clockKeyToLocal(extent.first), end: clockKeyToLocal(extent.last) },
+    dateRange: {
+      start: clockKeyToLocal(ordinalStartKey(extent.first, binSize)),
+      end: clockKeyToLocal(ordinalStartKey(extent.last, binSize)),
+    },
     peakBinIndex,
   };
+}
+
+// ============ A starting bin size ============
+
+export interface BinSizeEvidence {
+  /** Days from the first dated case to the last. */
+  spanDays: number;
+  /** Cases to be plotted: records, or their counts added up. */
+  cases: number;
+  /** Whether any case has a time of day. Without one, bins finer than a day are spikes at midnight. */
+  hasTimes: boolean;
+  /**
+   * The smallest gap between two different dates, in days, or null with fewer
+   * than two. Monthly reports are 28 or more days apart; a curve drawn in
+   * weeks from them is one bar and three gaps, twelve times a year.
+   */
+  minGapDays: number | null;
+}
+
+/** Bin sizes from finest to coarsest, with their width in days. */
+const BIN_WIDTH_DAYS: [BinSize, number][] = [
+  ['hourly', 1 / 24], ['6hour', 0.25], ['12hour', 0.5], ['daily', 1], ['weekly-cdc', 7], ['monthly', 30.44],
+];
+
+/**
+ * The bin size a curve opens with, until the user chooses one.
+ *
+ * The finest size that the data can fill: no finer than the dates themselves
+ * are spaced, and with no more bars than the number of cases can give a shape
+ * to. The limit on bars is three times the square root of the cases, kept
+ * between 10 and 60. Forty-four cases over 34 hours opened as 35 hourly bars of
+ * one or two cases each, which shows no curve at all; the same cases in seven
+ * 6-hour bars show the rise and fall. A year of weekly counts is not pushed
+ * into months, and four years of monthly reports are not drawn in weeks.
+ *
+ * This is a starting point only. The choice of bin size is the reader's.
+ */
+export function suggestBinSize({ spanDays, cases, hasTimes, minGapDays }: BinSizeEvidence): BinSize {
+  const maxBars = Math.min(60, Math.max(10, Math.round(3 * Math.sqrt(Math.max(cases, 0)))));
+  const finestWidth = minGapDays === null ? 0
+    : minGapDays >= 28 ? 30.44
+      : minGapDays >= 7 ? 7
+        : 0;
+  for (const [binSize, width] of BIN_WIDTH_DAYS) {
+    if (width < 1 && !hasTimes) continue;
+    if (width < finestWidth) continue;
+    if (spanDays / width + 1 <= maxBars) return binSize;
+  }
+  return 'monthly';
+}
+
+// ============ The count axis ============
+
+/**
+ * The top of the count axis: the smallest value at or above `atLeast` that
+ * divides into five steps a reader can count in.
+ *
+ * The axis has five intervals. Small curves keep steps of whole cases (1, 2,
+ * 3...). Once the steps would pass ten they are rounded up to 10, 15, 20, 25,
+ * 30, 40, 50, 60, 80 or a power of ten times those: a curve of monthly counts peaking
+ * at 916 was drawn with ticks at 184, 368, 552, 736 and 920.
+ */
+export function niceAxisMax(atLeast: number): number {
+  const rawStep = Math.max(1, atLeast) / 5;
+  if (rawStep <= 10) return Math.ceil(rawStep) * 5;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+  const step = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].map(m => m * magnitude).find(s => s >= rawStep) ?? 10 * magnitude;
+  return step * 5;
 }
 
 // ============ Axis labels ============
@@ -1098,6 +1225,8 @@ const LABEL_STEPS: Record<BinSize, number[]> = {
   daily: [1, 2, 7, 14, 28],
   'weekly-cdc': [1, 2, 4, 8, 13, 26, 52],
   'weekly-iso': [1, 2, 4, 8, 13, 26, 52],
+  // Counted from January, so quarterly and yearly labels fall on January.
+  monthly: [1, 2, 3, 6, 12, 24, 60],
 };
 
 /**
@@ -1124,7 +1253,6 @@ export function chooseAxisLabels(bins: EpiCurveBin[], binSize: BinSize, maxLabel
   }
   const labelStep = step;
 
-  const unit = binStepMs(binSize);
   // Daily bins a week or more apart are labelled on Mondays.
   const offset = binSize === 'daily' && labelStep % 7 === 0 ? 3 : 0;
   const yearOf = (bin: EpiCurveBin) => new Date(bin.startKey).getUTCFullYear();
@@ -1133,7 +1261,7 @@ export function chooseAxisLabels(bins: EpiCurveBin[], binSize: BinSize, maxLabel
   const labels: AxisLabel[] = [];
   let previousYear: number | null = null;
   bins.forEach((bin, index) => {
-    if (mod(Math.floor(bin.startKey / unit) + offset, labelStep) !== 0) return;
+    if (mod(binOrdinal(bin.startKey, binSize) + offset, labelStep) !== 0) return;
     const year = yearOf(bin);
     const withYear = spansYears && year !== previousYear;
     previousYear = year;
@@ -1158,6 +1286,8 @@ export function binSizeNote(binSize: BinSize): string {
       return 'Each bar is one week, Sunday to Saturday (CDC/MMWR weeks), labelled with its first day.';
     case 'weekly-iso':
       return 'Each bar is one week, Monday to Sunday (ISO weeks), labelled with its first day.';
+    case 'monthly':
+      return 'Each bar is one calendar month.';
     default:
       return '';
   }
@@ -1170,6 +1300,7 @@ export const BIN_SIZE_NAMES: Record<BinSize, string> = {
   daily: 'daily',
   'weekly-cdc': 'weekly (CDC/MMWR)',
   'weekly-iso': 'weekly (ISO)',
+  monthly: 'monthly',
 };
 
 // ============ Colours ============
