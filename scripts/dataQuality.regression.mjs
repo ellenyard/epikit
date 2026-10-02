@@ -24,7 +24,11 @@ const columns = [
   { key: 'age', label: 'Age', type: 'number' },
 ];
 const of = (issues, type) => issues.filter(i => i.checkType === type);
-const iso = d => d.toISOString().slice(0, 10);
+// The local calendar day, as a user would type it. toISOString() gives the UTC
+// day, which is already tomorrow during the evening in the Americas, and the
+// "today is not the future" check then failed for a few hours every day.
+const iso = d =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 try {
   await build({
