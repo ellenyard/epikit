@@ -3,6 +3,8 @@ import type { Dataset } from '../../../types/analysis';
 import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { findCountColumn } from '../../../utils/countColumn';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
 import { getChartColor } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
@@ -445,7 +447,8 @@ export function BarChart({ dataset }: BarChartProps) {
   const { config: locale } = useLocale();
   // Config state
   const [categoryVarChoice, setCategoryVarChoice] = useState('');
-  const [valueMode, setValueMode] = useState<ValueMode>('count');
+  // null means "follow the data": see countColumn below.
+  const [valueModeChoice, setValueMode] = useState<ValueMode | null>(null);
   const [valueVarChoice, setValueVarChoice] = useState('');
   // null means "follow the data": categories with an order of their own keep
   // it, and the rest are ranked by value.
@@ -474,14 +477,26 @@ export function BarChart({ dataset }: BarChartProps) {
   // current dataset, otherwise an automatic pick. Derived rather than written
   // back through an effect.
   const categoryVar = resolveColumnChoice(dataset, categoryVarChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
-  const valueVar = resolveColumnChoice(dataset, valueVarChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
+  // Aggregated data (one row per report, with a column of cases) starts as the
+  // total of that column. Counting its rows drew the same bar for every
+  // category, under an axis that read as cases.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const valueMode: ValueMode = valueModeChoice ?? (countColumn ? 'sum' : 'count');
+  const valueVar = resolveColumnChoice(
+    dataset, valueVarChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
+  );
 
   const selectedColumn = useMemo(
     () => dataset.columns.find(c => c.key === categoryVar),
     [dataset.columns, categoryVar]
   );
   const valueLabel = dataset.columns.find(c => c.key === valueVar)?.label || '';
-  const statistic = valueMode === 'count' ? '' : `${valueMode[0].toUpperCase()}${valueMode.slice(1)} of ${valueLabel}`;
+  // A total of cases is called by the column's own name, not "Sum of".
+  const statistic = valueMode === 'count' ? ''
+    : valueMode === 'sum' && countColumn?.key === valueVar ? valueLabel
+      : `${valueMode[0].toUpperCase()}${valueMode.slice(1)} of ${valueLabel}`;
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
@@ -724,6 +739,12 @@ export function BarChart({ dataset }: BarChartProps) {
               <option value="median">Median of numeric variable</option>
             </select>
           </div>
+          {valueMode === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setValueMode('sum'); setValueVarChoice(countColumn.key); }}
+            />
+          )}
 
           {/* Numeric variable (when sum, mean, or median is selected) */}
           {valueMode !== 'count' && (

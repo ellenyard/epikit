@@ -3,6 +3,8 @@ import type { CaseRecord, DataColumn, Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { findCountColumn, countColumnCandidates } from '../../../utils/countColumn';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
 import { getChartColor } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
@@ -246,10 +248,12 @@ function buildSeriesPoints(
 export function LineChart({ dataset }: LineChartProps) {
   const { config: locale } = useLocale();
   // Config state
-  const [xVar, setXVar] = useState('');
-  const [valueMode, setValueMode] = useState<ValueMode>('count');
-  const [yVar, setYVar] = useState('');
-  const [aggregation, setAggregation] = useState<Aggregation>('mean');
+  // null means "follow the data": nothing chosen yet, so the chart starts from
+  // what the dataset looks like.
+  const [xVarChoice, setXVar] = useState<string | null>(null);
+  const [valueModeChoice, setValueMode] = useState<ValueMode | null>(null);
+  const [yVarChoice, setYVar] = useState<string | null>(null);
+  const [aggregationChoice, setAggregation] = useState<Aggregation | null>(null);
   const [strataVar, setStrataVar] = useState('');
   const [facetCol, setFacetCol] = useState('');
   const [sharedScale, setSharedScale] = useState(true);
@@ -274,6 +278,22 @@ export function LineChart({ dataset }: LineChartProps) {
     () => dataset.columns.filter(c => c.type === 'date' || catColumns.includes(c)),
     [dataset.columns, catColumns]
   );
+
+  // Aggregated data (one row per report, with a column of cases) starts as
+  // cases over time. Counting its rows drew a flat line, and the mean of the
+  // count column, which was the default once it was chosen, is the average
+  // report rather than the number of cases.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const countLikeColumns = useMemo(
+    () => (countColumn ? countColumnCandidates(dataset.columns, dataset.records).map(c => c.key) : []),
+    [countColumn, dataset.columns, dataset.records]
+  );
+  const xVar = xVarChoice ?? (countColumn ? dataset.columns.find(c => c.type === 'date')?.key ?? '' : '');
+  const valueMode: ValueMode = valueModeChoice ?? (countColumn ? 'numeric' : 'count');
+  const yVar = yVarChoice ?? countColumn?.key ?? '';
+  const aggregation: Aggregation = aggregationChoice ?? (countLikeColumns.includes(yVar) ? 'sum' : 'mean');
+  // A total of cases is called by the column's own name, not "Sum of".
+  const isCaseTotal = valueMode === 'numeric' && aggregation === 'sum' && countLikeColumns.includes(yVar);
 
   const xColumn: DataColumn | undefined = dataset.columns.find(c => c.key === xVar);
   const strataColumn = dataset.columns.find(c => c.key === strataVar);
@@ -318,7 +338,8 @@ export function LineChart({ dataset }: LineChartProps) {
   // What the y-axis measures
   const yTitle = valueMode === 'count'
     ? 'Number of records'
-    : `${aggregation === 'sum' ? 'Sum' : aggregation === 'median' ? 'Median' : 'Mean'} of ${colLabel(yVar)}`;
+    : isCaseTotal ? colLabel(yVar)
+      : `${aggregation === 'sum' ? 'Sum' : aggregation === 'median' ? 'Median' : 'Mean'} of ${colLabel(yVar)}`;
 
   const defaultTitle = !xVar
     ? 'Line Chart'
@@ -479,6 +500,12 @@ export function LineChart({ dataset }: LineChartProps) {
               <option value="numeric">Numeric variable</option>
             </select>
           </div>
+          {valueMode === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setValueMode('numeric'); setYVar(countColumn.key); setAggregation('sum'); }}
+            />
+          )}
 
           {/* Y-axis variable (when numeric mode) */}
           {valueMode === 'numeric' && (
