@@ -388,7 +388,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       }
       adoptBoundaries(validation.boundaries, file.name, validation.warnings);
     } catch {
-      setBoundaryError('The boundary file could not be read. Upload a valid GeoJSON file.');
+      setBoundaryError('The boundary file could not be read. Choose a valid GeoJSON file.');
     } finally {
       event.target.value = '';
     }
@@ -537,7 +537,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       <div className="w-full lg:w-80 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 p-4 overflow-y-auto max-h-[45vh] lg:max-h-none">
         <TabHeader
           title="Area Map"
-          description="Join observation counts and optional denominator data to uploaded boundary polygons."
+          description="Join observation counts and optional denominator data to boundary polygons from a file."
         />
 
         <div className="space-y-4">
@@ -547,7 +547,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               onClick={() => fileInputRef.current?.click()}
               className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-left"
             >
-              {boundaryFileName || 'Upload boundary file...'}
+              {boundaryFileName || 'Choose boundary file...'}
             </button>
             <input
               ref={fileInputRef}
@@ -1101,7 +1101,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                 </svg>
-                <p className="text-lg text-gray-600">Upload Boundaries</p>
+                <p className="text-lg text-gray-600">Add Boundaries</p>
                 <p className="text-sm text-gray-500 mt-1">
                   Add a GeoJSON boundary file, then choose the fields that connect boundaries to your observation and denominator data.
                 </p>

@@ -524,6 +524,11 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     answer: 'Imported datasets are processed in your browser and saved in this browser\'s local storage so you can return later. LineList does not upload imported datasets to an application server or cloud storage. Map layers and other externally hosted resources may still generate normal network requests. Use project export to create backups or move work to another device.'
                   },
                   {
+                    id: 'who-can-see',
+                    question: 'Can other people see the data I import?',
+                    answer: 'No. LineList works like a program running on your own computer, not a website you send files to. Your browser opens the file where it is, nothing is sent to linelist.org, and there are no accounts and no shared database, so other people who use the site cannot see your data, and neither can the people who maintain LineList. Two things to keep in mind: anyone who uses the same computer and browser can open LineList and see what you left there, so delete your datasets when you finish on a shared computer; and a project file or export that you give to someone contains your data.'
+                  },
+                  {
                     id: 'capacity',
                     question: 'How large a dataset can LineList hold?',
                     answer: 'Work is kept in this browser\'s storage, which holds roughly 10,000 rows of a 20-column line list across all your datasets (the bundled samples can be deleted to make room). A larger file can still be imported and analysed, but LineList will warn that it could not be saved, and it will not be there after you close the tab. Keep your source file, and use Save Project for anything you want to return to.'
@@ -617,9 +622,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                       <svg className="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                       </svg>
-                      Client-Side Processing Only
+                      Your Data Stay on Your Computer
                     </h5>
                     <ul className="space-y-2 text-green-800 text-sm">
+                      <li className="flex items-start">
+                        <span className="mr-2">✓</span>
+                        <span>Only you can see the data you import; other people who use linelist.org cannot</span>
+                      </li>
                       <li className="flex items-start">
                         <span className="mr-2">✓</span>
                         <span>All data processing occurs in your web browser</span>

@@ -273,7 +273,7 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <p className="mt-4 text-lg font-medium text-gray-900 pointer-events-none">
-                  {isDragging ? 'Drop the file to import it' : 'Click to upload a file'}
+                  {isDragging ? 'Drop the file to import it' : 'Choose a file from this computer'}
                 </p>
                 <p className="mt-2 text-sm text-gray-500 pointer-events-none">
                   Supports CSV and Excel (.xlsx, .xls) files
@@ -298,6 +298,17 @@ export function DataImport({ onImport, onCancel }: DataImportProps) {
                 </button>
                 <span className="ml-2 text-xs text-gray-400">(Ctrl+V works here too)</span>
               </div>
+              {/* Said here because this is where people wonder who will see the
+                  file. "Upload" suggested it was going somewhere; it is not. */}
+              <p className="flex items-start justify-center gap-2 text-sm text-gray-600">
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                <span>
+                  Only you can see what you import. Your browser opens the file on this computer;
+                  nothing is sent to LineList, and other people who use this site cannot see it.
+                </span>
+              </p>
             </div>
           )}
 

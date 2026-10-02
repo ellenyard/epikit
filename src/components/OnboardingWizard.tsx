@@ -202,15 +202,15 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                   <ul className="space-y-2 text-green-800 text-sm">
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>Client-side only:</strong> All data processing happens in your browser</span>
+                      <span><strong>Only you can see your data:</strong> Nothing you import is sent to LineList, and other people who use the site cannot see your files</span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>No application-server uploads:</strong> Imported datasets stay in your browser</span>
+                      <span><strong>Everything runs on your computer:</strong> Your browser opens and analyzes the file where it is</span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>No cloud dataset storage:</strong> Data are saved in this browser's local storage</span>
+                      <span><strong>Saved here, not online:</strong> Your work is kept in this browser's storage on this computer</span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
@@ -398,7 +398,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         Maps
                       </h4>
                       <p className="text-sm text-gray-600 mb-3">
-                        Create spot maps from coordinates or area maps from uploaded boundaries.
+                        Create spot maps from coordinates or area maps from your own boundary file.
                       </p>
                       <button
                         onClick={() => handleTryTool('maps')}

@@ -172,7 +172,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <section className="border-t border-gray-200 pt-6 text-sm text-gray-600 space-y-2">
           <p>
             Datasets and edits are saved in this browser only. Closing the tab is safe; your
-            work will be here when you return. Nothing is uploaded to a server.
+            work will be here when you return. Nothing is sent to LineList, and no one else who
+            uses this site can see your data.
           </p>
           <p>
             To move work to another computer or keep a backup, use <strong>Save Project</strong> in
