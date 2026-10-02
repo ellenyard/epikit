@@ -595,6 +595,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               onChange={(event) => setAreaField(event.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
+              <option value="">Select the column with area names...</option>
               {dataset.columns.map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
@@ -1083,6 +1084,18 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                     <p className="text-xs text-gray-700">
                       The base map could not be loaded. You may be offline, or the map provider may be unavailable. The areas are still drawn correctly; choose "No base map" to export without it.
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Boundaries are drawn, but nothing is counted on them. Without
+                  this the map looked finished and simply had no colour. */}
+              {(!areaField || (summary && summary.matchedRecords === 0)) && (
+                <div className="map-export-exclude absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
+                  <div role="status" className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 shadow-lg text-sm">
+                    {!areaField
+                      ? 'Choose the column in your data that holds the area name (Observation Area Field). Nothing is counted on the map until then.'
+                      : `No value in ${dataset.columns.find(col => col.key === areaField)?.label ?? areaField} matches "${boundaryKey}" in this boundary file, so nothing is counted on the map. Check that both fields hold the same names and that the file covers your data.`}
                   </div>
                 </div>
               )}

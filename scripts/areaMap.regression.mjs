@@ -559,6 +559,38 @@ try {
     assert.equal(suggestJoinFields(columns, records, namedFeatures('X', 'Y')), null,
       'no shared value means no suggested pair');
 
+    // A column of small numbers shares values with any file that numbers its
+    // polygons. That is not a match: the surveillance sample's Deaths column
+    // was joined to the sample boundary file's object ids this way.
+    {
+      const numbered = {
+        type: 'FeatureCollection',
+        features: ['Alpha', 'Beta', 'Gamma', 'Delta'].map((name, i) => ({
+          type: 'Feature', geometry: null, properties: { source_objectid: i + 1, name },
+        })),
+      };
+      const surveillanceColumns = [
+        { key: 'district', label: 'District', type: 'categorical' },
+        { key: 'deaths', label: 'Deaths', type: 'number' },
+        { key: 'cases', label: 'Cases Reported', type: 'number' },
+      ];
+      const surveillance = [0, 1, 2, 3, 4, 1, 2].map((deaths, i) => ({
+        id: String(i), district: ['Lakeside', 'Hillcrest'][i % 2], deaths, cases: deaths * 10,
+      }));
+      assert.equal(suggestJoinFields(surveillanceColumns, surveillance, numbered), null,
+        'a count column is not joined to polygon numbers');
+      // The same numbers in a column named for a code are a legitimate key.
+      const coded = surveillance.map((r, i) => ({ ...r, district_code: (i % 4) + 1 }));
+      assert.deepEqual(
+        suggestJoinFields([...surveillanceColumns, { key: 'district_code', label: 'District code', type: 'number' }], coded, numbered),
+        { areaField: 'district_code', boundaryKey: 'source_objectid' });
+      // One name in ten matching is a coincidence, not a join.
+      const mostlyElsewhere = ['Alpha', 'North', 'South', 'East', 'West', 'Centre', 'Upper', 'Lower', 'Old', 'New']
+        .map((district, i) => ({ id: String(i), district, deaths: 0, cases: 1 }));
+      assert.equal(suggestJoinFields(surveillanceColumns, mostlyElsewhere, numbered), null,
+        'a pair has to agree on at least half the names');
+    }
+
     // Without the file the old behaviour stands.
     assert.equal(suggestBoundaryKey(['zzz', 'name']), 'name');
   }

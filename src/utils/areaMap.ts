@@ -263,18 +263,23 @@ export function getGeoJsonPropertyKeys(boundaries: GeoJsonFeatureCollection | nu
   return Array.from(keys).sort((a, b) => a.localeCompare(b));
 }
 
+const AREA_NAME_PATTERNS = [
+  /(^|_)(admin|adm|district|province|county|region|state|village|ward|area|zone|catchment|subcounty)(_|$)/,
+  /district|province|county|region|state|village|ward|area|zone|catchment|subcounty|neighbou?rhood|commune|municipal/i,
+];
+
+function looksLikeAreaColumn(column: DataColumn): boolean {
+  const name = `${column.key} ${column.label}`;
+  return AREA_NAME_PATTERNS.some(pattern => pattern.test(name));
+}
+
+/**
+ * The dataset column most likely to hold an area name, or '' when none is
+ * named like one. It used to fall back to the first column, which is usually
+ * the record ID: a choice that looked made and joined nothing.
+ */
 export function suggestAreaField(columns: DataColumn[]): string {
-  const patterns = [
-    /(^|_)(admin|adm|district|province|county|region|state|village|ward|area|zone|catchment|subcounty)(_|$)/,
-    /district|province|county|region|state|village|ward|area|zone|catchment|subcounty/i,
-  ];
-
-  const match = columns.find(col => {
-    const name = `${col.key} ${col.label}`;
-    return patterns.some(pattern => pattern.test(name));
-  });
-
-  return match?.key ?? columns[0]?.key ?? '';
+  return columns.find(looksLikeAreaColumn)?.key ?? '';
 }
 
 /**
@@ -336,8 +341,12 @@ export function suggestBoundaryKey(
 /**
  * The dataset column and boundary property that agree best with each other.
  *
- * Returns nothing when no pair shares a single value, so that a guess is not
- * presented as a match.
+ * Returns nothing unless a pair agrees on at least half of the column's
+ * distinct values, so that a guess is not presented as a match. Numeric
+ * columns take part only when they are named for an area or a code. Counting
+ * any shared value let a column of deaths (0, 1, 2...) pair with a boundary
+ * file's internal object numbers, and the result was a confident-looking map
+ * of 568 "matched" records that meant nothing.
  */
 export function suggestJoinFields(
   columns: DataColumn[],
@@ -358,6 +367,7 @@ export function suggestJoinFields(
   const sample = records.slice(0, 5000);
   for (const column of columns) {
     if (column.type === 'date') continue;
+    if (column.type === 'number' && !looksLikeAreaColumn(column) && !/code|fips|zip|postal/i.test(`${column.key} ${column.label}`)) continue;
     const dataValues = new Set<string>();
     for (const record of sample) {
       const value = normalizeAreaKey(record[column.key]);
@@ -368,7 +378,7 @@ export function suggestJoinFields(
       dataValues.forEach(value => {
         if (values.has(value)) matches++;
       });
-      if (matches > 0 && (!best || matches > best.matches)) {
+      if (matches * 2 >= dataValues.size && matches > 0 && (!best || matches > best.matches)) {
         best = { areaField: column.key, boundaryKey: key, matches };
       }
     }
