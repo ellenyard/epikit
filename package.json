@@ -39,7 +39,9 @@
     "test:chart-format": "node scripts/chartFormat.regression.mjs",
     "test:chart-categories": "node scripts/chartCategories.regression.mjs && TZ=UTC node scripts/chartCategories.regression.mjs && TZ=America/New_York node scripts/chartCategories.regression.mjs && TZ=Asia/Kolkata node scripts/chartCategories.regression.mjs && TZ=Pacific/Auckland node scripts/chartCategories.regression.mjs",
     "test:chart-export": "node scripts/chartExport.regression.mjs",
-    "test:coordinates": "node scripts/coordinates.regression.mjs"
+    "test:coordinates": "node scripts/coordinates.regression.mjs",
+    "test:epicurve-counts": "node scripts/epiCurveCounts.regression.mjs && TZ=UTC node scripts/epiCurveCounts.regression.mjs && TZ=Africa/Cairo node scripts/epiCurveCounts.regression.mjs && TZ=America/Santiago node scripts/epiCurveCounts.regression.mjs && TZ=Asia/Kolkata node scripts/epiCurveCounts.regression.mjs && TZ=Pacific/Auckland node scripts/epiCurveCounts.regression.mjs && TZ=America/New_York node scripts/epiCurveCounts.regression.mjs",
+    "test:count-column": "node scripts/countColumn.regression.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

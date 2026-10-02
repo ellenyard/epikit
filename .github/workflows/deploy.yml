@@ -87,6 +87,8 @@ jobs:
           npm run test:chart-categories
           npm run test:chart-export
           npm run test:coordinates
+          npm run test:epicurve-counts
+          npm run test:count-column
         timeout-minutes: 10
 
       - name: Build
