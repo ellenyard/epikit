@@ -63,8 +63,8 @@ export class ErrorBoundary extends Component<Props, State> {
             </h2>
             <p className="text-sm text-gray-600 mb-1">
               {isStaleChunkError(this.state.error)
-                ? "LineList was updated while this tab was open, so part of it could not be loaded. Reloading picks up the new version. Your data is safe — it's saved in this browser."
-                : "An unexpected error occurred. Your data is safe — it's saved automatically in your browser."}
+                ? "LineList was updated while this tab was open, so part of it could not be loaded. Reloading picks up the new version. Your data are safe — they are saved in this browser."
+                : "An unexpected error occurred. Your data are safe — they are saved automatically in your browser."}
             </p>
             <p className="text-xs text-gray-500 mb-4 font-mono">
               {this.state.error?.message}

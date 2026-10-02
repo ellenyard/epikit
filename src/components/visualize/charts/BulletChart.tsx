@@ -228,7 +228,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
       {/* Config panel */}
       <div className="w-72 flex-shrink-0 space-y-4">
         <VisualizationTip
-          tip="Bullet charts are ideal for comparing actual performance to a target. Data is automatically aggregated by category (e.g., mean per age group)."
+          tip="Bullet charts are ideal for comparing actual performance to a target. Data are automatically aggregated by category (e.g., mean per age group)."
           context="Try this: Category=Age Group, Actual=Vitamin A Coverage (%), Target=Target Vitamin A Coverage (%)"
         />
 

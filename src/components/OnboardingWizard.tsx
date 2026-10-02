@@ -210,7 +210,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>
-                      <span><strong>No cloud dataset storage:</strong> Data is saved in this browser's local storage</span>
+                      <span><strong>No cloud dataset storage:</strong> Data are saved in this browser's local storage</span>
                     </li>
                     <li className="flex items-start">
                       <span className="mr-2">•</span>

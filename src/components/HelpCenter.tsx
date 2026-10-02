@@ -525,13 +525,13 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   },
                   {
                     id: 'capacity',
-                    question: 'How much data can LineList hold?',
+                    question: 'How large a dataset can LineList hold?',
                     answer: 'Work is kept in this browser\'s storage, which holds roughly 10,000 rows of a 20-column line list across all your datasets (the bundled samples can be deleted to make room). A larger file can still be imported and analysed, but LineList will warn that it could not be saved, and it will not be there after you close the tab. Keep your source file, and use Save Project for anything you want to return to.'
                   },
                   {
                     id: 'phi',
                     question: 'Can I import data with Protected Health Information (PHI)?',
-                    answer: 'No, you should NOT import data containing PHI such as names, addresses, dates of birth, SSNs, or other direct identifiers. Always de-identify your data before importing it into LineList. Use case IDs instead of names, generalize dates and locations, and follow your organization\'s data handling policies.'
+                    answer: 'No, you should NOT import data containing PHI such as names, addresses, dates of birth, SSNs, or other direct identifiers. Always de-identify your data before importing them into LineList. Use case IDs instead of names, generalize dates and locations, and follow your organization\'s data handling policies.'
                   },
                   {
                     id: 'date-variable',

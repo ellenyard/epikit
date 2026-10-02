@@ -9,7 +9,7 @@ export const statDefinitions = {
   },
   median: {
     term: 'Median',
-    definition: 'The middle value when data is sorted. Half the values are above and half below. More robust to outliers than the mean.',
+    definition: 'The middle value when the data are sorted. Half the values are above and half below. More robust to outliers than the mean.',
   },
   mode: {
     term: 'Mode',

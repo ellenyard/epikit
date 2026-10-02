@@ -1091,7 +1091,7 @@ function App() {
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-900">Back up your work?</p>
-                <p className="text-xs text-gray-500 mt-1">Your data only exists in this browser. Save a project backup to keep it safe.</p>
+                <p className="text-xs text-gray-500 mt-1">Your data exist only in this browser. Save a project backup to keep them safe.</p>
                 <div className="flex gap-2 mt-3">
                   <button
                     onClick={() => { handleSaveProject(); setShowBackupReminder(false); }}
