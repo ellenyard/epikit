@@ -227,6 +227,10 @@ const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const WEEK_MS = 7 * DAY_MS;
 
+/** How far beyond the data an annotation may pull the axis: this share of the data's span, and never less than a week. */
+const ANNOTATION_REACH_SHARE = 0.5;
+const ANNOTATION_REACH_MIN_MS = WEEK_MS;
+
 function clockKey(year: number, month: number, day: number, hours = 0, minutes = 0, seconds = 0, ms = 0): number {
   const t = new Date(Date.UTC(2000, month, day, hours, minutes, seconds, ms));
   t.setUTCFullYear(year);
@@ -997,17 +1001,20 @@ export function processEpiCurveData(
     }
     if (minKey === Infinity) return null;
 
-    // Annotations can extend the axis beyond the data
+    // Annotations near the data extend the axis to reach them: the picnic
+    // the day before the first onset, the closure a week after the last case.
+    // One far outside (a mistyped year) is left off rather than stretching
+    // the curve into a year of empty bars; the annotation list says so.
+    const reach = Math.max(ANNOTATION_REACH_MIN_MS, (maxKey - minKey) * ANNOTATION_REACH_SHARE);
     let annotationMin = minKey;
     let annotationMax = maxKey;
     (annotations ?? []).forEach(ann => {
       const start = clockKeyOfDate(ann.date);
+      const end = ann.endDate ? clockKeyOfDate(ann.endDate) : start;
+      if (isNaN(start) || isNaN(end)) return;
+      if (start < minKey - reach || end > maxKey + reach) return;
       if (start < annotationMin) annotationMin = start;
-      if (start > annotationMax) annotationMax = start;
-      if (ann.endDate) {
-        const end = clockKeyOfDate(ann.endDate);
-        if (end > annotationMax) annotationMax = end;
-      }
+      if (end > annotationMax) annotationMax = end;
     });
 
     // One empty bin each side, so the curve visibly starts from and returns to

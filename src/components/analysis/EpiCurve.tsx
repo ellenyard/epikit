@@ -818,7 +818,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     setAnnotations(annotations.filter(a => a.id !== id));
   };
 
-  /** Move a label relative to its anchor. Called while dragging and from the offset fields. */
+  /** Move a label relative to its anchor. Called while dragging. */
   const moveAnnotationLabel = useCallback((id: string, offsetX: number, offsetY: number) => {
     setAnnotations(prev => prev.map(a =>
       a.id === id ? { ...a, labelOffsetX: Math.round(offsetX), labelOffsetY: Math.round(offsetY) } : a
@@ -1339,45 +1339,6 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                       className="w-full h-[30px] px-1 py-0.5 border border-gray-300 rounded bg-white"
                     />
                   </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Font size</label>
-                    <input
-                      type="number"
-                      min={8}
-                      max={28}
-                      step={1}
-                      value={newAnnotation.labelFontSize}
-                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelFontSize: Number(e.target.value) })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Weight</label>
-                    <select
-                      value={newAnnotation.labelFontWeight}
-                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelFontWeight: e.target.value as 'normal' | 'medium' | 'bold' })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white"
-                    >
-                      <option value="normal">Normal</option>
-                      <option value="medium">Medium</option>
-                      <option value="bold">Bold</option>
-                    </select>
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-xs text-gray-500 mb-1">Typeface</label>
-                    <select
-                      value={newAnnotation.labelFontFamily}
-                      onChange={(e) => setNewAnnotation({ ...newAnnotation, labelFontFamily: e.target.value as 'sans' | 'serif' | 'mono' })}
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded bg-white"
-                    >
-                      <option value="sans">Sans serif</option>
-                      <option value="serif">Serif</option>
-                      <option value="mono">Monospace</option>
-                    </select>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Limited to these three so exported figures render the same on any machine.
-                    </p>
-                  </div>
                 </div>
                 {newAnnotation.type === 'exposure' && (
                   <>
@@ -1433,11 +1394,18 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                     <div className="flex items-center justify-between">
                     <div className="flex-1 min-w-0">
                       <span className="font-medium truncate block" style={{ color: ann.color }}>{ann.label}</span>
-                      <span className="text-gray-400 text-xs">
-                        {formatWhen(ann.date, ann.hasTime === true)}
-                        {ann.endDate && ` – ${formatWhen(ann.endDate, ann.endHasTime === true)}`}
-                        {displayData.bins.length > 0 && annotationSpan(ann, displayData.bins) === null && ' · outside the dates shown'}
-                      </span>
+                      {/* An event off the axis is dated with its year, since a
+                          wrong year is the usual reason it is off the axis. */}
+                      {(() => {
+                        const offAxis = displayData.bins.length > 0 && annotationSpan(ann, displayData.bins) === null;
+                        return (
+                          <span className="text-gray-400 text-xs">
+                            {formatWhen(ann.date, ann.hasTime === true, offAxis)}
+                            {ann.endDate && ` – ${formatWhen(ann.endDate, ann.endHasTime === true, offAxis)}`}
+                            {offAxis && ' · outside the dates shown'}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
@@ -1456,42 +1424,17 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
                       </button>
                     </div>
                     </div>
-                    {/* Label position. Dragging is the fast path; these fields are
-                        the keyboard-accessible equivalent. */}
-                    <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-                      <span className="flex-shrink-0">Label</span>
-                      <label className="flex items-center gap-1">
-                        <span className="sr-only">{`Horizontal offset for ${ann.label}`}</span>
-                        <span aria-hidden="true">x</span>
-                        <input
-                          type="number"
-                          step={4}
-                          value={ann.labelOffsetX ?? 0}
-                          onChange={(e) => moveAnnotationLabel(ann.id, Number(e.target.value), ann.labelOffsetY ?? 0)}
-                          className="w-14 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                        />
-                      </label>
-                      <label className="flex items-center gap-1">
-                        <span className="sr-only">{`Vertical offset for ${ann.label}`}</span>
-                        <span aria-hidden="true">y</span>
-                        <input
-                          type="number"
-                          step={4}
-                          value={ann.labelOffsetY ?? 0}
-                          onChange={(e) => moveAnnotationLabel(ann.id, ann.labelOffsetX ?? 0, Number(e.target.value))}
-                          className="w-14 px-1 py-0.5 border border-gray-300 rounded text-xs"
-                        />
-                      </label>
-                      {(ann.labelOffsetX !== undefined || ann.labelOffsetY !== undefined) && (
-                        <button
-                          onClick={() => resetAnnotationLabelPosition(ann.id)}
-                          className="text-gray-400 hover:text-gray-600 underline"
-                          title="Return the label to its anchor and let it auto-position"
-                        >
-                          reset
-                        </button>
-                      )}
-                    </div>
+                    {/* The label is placed by dragging it on the chart. Once it
+                        has been moved, one link puts it back. */}
+                    {(ann.labelOffsetX !== undefined || ann.labelOffsetY !== undefined) && (
+                      <button
+                        onClick={() => resetAnnotationLabelPosition(ann.id)}
+                        className="mt-1 text-xs text-gray-400 hover:text-gray-600 underline"
+                        title="Return the label to its anchor and let it auto-position"
+                      >
+                        Reset label position
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

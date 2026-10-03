@@ -309,6 +309,23 @@ try {
     assert.equal(getColorForStrata('Suspected', 2, 'default'), '#F59E0B');
   }
 
+  // 8. How far an annotation may pull the axis beyond the data. The picnic
+  //    the day before the first onset and the closure a week after the last
+  //    case are reached; a mistyped year is not, since it stretched a two-week
+  //    curve into 577 days of empty bars.
+  {
+    const days = ['2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13', '2026-03-14'];
+    const records = days.map((onset, i) => ({ id: String(i), onset }));
+    const base = { id: 'a', type: 'exposure', category: 'exposure', label: 'x', color: '#000', source: 'manual' };
+    const labels = (annotations) => processEpiCurveData(records, 'onset', 'daily', undefined, annotations).bins.map(b => b.label);
+    assert.equal(labels([{ ...base, date: new Date(2026, 2, 8) }])[0], 'Mar 6', 'an event two days before the first case is reached');
+    assert.equal(labels([{ ...base, date: new Date(2026, 2, 20) }]).at(-1), 'Mar 22', 'and one six days after the last');
+    assert.deepEqual(labels([{ ...base, date: new Date(2024, 5, 15) }]), labels([]), 'an event two years earlier does not stretch the axis');
+    assert.deepEqual(labels([{ ...base, date: new Date(2026, 2, 12), endDate: new Date(2026, 8, 1) }]), labels([]),
+      'nor does a period that runs months past the data');
+    assert.deepEqual(labels([{ ...base, date: new Date(NaN) }]), labels([]), 'an unreadable date is ignored');
+  }
+
   console.log(`epiCurve dates regression: all checks passed (${zone})`);
 } finally {
   await rm(tempDir, { recursive: true, force: true });
