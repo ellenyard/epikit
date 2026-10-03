@@ -1,10 +1,13 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { CaseRecord, DataColumn, Dataset } from '../../../types/analysis';
+import type { CaseRecord, DataColumn } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
 import { findCountColumn, countColumnCandidates } from '../../../utils/countColumn';
+import { pickDateColumn } from '../../../utils/chartDefaults';
+import { chartTitle as titleFor, statisticPhrase } from '../../../utils/chartTitles';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
 import { getChartColor } from '../../../utils/chartColors';
 import type { ChartColorScheme } from '../../../utils/chartColors';
@@ -33,10 +36,6 @@ import {
 } from '../../../utils/chartCategories';
 import { niceScale, formatTick, median, type NumberSeparators } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
-
-interface LineChartProps {
-  dataset: Dataset;
-}
 
 type ValueMode = 'count' | 'numeric';
 type Aggregation = 'mean' | 'sum' | 'median';
@@ -245,7 +244,7 @@ function buildSeriesPoints(
   return points;
 }
 
-export function LineChart({ dataset }: LineChartProps) {
+export function LineChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
   // Config state
   // null means "follow the data": nothing chosen yet, so the chart starts from
@@ -288,7 +287,9 @@ export function LineChart({ dataset }: LineChartProps) {
     () => (countColumn ? countColumnCandidates(dataset.columns, dataset.records).map(c => c.key) : []),
     [countColumn, dataset.columns, dataset.records]
   );
-  const xVar = xVarChoice ?? (countColumn ? dataset.columns.find(c => c.type === 'date')?.key ?? '' : '');
+  // The first date column, whatever the data: a line list opens as records
+  // over time, where it used to open blank.
+  const xVar = xVarChoice ?? pickDateColumn(dataset);
   const valueMode: ValueMode = valueModeChoice ?? (countColumn ? 'numeric' : 'count');
   const yVar = yVarChoice ?? countColumn?.key ?? '';
   const aggregation: Aggregation = aggregationChoice ?? (countLikeColumns.includes(yVar) ? 'sum' : 'mean');
@@ -343,7 +344,10 @@ export function LineChart({ dataset }: LineChartProps) {
 
   const defaultTitle = !xVar
     ? 'Line Chart'
-    : `${valueMode === 'count' ? 'Records' : yTitle} by ${colLabel(xVar)}${strataVar ? ` and ${colLabel(strataVar)}` : ''}`;
+    : titleFor(
+      statisticPhrase({ statistic: valueMode === 'count' ? 'count' : aggregation, valueLabel: colLabel(yVar), isCountColumn: isCaseTotal }),
+      colLabel(xVar), strataVar ? colLabel(strataVar) : ''
+    );
   const chartTitle = titleOverride ?? defaultTitle;
 
   // Notes printed under the chart: what is plotted and what was left out
@@ -372,8 +376,9 @@ export function LineChart({ dataset }: LineChartProps) {
       const fields = [colLabel(xVar), strataVar && colLabel(strataVar), valueMode === 'numeric' && yVar && colLabel(yVar)].filter(Boolean);
       list.push(`${recordCount(excluded)} excluded: no value for ${fields.join(' or ')}.`);
     }
+    if (filterNote) list.push(filterNote);
     return list;
-  }, [axis, xVar, yVar, strataVar, valueMode, aggregation, dataset.records, colLabel]);
+  }, [axis, xVar, yVar, strataVar, valueMode, aggregation, dataset.records, colLabel, filterNote]);
 
   const svgOptions = useMemo((): LineSvgOptions | null => axis && {
     series: seriesData,
@@ -435,9 +440,9 @@ export function LineChart({ dataset }: LineChartProps) {
   }, [seriesData, axis, xVar, strataVar, yTitle, chartTitle, chartSubtitle, chartSource, colLabel]);
 
   return (
-    <div className="h-full flex flex-col lg:flex-row">
+    <div className={CHART_ROW_CLASS}>
       {/* Left Panel - Config */}
-      <div className="w-full lg:w-72 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 lg:border-r border-gray-200 p-4 overflow-y-auto">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div className="space-y-4">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Line Chart</h3>
@@ -538,12 +543,12 @@ export function LineChart({ dataset }: LineChartProps) {
 
           {/* Strata / group-by */}
           <VariableMapper
-            label="Group By (optional)"
-            description="Split into multiple series by this variable"
+            label="Group by (optional)"
+            description="One line per value of this variable"
             columns={catColumns}
             value={strataVar}
             onChange={setStrataVar}
-            placeholder="None (single series)"
+            placeholder="None (single line)"
           />
 
           {/* Color scheme */}
@@ -585,7 +590,7 @@ export function LineChart({ dataset }: LineChartProps) {
             </label>
           </div>
 
-          {/* Stratify */}
+          {/* Panels */}
           <FacetControl
             columns={catColumns}
             value={facetCol}
@@ -632,7 +637,7 @@ export function LineChart({ dataset }: LineChartProps) {
       </div>
 
       {/* Right Panel - Chart */}
-      <div className="flex-1 overflow-auto p-4 lg:p-6">
+      <div className={CHART_COLUMN_CLASS}>
         {svgOptions && svgContent ? (
           facetCol ? (
             <FacetWrapper

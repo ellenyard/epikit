@@ -109,7 +109,7 @@ export const SpotMapTutorial: React.FC = () => {
                     to protect privacy.
                   </li>
                   <li>
-                    <strong>• Keep location obfuscation on:</strong> It is on by default and moves every point by
+                    <strong>• Keep location jittering on:</strong> It is on by default and moves every point by
                     up to the distance you choose (200 m to 2 km), and never by less than a quarter of it. The CSV
                     and GeoJSON exports carry the moved positions, and leave out other variables that would give
                     the location or the person away, such as a second set of coordinates, an address or a name.

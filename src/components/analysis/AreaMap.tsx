@@ -69,6 +69,19 @@ const sampleBoundaries: SampleBoundary[] = [
   },
 ];
 
+// Where a beginner can get a boundary file. Shown in the empty state and in
+// the notes, so it is written once.
+const boundarySourcesNote = (
+  <>
+    Free boundary files for most countries come from{' '}
+    <a href="https://www.geoboundaries.org" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">geoBoundaries</a>,{' '}
+    <a href="https://gadm.org" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">GADM</a> and the{' '}
+    <a href="https://data.humdata.org/dashboards/cod" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Humanitarian Data Exchange (OCHA COD-AB)</a>.
+    Download the GeoJSON version where offered; a shapefile can be converted to GeoJSON at{' '}
+    <a href="https://mapshaper.org" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">mapshaper.org</a>.
+  </>
+);
+
 // Areas with no value, and areas whose value is withheld, are different
 // statements and are drawn differently: grey for nothing to show, a dashed
 // sand fill for something deliberately not shown.
@@ -456,7 +469,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       : '';
     const severalRows = area !== undefined && (joinResult?.summary.duplicateDenominatorKeys.includes(area.key) ?? false);
     const denominatorLabel = metric === 'rate'
-      ? `<div><strong>Denominator:</strong> ${area?.denominator?.toLocaleString() ?? (severalRows ? 'several rows for this area, not used' : 'No match')}</div>`
+      ? `<div><strong>Population:</strong> ${area?.denominator?.toLocaleString() ?? (severalRows ? 'several rows for this area, not used' : 'No match')}</div>`
       : '';
     layer.bindPopup(`
       <div>
@@ -537,12 +550,12 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
       <div className="w-full lg:w-80 flex-shrink-0 bg-gray-50 border-b lg:border-b-0 border-gray-200 p-4 overflow-y-auto max-h-[45vh] lg:max-h-none">
         <TabHeader
           title="Area Map"
-          description="Join observation counts and optional denominator data to boundary polygons from a file."
+          description="Colour each area by how many records it holds, or by a rate per population, using a boundary file."
         />
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Boundary GeoJSON</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Boundary file (GeoJSON)</label>
             <button
               onClick={() => fileInputRef.current?.click()}
               className="w-full px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-left"
@@ -575,7 +588,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
 
           {propertyKeys.length > 0 && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Boundary Area Field</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Area name in the boundary file</label>
               <select
                 value={boundaryKey}
                 onChange={(event) => setBoundaryKey(event.target.value)}
@@ -589,7 +602,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Observation Area Field</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Area name in your data</label>
             <select
               value={areaField}
               onChange={(event) => setAreaField(event.target.value)}
@@ -674,14 +687,14 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="count">Record count by area</option>
-              <option value="rate">Rate using denominator dataset</option>
+              <option value="rate">Rate per population (needs a population dataset)</option>
             </select>
           </div>
 
           {metric === 'rate' && (
             <div className="space-y-3 bg-white border border-gray-200 rounded-lg p-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Denominator Dataset</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Population dataset</label>
                 <select
                   value={denominatorDatasetId}
                   onChange={(event) => {
@@ -691,7 +704,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
                 >
-                  <option value="">Select imported census/denominator table...</option>
+                  <option value="">Select the imported population (census) table...</option>
                   {datasets.map(item => (
                     <option key={item.id} value={item.id}>{item.name}</option>
                   ))}
@@ -701,7 +714,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               {denominatorDataset && (
                 <>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Denominator Area Field</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Area name in the population dataset</label>
                     <select
                       value={denominatorKey}
                       onChange={(event) => setDenominatorKey(event.target.value)}
@@ -714,7 +727,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Population/Denominator Field</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Population column</label>
                     <select
                       value={denominatorValue}
                       onChange={(event) => setDenominatorValue(event.target.value)}
@@ -725,7 +738,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                       ))}
                     </select>
                     {denominatorNumericColumns.length === 0 && (
-                      <p className="text-xs text-amber-700 mt-1">No numeric denominator fields were detected in this dataset.</p>
+                      <p className="text-xs text-amber-700 mt-1">This dataset has no numeric column to use as the population.</p>
                     )}
                   </div>
 
@@ -744,7 +757,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
 
                   {summary && summary.duplicateDenominatorLabels.length > 0 && (
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Areas with several denominator rows</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Areas with several population rows</label>
                       <select
                         value={duplicateDenominators}
                         onChange={(event) => setDuplicateDenominators(event.target.value as DuplicateDenominatorRule)}
@@ -754,7 +767,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                         <option value="sum">Add the rows together</option>
                       </select>
                       <p className="text-xs text-amber-700 mt-1">
-                        {summary.duplicateDenominatorLabels.length} area{summary.duplicateDenominatorLabels.length === 1 ? ' has' : 's have'} more than one row in the denominator table (for example {summary.duplicateDenominatorLabels[0].label}, {summary.duplicateDenominatorLabels[0].rows} rows). Add them together only if the rows are parts of one population, such as age groups. If they are different years, keep one year in the table instead.
+                        {summary.duplicateDenominatorLabels.length} area{summary.duplicateDenominatorLabels.length === 1 ? ' has' : 's have'} more than one row in the population dataset (for example {summary.duplicateDenominatorLabels[0].label}, {summary.duplicateDenominatorLabels[0].rows} rows). Add them together only if the rows are parts of one population, such as age groups. If they are different years, keep one year in the table instead.
                       </p>
                     </div>
                   )}
@@ -766,7 +779,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
           {joinResult && summary && (
             <div className="bg-white border border-gray-200 rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-gray-800">Join QA</h3>
+                <h3 className="text-sm font-medium text-gray-800">How the data matched the boundaries</h3>
                 <button
                   onClick={exportJoinReport}
                   className="text-xs text-blue-600 hover:text-blue-700"
@@ -793,11 +806,11 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 <span className="text-right font-medium">{summary.duplicateBoundaryLabels.length}</span>
                 {metric === 'rate' && (
                   <>
-                    <span className="text-gray-500">Missing denominators</span>
+                    <span className="text-gray-500">Areas with records but no population</span>
                     <span className="text-right font-medium">{summary.missingDenominatorKeys.length}</span>
-                    <span className="text-gray-500">Unmatched denominator areas</span>
+                    <span className="text-gray-500">Population areas with no boundary</span>
                     <span className="text-right font-medium">{summary.unmatchedDenominatorKeys.length}</span>
-                    <span className="text-gray-500">Areas with several denominator rows</span>
+                    <span className="text-gray-500">Areas with several population rows</span>
                     <span className="text-right font-medium">{summary.duplicateDenominatorLabels.length}</span>
                   </>
                 )}
@@ -856,7 +869,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
               )}
               {(summary.unmatchedDataKeys.length > 0 || summary.missingDenominatorKeys.length > 0) && (
                 <p className="text-xs text-amber-700 mt-2">
-                  Review the join report before using this map in teaching or reports.
+                  Export the matching report and check the areas that did not match before using this map in teaching or reports.
                 </p>
               )}
             </div>
@@ -951,7 +964,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 type="text"
                 value={mapCaption}
                 onChange={(event) => setMapCaption(event.target.value)}
-                placeholder="Source, period, and denominator note"
+                placeholder="Source, period, and population note"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
               />
             </div>
@@ -989,9 +1002,22 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
 
           <HelpPanel title="Area Map Notes">
             <div className="space-y-3 text-sm text-gray-700">
-              <p>Area maps work best when boundaries, observation records, and denominator records share a stable area code or official area name.</p>
-              <p>For rates, import the census or denominator table as a separate dataset first, then select it here.</p>
-              <p>Always review unmatched areas before interpreting counts or rates. Name mismatches are common in field data.</p>
+              <p>
+                A boundary file is a map of the outlines of districts, sub-counties or other areas, saved in a format
+                called GeoJSON. {boundarySourcesNote}
+              </p>
+              <p>
+                The sample boundaries cover Toledo neighborhoods for the bundled outbreak only; they will not match your own data.
+              </p>
+              <p>
+                The map works by matching area names: the names in your data must be written the same way as in the
+                boundary file. Spelling, capitals and accents are forgiven; an official area code works best.
+              </p>
+              <p>
+                For a rate per population, first import the census or population table as its own dataset, then choose it
+                under "Rate per population".
+              </p>
+              <p>Always check the areas that did not match before reading counts or rates from the map. Name mismatches are common in field data.</p>
             </div>
           </HelpPanel>
         </div>
@@ -1094,7 +1120,7 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 <div className="map-export-exclude absolute top-4 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-md px-4">
                   <div role="status" className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 shadow-lg text-sm">
                     {!areaField
-                      ? 'Choose the column in your data that holds the area name (Observation Area Field). Nothing is counted on the map until then.'
+                      ? 'Choose the column in your data that holds the area name ("Area name in your data"). Nothing is counted on the map until then.'
                       : `No value in ${dataset.columns.find(col => col.key === areaField)?.label ?? areaField} matches "${boundaryKey}" in this boundary file, so nothing is counted on the map. Check that both fields hold the same names and that the file covers your data.`}
                   </div>
                 </div>
@@ -1114,9 +1140,14 @@ export function AreaMap({ dataset, datasets }: AreaMapProps) {
                 <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                 </svg>
-                <p className="text-lg text-gray-600">Add Boundaries</p>
+                <p className="text-lg text-gray-600">Add a boundary file</p>
                 <p className="text-sm text-gray-500 mt-1">
-                  Add a GeoJSON boundary file, then choose the fields that connect boundaries to your observation and denominator data.
+                  A boundary file holds the outlines of your districts or other areas, saved as GeoJSON. Add one, then choose
+                  which column in your data holds the area name.
+                </p>
+                <p className="text-sm text-gray-500 mt-3">{boundarySourcesNote}</p>
+                <p className="text-sm text-gray-500 mt-3">
+                  The sample boundaries are for the bundled outbreak only.
                 </p>
               </div>
             </div>

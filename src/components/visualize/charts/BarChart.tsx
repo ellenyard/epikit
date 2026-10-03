@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
-import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice, looksLikeRate } from '../../../utils/chartDefaults';
 import { ChartContainer } from '../shared/ChartContainer';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
 import { VariableMapper } from '../shared/VariableMapper';
 import { AggregatedDataHint } from '../shared/AggregatedDataHint';
 import { findCountColumn } from '../../../utils/countColumn';
@@ -39,11 +40,8 @@ import {
   median,
   type NumberSeparators,
 } from '../../../utils/chartFormat';
+import { chartTitle as titleFor, statisticPhrase } from '../../../utils/chartTitles';
 import { useLocale } from '../../../contexts/LocaleContext';
-
-interface BarChartProps {
-  dataset: Dataset;
-}
 
 type SortMode = 'value' | 'category';
 type ValueMode = 'count' | 'sum' | 'mean' | 'median';
@@ -91,6 +89,8 @@ interface BarSvgOptions {
   /** A fixed value range, used to give every stratified panel the same axis. */
   domain?: [number, number];
   locale: NumberSeparators;
+  /** From the Records filter above the gallery, when it excludes records. */
+  filterNote: string;
 }
 
 /** Wrap a category label into at most 2 lines, breaking near 22-25 chars on a space when possible. */
@@ -156,6 +156,7 @@ function buildFootnotes(opts: BarSvgOptions): string[] {
   if (excluded > 0) {
     footnotes.push(`${recordCount(excluded)} excluded due to missing values.`);
   }
+  if (opts.filterNote) footnotes.push(opts.filterNote);
   return footnotes;
 }
 
@@ -443,7 +444,7 @@ function generateBarSvg(opts: BarSvgOptions): string {
   return opts.orientation === 'vertical' ? generateVerticalBarSvg(opts) : generateHorizontalBarSvg(opts);
 }
 
-export function BarChart({ dataset }: BarChartProps) {
+export function BarChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
   // Config state
   const [categoryVarChoice, setCategoryVarChoice] = useState('');
@@ -456,7 +457,9 @@ export function BarChart({ dataset }: BarChartProps) {
   const [orientation, setOrientation] = useState<Orientation>('horizontal');
   const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
   const [highlightCat, setHighlightCat] = useState('');
-  const [flagSmallCounts, setFlagSmallCounts] = useState(true);
+  // null means "follow the data": flagged for a percentage or a rate, where a
+  // small denominator makes the value unstable, and not for a plain count.
+  const [flagSmallCountsChoice, setFlagSmallCounts] = useState<boolean | null>(null);
   const [referenceLine, setReferenceLine] = useState('');
   const [referenceLabel, setReferenceLabel] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
@@ -497,6 +500,8 @@ export function BarChart({ dataset }: BarChartProps) {
   const statistic = valueMode === 'count' ? ''
     : valueMode === 'sum' && countColumn?.key === valueVar ? valueLabel
       : `${valueMode[0].toUpperCase()}${valueMode.slice(1)} of ${valueLabel}`;
+  const flagSmallCounts = flagSmallCountsChoice
+    ?? (valueFormat === 'percent' || (valueMode !== 'count' && looksLikeRate(valueLabel)));
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
@@ -511,7 +516,10 @@ export function BarChart({ dataset }: BarChartProps) {
 
   const defaultTitle = !categoryVar
     ? 'Bar Chart'
-    : `${valueMode === 'count' ? 'Records' : statistic} by ${selectedColumn?.label || categoryVar}`;
+    : titleFor(
+      statisticPhrase({ statistic: valueMode, valueLabel, isCountColumn: countColumn?.key === valueVar }),
+      selectedColumn?.label || categoryVar
+    );
   const chartTitle = titleOverride ?? defaultTitle;
 
   const referenceValue = useMemo(() => {
@@ -632,7 +640,8 @@ export function BarChart({ dataset }: BarChartProps) {
     orientation,
     dataset,
     locale,
-  }), [sortedData, excluded, included, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource, axisTitle, valueFormat, valueMode, categoryVar, valueVar, activeHighlight, flagSmallCounts, referenceValue, referenceLabel, orientation, dataset, locale]);
+    filterNote,
+  }), [sortedData, excluded, included, colorScheme, showDataLabels, chartTitle, chartSubtitle, chartSource, axisTitle, valueFormat, valueMode, categoryVar, valueVar, activeHighlight, flagSmallCounts, referenceValue, referenceLabel, orientation, dataset, locale, filterNote]);
 
   // Generate SVG string
   const svgContent = useMemo(() => generateBarSvg(svgOptions), [svgOptions]);
@@ -706,9 +715,9 @@ export function BarChart({ dataset }: BarChartProps) {
   }, [sortedData, chartTitle, chartSubtitle, chartSource, dataset, categoryVar, valueMode, valueVar, valueFormat, statistic]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <h3 className="text-sm font-semibold text-gray-900">Bar Chart</h3>
 
         <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -937,7 +946,7 @@ export function BarChart({ dataset }: BarChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {sortedData.length > 0 ? (
           facetCol ? (
             <FacetWrapper

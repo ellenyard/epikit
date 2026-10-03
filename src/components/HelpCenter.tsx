@@ -544,6 +544,16 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                     answer: 'Select the date variable that best represents when cases occurred, typically "date of illness onset" or "symptom onset date". Avoid using dates like "date interviewed" or "date reported" as these may not accurately reflect the temporal distribution of the outbreak.'
                   },
                   {
+                    id: 'chart-cases-only',
+                    question: 'How do I chart only the cases, or only some records?',
+                    answer: 'In the Visualize module, the Records control above the chart gallery applies to every chart. Choose "Cases only" to leave out records marked as not a case, or pick a column and tick the values to keep, for example one district or one age group. Each chart then says in its footnote which records were left out, so the note travels with the exported picture. The Epi Curve and the Spot Map have their own Filter By control.'
+                  },
+                  {
+                    id: 'aggregated-data',
+                    question: 'My data have one row per report with a "Cases" column, not one row per case. What do I do?',
+                    answer: 'Nothing special. When a dataset has a column of case counts (such as "Cases Reported" or "n_cases"), the Epi Curve, Bar, Line, Dot, Lollipop, Slope and Heatmap charts recognise it and add the counts up instead of counting rows. The Epi Curve shows this under "Each Record Is", and the charts under their Value or "Lines show" settings, where you can change it.'
+                  },
+                  {
                     id: 'missing-data',
                     question: 'What happens if my data have missing values?',
                     answer: 'LineList will identify missing values in the Data Quality panel. Missing values are excluded from calculations. For critical variables (like date of onset), you may need to follow up with data sources to obtain complete information.'

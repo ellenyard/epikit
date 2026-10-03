@@ -71,12 +71,60 @@ export function isCategoryColumn(column: DataColumn, records: CaseRecord[]): boo
   return seen.size > 0;
 }
 
-/** The columns a category, group or panel picker should list. */
+/**
+ * Most distinct values a column may hold and still be listed among the likely
+ * choices of a category picker. The same bound the automatic picks use.
+ */
+export const MAX_LIKELY_CATEGORIES = 30;
+
+/** Distinct categories and non-missing cells in a column. */
+function categoryShape(records: CaseRecord[], key: string): { distinct: number; present: number } {
+  const seen = new Set<string>();
+  let present = 0;
+  for (const record of records) {
+    const category = categoryOf(record[key]);
+    if (category === null) continue;
+    present++;
+    seen.add(category);
+  }
+  return { distinct: seen.size, present };
+}
+
+/**
+ * True when a column identifies records rather than grouping them: more
+ * distinct values than a chart can show, and nearly one per record. A record
+ * ID is the first text column in most line lists, and the pickers listed it
+ * first; chosen, it draws one mark per record.
+ */
+export function isIdentifierColumn(column: DataColumn, records: CaseRecord[]): boolean {
+  if (column.type === 'number' || column.type === 'boolean') return false;
+  const { distinct, present } = categoryShape(records, column.key);
+  return distinct > MAX_LIKELY_CATEGORIES && distinct >= present * 0.8;
+}
+
+/**
+ * The columns a category, group or panel picker should list, likeliest first.
+ *
+ * Record IDs are left out. Then come the columns with a handful of values,
+ * which is what a category axis wants; then text columns with more values
+ * than that, which may still be a fine-grained place or occupation; and last
+ * the numeric columns that happen to hold a few whole numbers, of which a
+ * dataset can have many.
+ */
 export function categoryColumns(dataset: { columns: DataColumn[]; records: CaseRecord[] }): DataColumn[] {
-  const usable = dataset.columns.filter(column => isCategoryColumn(column, dataset.records));
-  // Numeric columns go after the rest: they are the less likely choice, and a
-  // dataset can have many that happen to hold a few whole numbers.
-  return [...usable.filter(c => c.type !== 'number'), ...usable.filter(c => c.type === 'number')];
+  const usable = dataset.columns.filter(column =>
+    isCategoryColumn(column, dataset.records) && !isIdentifierColumn(column, dataset.records)
+  );
+  const text = usable.filter(c => c.type !== 'number');
+  const likely = text.filter(c => {
+    const { distinct } = categoryShape(dataset.records, c.key);
+    return distinct >= 2 && distinct <= MAX_LIKELY_CATEGORIES;
+  });
+  return [
+    ...likely,
+    ...text.filter(c => !likely.includes(c)),
+    ...usable.filter(c => c.type === 'number'),
+  ];
 }
 
 /**

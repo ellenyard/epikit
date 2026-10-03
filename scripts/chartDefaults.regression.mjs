@@ -139,6 +139,50 @@ try {
       'Sex has two values once trimmed, so the three-value column is the better default');
   }
 
+  // 8. The first drawing of each multi-variable chart on the bundled samples.
+  //    Nine of the twelve charts used to open blank and ask for two or three
+  //    variables; each now opens on a sensible pair when the dataset has one,
+  //    and stays blank (never absurd) when it has not.
+  {
+    const demoBundled = path.join(tempDir, 'demoData.mjs');
+    await build({
+      entryPoints: [path.join(root, 'src/data/demoData.ts')],
+      bundle: true, format: 'esm', platform: 'node',
+      outfile: demoBundled, logLevel: 'silent',
+    });
+    const demo = await import(pathToFileURL(demoBundled).href);
+    const picks = await import(pathToFileURL(bundled).href);
+    const outbreak = makeDataset(demo.demoColumns, demo.demoCaseRecords);
+    const nutrition = makeDataset(demo.nutritionDemoColumns, demo.nutritionDemoRecords);
+    const surveillance = makeDataset(demo.surveillanceDemoColumns, demo.surveillanceDemoRecords);
+
+    assert.deepEqual(picks.pickGroupedPair(outbreak), { category: 'case_status', group: 'sex' }, 'outbreak grouped bar');
+    assert.deepEqual(picks.pickGroupedPair(nutrition), { category: 'age_group', group: 'sex' }, 'nutrition grouped bar');
+    assert.deepEqual(picks.pickGroupedPair(surveillance), { category: 'year', group: 'disease' },
+      'with no two-value column the grouped bar splits by the column with the fewest values');
+
+    assert.deepEqual(picks.pickPyramidPair(outbreak), { category: '', group: '' }, 'no age bands in the outbreak list: no pyramid');
+    assert.deepEqual(picks.pickPyramidPair(nutrition), { category: 'age_group', group: 'sex' }, 'nutrition pyramid');
+    assert.deepEqual(picks.pickPyramidPair(surveillance), { category: '', group: '' }, 'no pyramid of a surveillance extract');
+
+    assert.deepEqual(picks.pickTargetPair(outbreak), { actual: '', target: '' }, 'the outbreak list has no target column');
+    assert.deepEqual(picks.pickTargetPair(nutrition), { actual: 'vitamin_a_coverage_pct', target: 'target_vitamin_a' }, 'nutrition bullet');
+    assert.deepEqual(picks.pickTargetPair(surveillance), { actual: 'reporting_completeness', target: 'target_completeness' }, 'surveillance bullet');
+
+    assert.deepEqual(picks.pickHeatmapPair(surveillance), { row: 'district', col: 'month_name' }, 'a surveillance heatmap is place by season');
+    assert.equal(picks.pickHeatmapPair(outbreak).row, 'case_status', 'outbreak heatmap rows');
+    assert.equal(picks.pickHeatmapPair(nutrition).row, 'age_group', 'nutrition heatmap rows');
+
+    assert.deepEqual(picks.pickPeriodColumn(outbreak), { column: '', start: '', end: '' }, 'no period column in a line list');
+    assert.deepEqual(picks.pickPeriodColumn(nutrition), { column: 'survey_year', start: '2020', end: '2025' }, 'nutrition slope periods');
+    assert.deepEqual(picks.pickPeriodColumn(surveillance), { column: 'year', start: '2022', end: '2025' }, 'surveillance slope periods');
+    assert.equal(picks.pickSlopeCategory(surveillance, 'year'), 'district', 'surveillance slope category');
+
+    assert.equal(picks.pickWaffleColumn(outbreak), 'sex', 'outbreak waffle');
+    assert.equal(picks.pickDateColumn(outbreak), 'onset_date', 'outbreak line chart x-axis');
+    assert.equal(picks.pickDateColumn(surveillance), 'report_date', 'surveillance line chart x-axis');
+  }
+
   console.log('chartDefaults regression: all checks passed');
 } finally {
   await rm(tempDir, { recursive: true, force: true });

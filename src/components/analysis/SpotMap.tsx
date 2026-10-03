@@ -685,6 +685,17 @@ export function SpotMap({ dataset }: SpotMapProps) {
     return collectCategoryValues(dataset.records, filterBy);
   }, [dataset.records, filterBy]);
 
+  // Columns a map can be filtered or coloured by: a limited set of values, so
+  // not dates, measurements, coordinates or record IDs. The pickers used to
+  // list every column, with the ID first.
+  const groupingColumns = useMemo(
+    () => dataset.columns.filter(c =>
+      c.type !== 'date' && c.type !== 'number'
+      && collectCategoryValues(dataset.records, c.key).length <= 30
+    ),
+    [dataset.columns, dataset.records]
+  );
+
   // Reset selected filter values when filter variable changes (skip the initial
   // run so persisted selections survive a reload)
   const filterResetSkipped = useRef(false);
@@ -706,7 +717,9 @@ export function SpotMap({ dataset }: SpotMapProps) {
   // are obfuscated it shows no field that holds, or could stand in for, the
   // true position.
   const renderPopup = (caseData: MapCase) => (
-    <Popup>
+    // Pan the popup clear of the privacy banner at the top of the map, which
+    // used to cover the top of a popup for any point in the north of the map.
+    <Popup autoPanPaddingTopLeft={[20, mapTitle ? 160 : 100]} autoPanPaddingBottomRight={[20, 70]}>
       <div className="text-sm">
         <p className="font-semibold mb-2">Record Details</p>
         {popupDisplayColumns.map(col => {
@@ -799,7 +812,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">None (show all)</option>
-              {dataset.columns.map(col => (
+              {groupingColumns.map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
             </select>
@@ -984,8 +997,8 @@ export function SpotMap({ dataset }: SpotMapProps) {
           {/* Classification Variable */}
           <div>
             <label className="flex items-center text-sm font-medium text-gray-700 mb-1">
-              Classification Variable (for coloring)
-              <InfoTooltip text="Select the variable to use for color-coding markers (e.g., case status, classification). This determines the colors shown on the map when using classification-based color schemes." />
+              Colour points by
+              <InfoTooltip text="Each value of this column gets its own colour and a legend entry, for example case status or sex." />
             </label>
             <select
               value={classificationColumn}
@@ -993,7 +1006,7 @@ export function SpotMap({ dataset }: SpotMapProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">None (all same color)</option>
-              {dataset.columns.filter(c => c.type !== 'date').map(col => (
+              {groupingColumns.map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
             </select>
@@ -1012,8 +1025,11 @@ export function SpotMap({ dataset }: SpotMapProps) {
                   onChange={(e) => setObfuscateLocations(e.target.checked)}
                   className="rounded border-gray-300"
                 />
-                <span className="text-sm text-gray-700">Obfuscate locations (recommended)</span>
+                <span className="text-sm text-gray-700">Jitter locations (recommended)</span>
               </label>
+              <p className="text-xs text-gray-500 -mt-1">
+                Moves each point a random distance so the map does not show where anyone lives. Exports are jittered too.
+              </p>
 
               {/* Jitter Distance Selector */}
               {obfuscateLocations && (
@@ -1085,7 +1101,10 @@ export function SpotMap({ dataset }: SpotMapProps) {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Popup Fields</label>
               <div className="max-h-40 overflow-auto border border-gray-200 rounded-lg bg-white p-2 space-y-1">
-                {dataset.columns.map(col => {
+                {/* Ticked fields first, so the current popup can be read at a glance. */}
+                {[...dataset.columns].sort((a, b) =>
+                  Number(activePopupColumns.includes(b.key)) - Number(activePopupColumns.includes(a.key))
+                ).map(col => {
                   const hidden = obfuscateLocations && hiddenWhenObfuscated.has(col.key);
                   return (
                     <label key={col.key} className={`flex items-center gap-2 text-sm ${hidden ? 'cursor-not-allowed' : 'cursor-pointer'}`}>

@@ -1,8 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { findCountColumn } from '../../../utils/countColumn';
+import { pickPyramidPair, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle, statisticPhrase } from '../../../utils/chartTitles';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   svgWrapper,
@@ -20,10 +24,6 @@ import { categoryColumns, categoriesInColumn, orderCategories, recordCount } fro
 import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
 
-interface PairedBarChartProps {
-  dataset: Dataset;
-}
-
 type InputMode = 'two-columns' | 'group-split';
 type PairedAggMode = 'mean' | 'sum' | 'count';
 type RowOrder = 'auto' | 'top' | 'bottom';
@@ -35,9 +35,9 @@ interface PairedRow {
   rightVal: number | null;
 }
 
-export function PairedBarChart({ dataset }: PairedBarChartProps) {
+export function PairedBarChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [categoryCol, setCategoryCol] = useState('');
+  const [categoryColChoice, setCategoryCol] = useState('');
   // A pyramid counts records by a two-group variable, so that is the mode the
   // chart opens in. It used to open asking for two numeric columns, and Count
   // still demanded a numeric column it never read.
@@ -48,12 +48,13 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   const [rightValueCol, setRightValueCol] = useState('');
 
   // Group-split mode
-  const [numericCol, setNumericCol] = useState('');
-  const [groupCol, setGroupCol] = useState('');
+  const [numericColChoice, setNumericCol] = useState('');
+  const [groupColChoice, setGroupCol] = useState('');
   const [leftGroupChoice, setLeftGroupChoice] = useState('');
   const [rightGroupChoice, setRightGroupChoice] = useState('');
 
-  const [aggMode, setAggMode] = useState<PairedAggMode>('count');
+  // null means "follow the data": see countColumn below.
+  const [aggModeChoice, setAggMode] = useState<PairedAggMode | null>(null);
   const [rowOrder, setRowOrder] = useState<RowOrder>('auto');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
@@ -67,6 +68,22 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   const colLabel = useCallback(
     (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
     [dataset.columns]
+  );
+
+  // The user's choices while they are valid for the dataset, else the first
+  // drawing the data supports: age bands by sex, which is what the chart is
+  // for. Without an age-band column it waits to be told.
+  const autoPair = useMemo(() => pickPyramidPair(dataset), [dataset]);
+  const categoryCol = resolveColumnChoice(dataset, categoryColChoice, autoPair.category);
+  const groupCol = resolveColumnChoice(dataset, groupColChoice, autoPair.group);
+  // Aggregated data (one row per report, with a column of cases) starts as
+  // the total of that column; counting its rows counts reports.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const aggMode: PairedAggMode = aggModeChoice ?? (countColumn ? 'sum' : 'count');
+  const numericCol = resolveColumnChoice(
+    dataset, numericColChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
   );
 
   // Counting two numeric columns means nothing, so two-column mode falls back to the mean.
@@ -144,26 +161,30 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   const leftLabel = inputMode === 'two-columns' ? colLabel(leftValueCol) : leftGroup;
   const rightLabel = inputMode === 'two-columns' ? colLabel(rightValueCol) : rightGroup;
 
-  // What the bars measure, stated on the axis
+  // What the bars measure, stated on the axis. A total of cases is called by
+  // the column's own name, not "Sum of".
+  const isCaseTotal = inputMode === 'group-split' && effectiveAgg === 'sum' && countColumn?.key === numericCol;
   const statistic = useMemo(() => {
     if (inputMode === 'two-columns') return effectiveAgg === 'sum' ? 'Sum' : 'Mean';
     if (effectiveAgg === 'count') return 'Number of records';
+    if (isCaseTotal) return colLabel(numericCol);
     return `${effectiveAgg === 'sum' ? 'Sum' : 'Mean'} of ${colLabel(numericCol)}`;
-  }, [inputMode, effectiveAgg, numericCol, colLabel]);
+  }, [inputMode, effectiveAgg, isCaseTotal, numericCol, colLabel]);
 
   const defaultTitle = useMemo(() => {
     const label = colLabel;
     if (!categoryCol) return 'Paired Bar Chart';
     if (inputMode === 'two-columns') {
       return leftValueCol && rightValueCol
-        ? `${label(leftValueCol)} and ${label(rightValueCol)} by ${label(categoryCol)}`
+        ? chartTitle(`${label(leftValueCol)} and ${label(rightValueCol)}`, label(categoryCol))
         : 'Paired Bar Chart';
     }
     if (!groupCol) return 'Paired Bar Chart';
-    return effectiveAgg === 'count'
-      ? `Records by ${label(categoryCol)} and ${label(groupCol)}`
-      : `${statistic} by ${label(categoryCol)} and ${label(groupCol)}`;
-  }, [categoryCol, inputMode, leftValueCol, rightValueCol, groupCol, effectiveAgg, statistic, colLabel]);
+    return chartTitle(
+      statisticPhrase({ statistic: effectiveAgg, valueLabel: label(numericCol), isCountColumn: isCaseTotal }),
+      label(categoryCol), label(groupCol)
+    );
+  }, [categoryCol, inputMode, leftValueCol, rightValueCol, groupCol, numericCol, effectiveAgg, isCaseTotal, colLabel]);
   const title = titleOverride ?? defaultTitle;
 
   // A pyramid is read with the youngest band at the bottom. Follow that when
@@ -288,10 +309,11 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           : `Bars show the ${effectiveAgg} of ${colLabel(numericCol)} in each ${colLabel(categoryCol)}, for ${colLabel(groupCol)} ${leftLabel} and ${rightLabel}.`,
       ...(paired?.notes ?? []),
     ];
+    if (filterNote) notes.push(filterNote);
     const footer = svgFooter(width, plotBottom + 44, notes, source || undefined);
 
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [pairedRows, paired, firstAtBottom, inputMode, effectiveAgg, categoryCol, groupCol, numericCol, leftLabel, rightLabel, statistic, colorScheme, showLabels, title, subtitle, source, locale, colLabel]);
+  }, [pairedRows, paired, firstAtBottom, inputMode, effectiveAgg, categoryCol, groupCol, numericCol, leftLabel, rightLabel, statistic, colorScheme, showLabels, title, subtitle, source, locale, colLabel, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -318,9 +340,9 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
   }, [pairedRows, categoryCol, leftLabel, rightLabel, statistic, title, subtitle, source, colLabel]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Data Mapping</h4>
 
@@ -340,7 +362,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
               onChange={(e) => setInputMode(e.target.value as InputMode)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="group-split">Split by a two-group variable</option>
+              <option value="group-split">Group by a two-value variable</option>
               <option value="two-columns">Two numeric columns</option>
             </select>
           </div>
@@ -369,8 +391,8 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
           ) : (
             <>
               <VariableMapper
-                label="Group Variable"
-                description="The two sides of the chart, such as sex"
+                label="Group by"
+                description="Its two values become the two sides of the chart, such as sex"
                 columns={catColumns}
                 value={groupCol}
                 onChange={setGroupCol}
@@ -425,6 +447,12 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
               <option value="sum">Sum of a numeric variable</option>
             </select>
           </div>
+          {inputMode === 'group-split' && effectiveAgg === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setAggMode('sum'); setNumericCol(countColumn.key); }}
+            />
+          )}
 
           {inputMode === 'group-split' && effectiveAgg !== 'count' && (
             <VariableMapper
@@ -517,7 +545,9 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
 
         <VisualizationTip
           tip="Paired bar charts (population pyramids) compare two groups across the same categories, such as an age-sex distribution."
-          context="Try this: Category = Age Group, Group Variable = Sex. The chart counts the records in each."
+          context={autoPair.category
+            ? `This dataset has ${colLabel(autoPair.category)} and ${colLabel(autoPair.group)}, so the chart opens as a pyramid of those.`
+            : 'Choose a category such as an age band, then a variable with two values such as sex. The chart counts the records in each.'}
         />
 
         <div className="border border-blue-100 rounded-lg overflow-hidden">
@@ -548,7 +578,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {svgContent ? (
           <ChartContainer
             title={title}
@@ -561,7 +591,7 @@ export function PairedBarChart({ dataset }: PairedBarChartProps) {
         ) : (
           <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
             <p className="text-gray-500 text-lg">Configure data mapping to create a paired bar chart</p>
-            <p className="text-gray-400 text-sm mt-2">Select a category and a variable with two groups using the panel on the left</p>
+            <p className="text-gray-400 text-sm mt-2">Select a category and a variable with two values to group by, using the panel on the left</p>
           </div>
         )}
       </div>

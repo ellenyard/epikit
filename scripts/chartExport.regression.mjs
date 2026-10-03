@@ -29,7 +29,7 @@ try {
   const {
     sanitizeXmlText, escapeXml, chartFilename, svgWrapper, svgText, svgHeader, svgFooter,
     toStandaloneSvg, fitText, estimateTextWidth, wrapText, spreadPositions, composeFacetSvg,
-    CHART_FONT_FAMILY, EXPORT_FONT_FAMILY,
+    CHART_FONT_FAMILY, EXPORT_FONT_FAMILY, wrapTitle, MAX_TITLE_LINES,
   } = await import(pathToFileURL(bundled).href);
 
   // Every character the XML 1.0 specification allows in a document.
@@ -169,6 +169,21 @@ try {
     // Opening and closing tags balance, so the result is one well-formed tree.
     assert.equal((svg.match(/<svg[\s>]/g) || []).length, (svg.match(/<\/svg>/g) || []).length);
     assert.equal(composeFacetSvg([], { title: 't', notes: [] }), '');
+  }
+
+  // 11. A title wraps rather than being cut: the automatic ones fit two lines
+  //     and the ones users write fit three. Only a title longer than that is
+  //     cut, at the end of the last line.
+  {
+    const typed = 'Suspected cholera cases by district and week of onset, Northern Province, January to June 2026';
+    const lines = wrapTitle(typed, 560);
+    assert.ok(lines.length >= 2 && lines.length <= MAX_TITLE_LINES, `wrapped to ${lines.length} lines`);
+    assert.equal(lines.join(' '), typed, 'every word of a typed title survives');
+    assert.deepEqual(wrapTitle('Records by sex', 1176), ['Records by sex'], 'a short title is one line');
+    const endless = Array.from({ length: 60 }, (_, i) => `word${i}`).join(' ');
+    const cut = wrapTitle(endless, 600);
+    assert.equal(cut.length, MAX_TITLE_LINES, 'a title that cannot fit is held to the maximum');
+    assert.ok(cut[cut.length - 1].endsWith('\u2026'), 'and the cut is marked');
   }
 
   console.log('chartExport regression: all checks passed');

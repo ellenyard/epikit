@@ -1,8 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { findCountColumn } from '../../../utils/countColumn';
+import { pickHeatmapPair, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle, statisticPhrase } from '../../../utils/chartTitles';
 import type { ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -14,16 +18,13 @@ import {
   estimateTextWidth,
   type ExcelExportData,
 } from '../../../utils/chartExport';
-import { crossAggregate } from '../../../utils/chartAggregation';
+import { crossAggregate, type CrossAggregationMode } from '../../../utils/chartAggregation';
 import { categoryColumns, orderCategories, recordCount } from '../../../utils/chartCategories';
 import { formatFixed, decimalsForValues } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
 
-interface HeatmapChartProps {
-  dataset: Dataset;
-}
-
-type ValueMode = 'count' | 'average';
+/** What a cell measures. "Average" alone used to be the only alternative to a count. */
+type ValueMode = CrossAggregationMode;
 
 // Sequential color ramps for heatmap intensity
 const COLOR_RAMPS: Record<string, { light: string; dark: string }> = {
@@ -54,12 +55,13 @@ function textColorForBg(t: number): string {
   return t > 0.55 ? '#FFFFFF' : '#333333';
 }
 
-export function HeatmapChart({ dataset }: HeatmapChartProps) {
+export function HeatmapChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [rowCol, setRowCol] = useState('');
-  const [colCol, setColCol] = useState('');
-  const [valueMode, setValueMode] = useState<ValueMode>('count');
-  const [valueCol, setValueCol] = useState('');
+  const [rowColChoice, setRowCol] = useState('');
+  const [colColChoice, setColCol] = useState('');
+  // null means "follow the data": see countColumn below.
+  const [valueModeChoice, setValueMode] = useState<ValueMode | null>(null);
+  const [valueColChoice, setValueCol] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('blue');
   const [showCellLabels, setShowCellLabels] = useState(true);
   // null means "follow the data"; a string is what the user typed.
@@ -74,15 +76,30 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     [dataset.columns]
   );
 
+  // The user's choices while they are valid for the dataset, else the first
+  // drawing the data supports: a place by a time period on a surveillance
+  // extract, two categorical columns otherwise. The chart used to open blank.
+  const autoPair = useMemo(() => pickHeatmapPair(dataset), [dataset]);
+  const rowCol = resolveColumnChoice(dataset, rowColChoice, autoPair.row);
+  const colCol = resolveColumnChoice(dataset, colColChoice, autoPair.col);
+  // Aggregated data (one row per report, with a column of cases) starts as
+  // the total of that column. Counting its rows coloured every cell of a
+  // district-by-month grid the same, since each has one report.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const valueMode: ValueMode = valueModeChoice ?? (countColumn ? 'sum' : 'count');
+  const valueCol = resolveColumnChoice(
+    dataset, valueColChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
+  );
+  const isCaseTotal = valueMode === 'sum' && countColumn?.key === valueCol;
+
   // Build heatmap data
   const heatmapData = useMemo(() => {
     if (!rowCol || !colCol) return null;
-    if (valueMode === 'average' && !valueCol) return null;
+    if (valueMode !== 'count' && !valueCol) return null;
 
-    const table = crossAggregate(
-      dataset.records, rowCol, colCol, valueMode === 'average' ? valueCol : null,
-      valueMode === 'average' ? 'mean' : 'count'
-    );
+    const table = crossAggregate(dataset.records, rowCol, colCol, valueMode === 'count' ? null : valueCol, valueMode);
 
     // Both axes in reading order. The column's declared order is honoured
     // here: it was dropped on the way to the shared sort, so education levels
@@ -101,8 +118,8 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       cellValues[ri] = [];
       for (let ci = 0; ci < cols.length; ci++) {
         const cell = table.cells.get(rows[ri])?.get(cols[ci]);
-        // A combination nobody falls in is a count of zero, but it has no average.
-        const val = cell ? cell.value : (valueMode === 'count' ? 0 : null);
+        // A combination nobody falls in is a count or a total of zero, but it has no mean.
+        const val = cell ? cell.value : (valueMode === 'mean' ? null : 0);
         cellValues[ri][ci] = val;
         if (val !== null) {
           if (val < globalMin) globalMin = val;
@@ -119,11 +136,17 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     return { rows, cols, cellValues, globalMin, globalMax, excluded: table.excludedMissing };
   }, [rowCol, colCol, valueMode, valueCol, dataset.records, dataset.columns]);
 
-  // What a cell's colour measures
-  const statistic = valueMode === 'count' ? 'Number of records' : `Mean of ${colLabel(valueCol)}`;
+  // What a cell's colour measures. A total of cases is called by the
+  // column's own name, not "Sum of".
+  const statistic = valueMode === 'count' ? 'Number of records'
+    : isCaseTotal ? colLabel(valueCol)
+      : `${valueMode === 'sum' ? 'Sum' : 'Mean'} of ${colLabel(valueCol)}`;
   const defaultTitle = !rowCol || !colCol
     ? 'Heatmap'
-    : `${valueMode === 'count' ? 'Records' : statistic} by ${colLabel(rowCol)} and ${colLabel(colCol)}`;
+    : chartTitle(
+      statisticPhrase({ statistic: valueMode, valueLabel: colLabel(valueCol), isCountColumn: isCaseTotal }),
+      colLabel(rowCol), colLabel(colCol)
+    );
   const title = titleOverride ?? defaultTitle;
 
   const svgContent = useMemo(() => {
@@ -134,6 +157,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
     const decimals = valueMode === 'count'
       ? 0
       : decimalsForValues(cellValues.flat().filter((v): v is number => v !== null));
+    const legendTitle = valueMode === 'count' ? 'Records' : isCaseTotal ? colLabel(valueCol) : valueMode === 'sum' ? 'Total' : 'Mean';
     const fmt = (v: number) => formatFixed(v, decimals, locale);
 
     const dims = getDefaultDimensions('heatmap');
@@ -192,7 +216,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
         const cx = adjustedLeft + ci * cellW;
         const val = cellValues[ri][ci];
 
-        // No-data cell (average mode with no numeric values)
+        // No-data cell (mean mode with no numeric values)
         if (val === null) {
           svg += `<rect x="${cx}" y="${adjustedTop + ri * cellH}" width="${cellW}" height="${cellH}" fill="#F9FAFB" stroke="white" stroke-width="1" rx="1"/>`;
           if (showCellLabels && cellW >= 24 && cellH >= 14) {
@@ -249,21 +273,24 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       svg += `<rect x="${legendX}" y="${legendY}" width="${legendWidth}" height="${legendWidth}" fill="${ramp.light}" stroke="#CCC" stroke-width="1"/>`;
       svg += svgText(legendX + legendWidth + 6, legendY + 14, fmt(globalMax), { anchor: 'start', fontSize: 9, fill: '#555' });
     }
-    svg += svgText(legendX, legendY - 8, fitText(valueMode === 'count' ? 'Records' : 'Mean', 90, 10, true), { anchor: 'start', fontSize: 10, fontWeight: 'bold', fill: '#444' });
+    svg += svgText(legendX, legendY - 8, fitText(legendTitle, 90, 10, true), { anchor: 'start', fontSize: 10, fontWeight: 'bold', fill: '#444' });
 
     const notes = [
       valueMode === 'count'
         ? `Cells show the number of records for each ${colLabel(rowCol)} and ${colLabel(colCol)}.`
-        : `Cells show the mean of ${colLabel(valueCol)} for each ${colLabel(rowCol)} and ${colLabel(colCol)}. A dash marks a combination with no value.`,
+        : valueMode === 'sum'
+          ? `Cells show the total ${colLabel(valueCol)} for each ${colLabel(rowCol)} and ${colLabel(colCol)}.`
+          : `Cells show the mean of ${colLabel(valueCol)} for each ${colLabel(rowCol)} and ${colLabel(colCol)}. A dash marks a combination with no value.`,
     ];
     if (heatmapData.excluded > 0) {
-      const fields = [colLabel(rowCol), colLabel(colCol), valueMode === 'average' && colLabel(valueCol)].filter(Boolean);
+      const fields = [colLabel(rowCol), colLabel(colCol), valueMode !== 'count' && colLabel(valueCol)].filter(Boolean);
       notes.push(`${recordCount(heatmapData.excluded)} excluded: no value for ${fields.join(' or ')}.`);
     }
+    if (filterNote) notes.push(filterNote);
     const footer = svgFooter(width, adjustedTop + Math.max(actualPlotH, legendY + legendH - adjustedTop) + 8, notes, source || undefined);
 
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [heatmapData, valueMode, rowCol, colCol, valueCol, colorScheme, showCellLabels, title, subtitle, source, locale, colLabel]);
+  }, [heatmapData, valueMode, isCaseTotal, rowCol, colCol, valueCol, colorScheme, showCellLabels, title, subtitle, source, locale, colLabel, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -292,9 +319,9 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
   }, [heatmapData, rowCol, colCol, statistic, title, subtitle, source, colLabel]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Data Mapping</h4>
 
@@ -324,14 +351,21 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="count">Count (frequency)</option>
-              <option value="average">Average of column</option>
+              <option value="sum">Sum of a numeric column</option>
+              <option value="mean">Mean of a numeric column</option>
             </select>
           </div>
+          {valueMode === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setValueMode('sum'); setValueCol(countColumn.key); }}
+            />
+          )}
 
-          {valueMode === 'average' && (
+          {valueMode !== 'count' && (
             <VariableMapper
               label="Value Column"
-              description="Numeric column to average per cell"
+              description={valueMode === 'sum' ? 'Numeric column to add up per cell' : 'Numeric column to average per cell'}
               columns={dataset.columns}
               value={valueCol}
               onChange={setValueCol}
@@ -437,7 +471,7 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {svgContent ? (
           <ChartContainer
             title={title}
@@ -449,7 +483,15 @@ export function HeatmapChart({ dataset }: HeatmapChartProps) {
           </ChartContainer>
         ) : (
           <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
-            <p className="text-gray-500 text-lg">Select row and column variables to create a heatmap</p>
+            {/* Says what is actually missing. It used to ask for the row and
+                column variables whatever was missing, value column included. */}
+            <p className="text-gray-500 text-lg">
+              {!rowCol || !colCol
+                ? 'Select row and column variables to create a heatmap'
+                : !valueCol
+                  ? `Select a numeric column to ${valueMode === 'sum' ? 'add up' : 'average'} in each cell`
+                  : 'Nothing to draw: no record has both variables recorded'}
+            </p>
             <p className="text-gray-400 text-sm mt-2">Map your data using the panel on the left</p>
           </div>
         )}

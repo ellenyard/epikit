@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { pickCategoryColumn, pickTargetPair, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle } from '../../../utils/chartTitles';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
@@ -31,11 +33,11 @@ interface DumbbellPoint {
   gap: number;
 }
 
-export function DumbbellChart({ dataset }: { dataset: Dataset }) {
+export function DumbbellChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [categoryCol, setCategoryCol] = useState('');
-  const [value1Col, setValue1Col] = useState('');
-  const [value2Col, setValue2Col] = useState('');
+  const [categoryColChoice, setCategoryCol] = useState('');
+  const [value1ColChoice, setValue1Col] = useState('');
+  const [value2ColChoice, setValue2Col] = useState('');
   // The dots were always a mean, though nothing on the chart said so.
   const [aggregation, setAggregation] = useState<DumbbellAggregation>('mean');
   const [sortMode, setSortMode] = useState<SortMode>('gap-desc');
@@ -52,6 +54,15 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
     (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
     [dataset.columns]
   );
+
+  // The user's choices while they are valid for the dataset, else the first
+  // drawing the data supports: a measured column against the column named
+  // as its target. Without such a pair the chart waits to be told.
+  const targetPair = useMemo(() => pickTargetPair(dataset), [dataset]);
+  const autoCategory = useMemo(() => (targetPair.target ? pickCategoryColumn(dataset) : ''), [dataset, targetPair]);
+  const categoryCol = resolveColumnChoice(dataset, categoryColChoice, autoCategory);
+  const value1Col = resolveColumnChoice(dataset, value1ColChoice, targetPair.actual, true);
+  const value2Col = resolveColumnChoice(dataset, value2ColChoice, targetPair.target, true);
 
   // Process data
   const dumbbell = useMemo((): { points: DumbbellPoint[]; dropped: number } => {
@@ -84,7 +95,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
   const statistic = `${aggregation === 'sum' ? 'Sum' : 'Mean'} per ${colLabel(categoryCol)}`;
   const defaultTitle = dumbbellData.length === 0
     ? 'Dumbbell Chart'
-    : `${colLabel(value1Col)} and ${colLabel(value2Col)} by ${colLabel(categoryCol)}`;
+    : chartTitle(`${colLabel(value1Col)} and ${colLabel(value2Col)}`, colLabel(categoryCol));
   const title = titleOverride ?? defaultTitle;
 
   // Generate SVG
@@ -198,10 +209,11 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
     if (dumbbell.dropped > 0) {
       notes.push(`${dumbbell.dropped} ${dumbbell.dropped === 1 ? 'category is' : 'categories are'} not shown: no value in one of the two columns.`);
     }
+    if (filterNote) notes.push(filterNote);
     const footer = svgFooter(width, plotBottom + 44, notes, source || undefined);
 
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [dumbbellData, dumbbell.dropped, aggregation, statistic, showLabels, colorScheme, title, subtitle, source, categoryCol, value1Col, value2Col, locale, colLabel]);
+  }, [dumbbellData, dumbbell.dropped, aggregation, statistic, showLabels, colorScheme, title, subtitle, source, categoryCol, value1Col, value2Col, locale, colLabel, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -227,9 +239,9 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
   }, [dumbbellData, title, subtitle, source, categoryCol, value1Col, value2Col, statistic, colLabel]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Dumbbell Chart Configuration</h3>
 
@@ -386,7 +398,7 @@ export function DumbbellChart({ dataset }: { dataset: Dataset }) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {svgContent ? (
           <ChartContainer
             title={title}

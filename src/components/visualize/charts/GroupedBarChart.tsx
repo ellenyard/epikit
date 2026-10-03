@@ -1,8 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { findCountColumn } from '../../../utils/countColumn';
+import { pickGroupedPair, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle, statisticPhrase } from '../../../utils/chartTitles';
 import { getChartColors, textColorOn, type ChartColorScheme } from '../../../utils/chartColors';
 import {
   getDefaultDimensions,
@@ -22,20 +26,17 @@ import { categoryColumns, orderCategories, recordCount } from '../../../utils/ch
 import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
 
-interface GroupedBarChartProps {
-  dataset: Dataset;
-}
-
 type DisplayMode = 'grouped' | 'stacked' | 'percent';
 
-export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
+export function GroupedBarChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [categoryVar, setCategoryVar] = useState('');
-  const [groupVar, setGroupVar] = useState('');
+  const [categoryVarChoice, setCategoryVar] = useState('');
+  const [groupVarChoice, setGroupVar] = useState('');
   // What a bar measures. "Numeric column" used to mean a sum without saying
-  // so, which on a column of rates adds percentages together.
-  const [valueMode, setValueMode] = useState<CrossAggregationMode>('count');
-  const [valueVar, setValueVar] = useState('');
+  // so, which on a column of rates adds percentages together. null means
+  // "follow the data": see countColumn below.
+  const [valueModeChoice, setValueMode] = useState<CrossAggregationMode | null>(null);
+  const [valueVarChoice, setValueVar] = useState('');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('grouped');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showDataLabels, setShowDataLabels] = useState(true);
@@ -49,6 +50,22 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
   const colLabel = useCallback(
     (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
     [dataset.columns]
+  );
+
+  // The user's choices while they are valid for the dataset, else the first
+  // drawing the data supports: a grouping variable split by a two-value one.
+  // The chart used to open blank and ask for both.
+  const autoPair = useMemo(() => pickGroupedPair(dataset), [dataset]);
+  const categoryVar = resolveColumnChoice(dataset, categoryVarChoice, autoPair.category);
+  const groupVar = resolveColumnChoice(dataset, groupVarChoice, autoPair.group);
+  // Aggregated data (one row per report, with a column of cases) starts as
+  // the total of that column; counting its rows counts reports.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const valueMode: CrossAggregationMode = valueModeChoice ?? (countColumn ? 'sum' : 'count');
+  const valueVar = resolveColumnChoice(
+    dataset, valueVarChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
   );
 
   // Build data structure: category -> group -> value
@@ -82,16 +99,22 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     return { dataMap, groupValues, categoryOrder, negativeCount, excluded: table.excludedMissing };
   }, [categoryVar, groupVar, valueMode, valueVar, dataset.records, dataset.columns]);
 
-  // What a bar measures, for the axis and the notes
+  // What a bar measures, for the axis and the notes. A total of cases is
+  // called by the column's own name, not "Sum of".
+  const isCaseTotal = valueMode === 'sum' && countColumn?.key === valueVar;
   const statistic = valueMode === 'count'
     ? 'Number of records'
-    : `${valueMode === 'sum' ? 'Sum' : 'Mean'} of ${colLabel(valueVar)}`;
+    : isCaseTotal ? colLabel(valueVar)
+      : `${valueMode === 'sum' ? 'Sum' : 'Mean'} of ${colLabel(valueVar)}`;
   // A mean cannot be stacked into a total or a share, so those modes fall back to side by side.
   const effectiveDisplay: DisplayMode = valueMode === 'mean' ? 'grouped' : displayMode;
 
   const defaultTitle = !categoryVar || !groupVar
     ? 'Grouped Bar Chart'
-    : `${valueMode === 'count' ? 'Records' : statistic} by ${colLabel(categoryVar)} and ${colLabel(groupVar)}`;
+    : chartTitle(
+      statisticPhrase({ statistic: valueMode, valueLabel: colLabel(valueVar), isCountColumn: isCaseTotal }),
+      colLabel(categoryVar), colLabel(groupVar)
+    );
   const title = titleOverride ?? defaultTitle;
 
   const svgContent = useMemo(() => {
@@ -283,10 +306,11 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
     if (chartData.negativeCount > 0 && effectiveDisplay !== 'grouped') {
       notes.push(`${chartData.negativeCount} negative value${chartData.negativeCount === 1 ? ' is' : 's are'} left out: a stack cannot show them. Use Grouped mode.`);
     }
+    if (filterNote) notes.push(filterNote);
 
     const footer = svgFooter(width, plotBottom + labelDepth + 22, notes, source || undefined);
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [chartData, effectiveDisplay, valueMode, categoryVar, groupVar, valueVar, statistic, colorScheme, showDataLabels, title, subtitle, source, locale, colLabel]);
+  }, [chartData, effectiveDisplay, valueMode, categoryVar, groupVar, valueVar, statistic, colorScheme, showDataLabels, title, subtitle, source, locale, colLabel, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -318,9 +342,9 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
   const isReady = categoryVar && groupVar && (valueMode === 'count' || valueVar);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
           <button
             onClick={() => setShowGuide(!showGuide)}
@@ -373,8 +397,8 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
           />
 
           <VariableMapper
-            label="Group Variable"
-            description="Sub-groups within each category"
+            label="Group by"
+            description="One bar per value of this variable within each category"
             columns={catColumns}
             value={groupVar}
             onChange={setGroupVar}
@@ -396,6 +420,12 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
               <option value="mean">Mean of a numeric column</option>
             </select>
           </div>
+          {valueMode === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setValueMode('sum'); setValueVar(countColumn.key); }}
+            />
+          )}
 
           {valueMode !== 'count' && (
             <VariableMapper
@@ -516,7 +546,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {isReady && svgContent ? (
           <ChartContainer
             title={title}
@@ -530,7 +560,7 @@ export function GroupedBarChart({ dataset }: GroupedBarChartProps) {
           <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
             <p className="text-gray-500 text-lg">Configure the chart</p>
             <p className="text-gray-400 text-sm mt-2">
-              Select a category variable, a group variable, and a value to generate the chart.
+              Select a category variable, a variable to group by, and a value to generate the chart.
             </p>
           </div>
         )}

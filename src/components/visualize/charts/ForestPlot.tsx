@@ -11,8 +11,10 @@ import { formatSigFigs } from '../../../utils/localeNumbers';
 import {
   caseKeySet,
   collectLevels,
+  defaultForestMeasure,
   levelKey,
   outcomeCandidateColumns,
+  outcomeNoun,
   resolveExposureSetup,
   suggestOutcome,
   tabulateTwoByTwo,
@@ -52,6 +54,8 @@ type MeasureType = 'oddsRatio' | 'riskRatio' | 'riskDifference';
 
 /** The settings this chart shares with the 2×2 analysis, as saved for one dataset. */
 interface SharedSettings {
+  /** The 2×2 tab's study design, which decides the measure the plot opens with. */
+  studyDesign: 'cohort' | 'case-control';
   outcomeVar: string;
   caseValues: string[];
   selectedExposures: string[];
@@ -82,6 +86,7 @@ function loadSharedSettings(dataset: Dataset): SharedSettings {
   }
 
   return {
+    studyDesign: saved.studyDesign === 'case-control' ? 'case-control' : 'cohort',
     outcomeVar,
     caseValues,
     selectedExposures: Array.isArray(saved.selectedExposures) ? saved.selectedExposures as string[] : [],
@@ -131,7 +136,9 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   // the two tabs on the same records.
   const [filterBy, setFilterBy] = useState<string>(initial.filterBy);
   const [selectedFilterValues, setSelectedFilterValues] = useState<Set<string>>(() => new Set(initial.selectedFilterValues));
-  const [measureType, setMeasureType] = useState<MeasureType>('oddsRatio');
+  // The measure follows the 2×2 tab's design until the user picks one here
+  const [measureType, setMeasureType] = useState<MeasureType>(() => defaultForestMeasure(initial.studyDesign));
+  const [measureChosen, setMeasureChosen] = useState(false);
   // Custom labels for forest plot rows (keyed by exposure variable key)
   const [customLabels, setCustomLabels] = useState<Record<string, string>>({});
 
@@ -140,7 +147,8 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   const [showNullLine, setShowNullLine] = useState(true);
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showLabels, setShowLabels] = useState(true);
-  const [title, setTitle] = useState('Forest Plot');
+  // Empty means the title is built from the setup (see displayTitle below)
+  const [title, setTitle] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [source, setSource] = useState('');
   const [showGuide, setShowGuide] = useState(false);
@@ -161,6 +169,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     setExposureReferenceValues(next.exposureReferenceValues);
     setFilterBy(next.filterBy);
     setSelectedFilterValues(new Set(next.selectedFilterValues));
+    if (!measureChosen) setMeasureType(defaultForestMeasure(next.studyDesign));
     setCustomLabels({});
     setLabelCol('');
     setEstimateCol('');
@@ -387,6 +396,21 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
   // Combined forest data
   const forestData = dataMode === 'calculate' ? calculated.rows : manualForestData;
 
+  // What the plot shows and why, for the figure itself. A reader of the
+  // exported image sees odds ratios or risk ratios without the 2×2 tab's
+  // design switch beside them, so the design is stated on the plot.
+  const measureNoun = measureType === 'oddsRatio'
+    ? 'Odds ratios'
+    : measureType === 'riskRatio' ? 'Risk ratios' : 'Risk differences';
+  const designNote = `${measureNoun} (${
+    measureType === 'oddsRatio' ? 'case-control design' : 'cohort design'
+  }), from the 2×2 analysis settings`;
+  const outcomeLabel = dataset.columns.find(c => c.key === outcomeVar)?.label || outcomeVar;
+  const autoTitle = dataMode === 'calculate' && outcomeVar
+    ? `${measureNoun} for ${outcomeNoun(outcomeLabel)} by exposure`
+    : 'Forest plot';
+  const displayTitle = title.trim() || autoTitle;
+
   // Generate SVG
   const svgContent = useMemo(() => {
     if (forestData.length === 0) return '';
@@ -400,6 +424,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     // Notes under the axis. Each gets its own line, above the source, so the
     // two can no longer be drawn on top of each other.
     const notes: string[] = [];
+    if (dataMode === 'calculate') notes.push(designNote);
     if (forestData.some(r => r.zeroCell)) {
       notes.push('† Zero cell in the 2×2 table: OR and CI add 0.5 to every cell (continuity correction)');
     }
@@ -452,8 +477,8 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     let svg = '';
 
     // Title
-    if (title) {
-      svg += svgTitle(width, title, subtitle || undefined);
+    if (displayTitle) {
+      svg += svgTitle(width, displayTitle, subtitle || undefined);
     }
 
     // Vertical gridlines with clean tick values
@@ -584,7 +609,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
     }
 
     return svgWrapper(width, height, svg);
-  }, [forestData, scaleType, showNullLine, showLabels, colorScheme, title, subtitle, source, dataMode, measureType, filterDescription]);
+  }, [forestData, scaleType, showNullLine, showLabels, colorScheme, displayTitle, designNote, subtitle, source, dataMode, measureType, filterDescription]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -608,15 +633,13 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
       note: r.note ?? (r.zeroCell ? 'Zero cell: OR and CI add 0.5 to every cell' : ''),
     }));
     return {
-      title,
+      title: displayTitle,
       subtitle: subtitle || undefined,
       source: source || undefined,
       columns,
       rows,
     };
-  }, [forestData, title, subtitle, source, dataMode, measureType]);
-
-  const displayTitle = title || 'Forest Plot';
+  }, [forestData, displayTitle, subtitle, source, dataMode, measureType]);
 
   // --- Toggle exposure selection ---
   const toggleExposure = (expKey: string) => {
@@ -780,7 +803,10 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                 <h4 className="text-sm font-semibold text-gray-700">Measure of Association</h4>
                 <select
                   value={measureType}
-                  onChange={e => setMeasureType(e.target.value as MeasureType)}
+                  onChange={e => {
+                    setMeasureType(e.target.value as MeasureType);
+                    setMeasureChosen(true);
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="oddsRatio">Odds Ratio (OR)</option>
@@ -1018,6 +1044,7 @@ export function ForestPlot({ dataset }: { dataset: Dataset }) {
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
+                placeholder={autoTitle}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>

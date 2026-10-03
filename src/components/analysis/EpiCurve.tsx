@@ -270,6 +270,11 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
     () => dataset.columns.filter(c => c.type === 'date' || c.key.toLowerCase().includes('date')),
     [dataset.columns]
   );
+  const otherColumns = useMemo(
+    () => dataset.columns.filter(c => !dateColumns.includes(c)),
+    [dataset.columns, dateColumns]
+  );
+
 
   // Find potential time columns: text columns named for a time, or whose
   // values read as clock times. Import types a short list of repeated times
@@ -290,6 +295,18 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
       return clockLike.length >= sample.length * 0.8;
     }),
     [dataset.columns, dataset.records]
+  );
+
+  // Columns a curve can be filtered or stratified by: a limited set of
+  // values, so not dates, times, measurements or record IDs. The pickers used
+  // to list every column, with the ID first.
+  const groupingColumns = useMemo(
+    () => dataset.columns.filter(c =>
+      c.type !== 'date' && c.type !== 'number'
+      && !timeColumns.includes(c)
+      && collectCategoryValues(dataset.records, c.key).length <= 30
+    ),
+    [dataset.columns, dataset.records, timeColumns]
   );
 
   // Check if using sub-daily bin size
@@ -1070,7 +1087,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">None (show all)</option>
-              {dataset.columns.map(col => (
+              {groupingColumns.map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
             </select>
@@ -1141,9 +1158,16 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">Select date column...</option>
-              {dataset.columns.map(col => (
+              {dateColumns.map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
+              {otherColumns.length > 0 && (
+                <optgroup label="Other columns">
+                  {otherColumns.map(col => (
+                    <option key={col.key} value={col.key}>{col.label}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -1223,7 +1247,7 @@ export function EpiCurve({ dataset, onExportDataset, preset }: EpiCurveProps) {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
             >
               <option value="">None</option>
-              {dataset.columns.filter(c => c.type !== 'date').map(col => (
+              {groupingColumns.map(col => (
                 <option key={col.key} value={col.key}>{col.label}</option>
               ))}
             </select>

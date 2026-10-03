@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { pickCategoryColumn, pickTargetPair, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle } from '../../../utils/chartTitles';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColor, type ChartColorScheme } from '../../../utils/chartColors';
@@ -21,15 +23,11 @@ import { categoryColumns, categoriesInColumn, numberOf, orderCategories, byCateg
 import { niceScale, formatTick, formatFixed, decimalsForValues } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
 
-interface BulletChartProps {
-  dataset: Dataset;
-}
-
-export function BulletChart({ dataset }: BulletChartProps) {
+export function BulletChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [categoryVar, setCategoryVar] = useState('');
-  const [actualVar, setActualVar] = useState('');
-  const [targetVar, setTargetVar] = useState('');
+  const [categoryVarChoice, setCategoryVar] = useState('');
+  const [actualVarChoice, setActualVar] = useState('');
+  const [targetVarChoice, setTargetVar] = useState('');
   const [aggMode, setAggMode] = useState<AggregationMode>('mean');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   const [showValueLabels, setShowValueLabels] = useState(true);
@@ -44,6 +42,15 @@ export function BulletChart({ dataset }: BulletChartProps) {
     (key: string) => dataset.columns.find(c => c.key === key)?.label || key,
     [dataset.columns]
   );
+
+  // The user's choices while they are valid for the dataset, else the first
+  // drawing the data supports: a column named as a target against the column
+  // it is the target for. Without such a pair the chart waits to be told.
+  const targetPair = useMemo(() => pickTargetPair(dataset), [dataset]);
+  const autoCategory = useMemo(() => (targetPair.target ? pickCategoryColumn(dataset) : ''), [dataset, targetPair]);
+  const categoryVar = resolveColumnChoice(dataset, categoryVarChoice, autoCategory);
+  const actualVar = resolveColumnChoice(dataset, actualVarChoice, targetPair.actual, true);
+  const targetVar = resolveColumnChoice(dataset, targetVarChoice, targetPair.target, true);
 
   const categoryColumn = useMemo(
     () => dataset.columns.find(c => c.key === categoryVar),
@@ -83,7 +90,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
   const aggWord = aggMode === 'count' ? 'Number of values recorded' : `${aggMode[0].toUpperCase()}${aggMode.slice(1)}`;
   const defaultTitle = rows.length === 0
     ? 'Bullet Chart'
-    : `${colLabel(actualVar)} against ${colLabel(targetVar)} by ${colLabel(categoryVar)}`;
+    : chartTitle(`${colLabel(actualVar)} against target`, colLabel(categoryVar));
   const title = titleOverride ?? defaultTitle;
 
   const svgContent = useMemo(() => {
@@ -197,10 +204,11 @@ export function BulletChart({ dataset }: BulletChartProps) {
       notes.push(`${dropped} ${dropped === 1 ? 'category is' : 'categories are'} not shown: no value in one of the two columns.`);
     }
     if (hasNegativeValues) notes.push('Negative values are drawn at zero.');
+    if (filterNote) notes.push(filterNote);
     const footer = svgFooter(width, plotTop + totalBarArea + 44, notes, source || undefined);
 
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [rows, uniqueCategories, hasNegativeValues, categoryVar, actualVar, targetVar, aggMode, aggWord, colorScheme, showValueLabels, title, subtitle, source, locale, colLabel]);
+  }, [rows, uniqueCategories, hasNegativeValues, categoryVar, actualVar, targetVar, aggMode, aggWord, colorScheme, showValueLabels, title, subtitle, source, locale, colLabel, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -224,12 +232,14 @@ export function BulletChart({ dataset }: BulletChartProps) {
   const isReady = categoryVar && actualVar && targetVar;
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <VisualizationTip
-          tip="Bullet charts are ideal for comparing actual performance to a target. Data are automatically aggregated by category (e.g., mean per age group)."
-          context="Try this: Category=Age Group, Actual=Vitamin A Coverage (%), Target=Target Vitamin A Coverage (%)"
+          tip="Bullet charts compare a measured value with its target. Each row is one category, with the measured value as a bar and the target as a marker; records are averaged per category."
+          context={targetPair.target
+            ? `This dataset has a target column, ${colLabel(targetPair.target)}, which is drawn against ${colLabel(targetPair.actual)}.`
+            : 'No column in this dataset is named as a target. Any numeric column can stand as the benchmark, such as a national figure.'}
         />
 
         <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
@@ -390,7 +400,7 @@ export function BulletChart({ dataset }: BulletChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {isReady && svgContent ? (
           <ChartContainer
             title={title}

@@ -590,8 +590,8 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
         <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500 space-y-1">
           <p>
             {studyDesign === 'cohort'
-              ? 'Attack rate = number ill ÷ total in that group. RR = risk ratio: the attack rate in the exposed divided by the attack rate in the comparison group, with a 95% confidence interval (log method).'
-              : 'Percentages are of the cases, and of the controls, with a recorded exposure, so their denominators can be smaller than the totals in the headings. OR = odds ratio, with a 95% confidence interval (Woolf method).'}
+              ? 'Risk ratios (cohort design). Attack rate = number ill ÷ total in that group. RR = risk ratio: the attack rate in the exposed divided by the attack rate in the comparison group, with a 95% confidence interval (log method).'
+              : 'Odds ratios (case-control design). Percentages are of the cases, and of the controls, with a recorded exposure, so their denominators can be smaller than the totals in the headings. OR = odds ratio, with a 95% confidence interval (Woolf method).'}
           </p>
           {anyCorrectedOR && (
             <p>
@@ -716,7 +716,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
               onChange={() => setStudyDesign('cohort')}
               className="w-4 h-4 text-gray-700 focus:ring-gray-500"
             />
-            <span className="text-sm text-gray-900">Cohort (Attack Rates)</span>
+            <span className="text-sm text-gray-900">Cohort design (attack rates, risk ratios)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -727,7 +727,7 @@ export function TwoByTwoAnalysis({ dataset, initialExposure }: TwoByTwoAnalysisP
               onChange={() => setStudyDesign('case-control')}
               className="w-4 h-4 text-gray-700 focus:ring-gray-500"
             />
-            <span className="text-sm text-gray-900">Case-Control (Odds Ratios)</span>
+            <span className="text-sm text-gray-900">Case-control design (odds ratios)</span>
           </label>
         </div>
         <p className="mt-2 text-xs text-gray-500">

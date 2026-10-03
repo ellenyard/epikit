@@ -37,6 +37,7 @@ try {
     levelKey, collectLevels, detectExposedLevel, detectReferenceLevel,
     resolveExposureSetup, isMissingLikeLevel, caseKeySet, tabulateTwoByTwo,
     outcomeCandidateColumns, suggestOutcome,
+    defaultForestMeasure, outcomeNoun,
   } = await import(pathToFileURL(bundled).href);
 
   const exposedOf = counts => detectExposedLevel(collectLevels(column('x', counts), 'x'))?.label ?? null;
@@ -195,6 +196,19 @@ try {
     assert.deepEqual(suggestOutcome(columns, records), { key: 'ill', caseValues: ['1'] },
       'and it is the one pre-selected, not "village"');
   }
+
+  // The forest plot opens on the measure the 2x2 tab's design calls for. It
+  // used to open on odds ratios whatever the design, so the outbreak sample, a
+  // cohort study, gave OR 15 in one tool and RR 4.5 in the other.
+  assert.equal(defaultForestMeasure('cohort'), 'riskRatio');
+  assert.equal(defaultForestMeasure('case-control'), 'oddsRatio');
+  assert.equal(defaultForestMeasure(undefined), 'riskRatio', 'nothing saved: match the 2x2 tab default');
+  assert.equal(defaultForestMeasure('nonsense'), 'riskRatio');
+  assert.equal(outcomeNoun('Case Status'), 'illness');
+  assert.equal(outcomeNoun('Ill'), 'illness');
+  assert.equal(outcomeNoun('malade'), 'illness');
+  assert.equal(outcomeNoun('Hospitalised'), 'Hospitalised');
+  assert.equal(outcomeNoun('  '), 'the outcome');
 
   console.log('2x2 setup regression: all checks passed');
 } finally {

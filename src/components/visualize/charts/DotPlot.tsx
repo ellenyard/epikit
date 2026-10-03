@@ -1,7 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
 import type { Dataset } from '../../../types/analysis';
-import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice, looksLikeRate } from '../../../utils/chartDefaults';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { chartTitle as titleFor, statisticPhrase } from '../../../utils/chartTitles';
 import { ChartContainer } from '../shared/ChartContainer';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { findCountColumn } from '../../../utils/countColumn';
 import { VariableMapper } from '../shared/VariableMapper';
 import { FacetWrapper, FacetControl } from '../shared/FacetWrapper';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
@@ -35,10 +39,6 @@ import {
   type NumberSeparators,
 } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
-
-interface DotPlotProps {
-  dataset: Dataset;
-}
 
 type SortMode = 'value' | 'category';
 type ValueFormat = 'number' | 'percent';
@@ -83,6 +83,8 @@ interface DotSvgOptions {
   /** A fixed value range, used to give every stratified panel the same axis. */
   domain?: [number, number];
   locale: NumberSeparators;
+  /** From the Records filter above the gallery, when it excludes records. */
+  filterNote: string;
 }
 
 /** Wrap a category label into at most 2 lines, breaking near 22-25 chars on a space when possible. */
@@ -124,6 +126,7 @@ function buildFootnotes(opts: DotSvgOptions, axisStartsAtZero: boolean): string[
   if (excluded > 0) {
     footnotes.push(`${recordCount(excluded)} excluded due to missing values.`);
   }
+  if (opts.filterNote) footnotes.push(opts.filterNote);
   return footnotes;
 }
 
@@ -246,7 +249,7 @@ function generateDotSvg(opts: DotSvgOptions): string {
   return svgWrapper(width, footer.height, svg + footer.svg);
 }
 
-export function DotPlot({ dataset }: DotPlotProps) {
+export function DotPlot({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
   const [categoryColChoice, setCategoryColChoice] = useState('');
   const [valueColChoice, setValueColChoice] = useState('');
@@ -255,9 +258,12 @@ export function DotPlot({ dataset }: DotPlotProps) {
   // null means "follow the data": categories with an order of their own keep
   // it, and the rest are ranked by value.
   const [sortChoice, setSortChoice] = useState<SortMode | null>(null);
-  const [aggregation, setAggregation] = useState<Aggregation>('mean');
+  // null means "follow the data": see countColumn below.
+  const [aggregationChoice, setAggregation] = useState<Aggregation | null>(null);
   const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
-  const [flagSmallCounts, setFlagSmallCounts] = useState(true);
+  // null means "follow the data": flagged for a percentage or a rate, where a
+  // small denominator makes the value unstable, and not for a plain count.
+  const [flagSmallCountsChoice, setFlagSmallCounts] = useState<boolean | null>(null);
   const [referenceLine, setReferenceLine] = useState('');
   const [referenceLabel, setReferenceLabel] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
@@ -276,14 +282,29 @@ export function DotPlot({ dataset }: DotPlotProps) {
   // current dataset, otherwise an automatic pick. Derived rather than written
   // back through an effect.
   const categoryCol = resolveColumnChoice(dataset, categoryColChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
-  const valueCol = resolveColumnChoice(dataset, valueColChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
+  // Aggregated data (one row per report, with a column of cases) starts as
+  // the total of that column, as the bar chart does; the mean of it is the
+  // average report, not the number of cases.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const valueCol = resolveColumnChoice(
+    dataset, valueColChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
+  );
+  const aggregation: Aggregation = aggregationChoice ?? (countColumn?.key === valueCol ? 'sum' : 'mean');
 
   const categoryColumn = useMemo(
     () => dataset.columns.find(c => c.key === categoryCol),
     [dataset.columns, categoryCol]
   );
   const valueLabel = dataset.columns.find(c => c.key === valueCol)?.label || '';
-  const statistic = aggregation === 'count' ? '' : `${aggregation[0].toUpperCase()}${aggregation.slice(1)} of ${valueLabel}`;
+  // A total of cases is called by the column's own name, not "Sum of".
+  const isCaseTotal = aggregation === 'sum' && countColumn?.key === valueCol;
+  const statistic = aggregation === 'count' ? ''
+    : isCaseTotal ? valueLabel
+      : `${aggregation[0].toUpperCase()}${aggregation.slice(1)} of ${valueLabel}`;
+  const flagSmallCounts = flagSmallCountsChoice
+    ?? (valueFormat === 'percent' || (aggregation !== 'count' && looksLikeRate(valueLabel)));
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
@@ -298,7 +319,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
 
   const defaultTitle = !categoryCol
     ? 'Dot Plot'
-    : `${aggregation === 'count' ? 'Records' : statistic} by ${categoryColumn?.label || categoryCol}`;
+    : titleFor(statisticPhrase({ statistic: aggregation, valueLabel, isCountColumn: isCaseTotal }), categoryColumn?.label || categoryCol);
   const title = titleOverride ?? defaultTitle;
 
   const referenceValue = useMemo(() => {
@@ -405,7 +426,8 @@ export function DotPlot({ dataset }: DotPlotProps) {
     referenceLabel,
     dataset,
     locale,
-  }), [rows, excluded, included, categoryCol, valueCol, colorScheme, showLabels, title, subtitle, source, axisTitle, valueFormat, aggregation, flagSmallCounts, referenceValue, referenceLabel, dataset, locale]);
+    filterNote,
+  }), [rows, excluded, included, categoryCol, valueCol, colorScheme, showLabels, title, subtitle, source, axisTitle, valueFormat, aggregation, flagSmallCounts, referenceValue, referenceLabel, dataset, locale, filterNote]);
 
   const svgContent = useMemo(() => generateDotSvg(svgOptions), [svgOptions]);
 
@@ -479,9 +501,9 @@ export function DotPlot({ dataset }: DotPlotProps) {
   }, [rows, title, subtitle, source, dataset, categoryCol, valueCol, aggregation, valueFormat, statistic]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Data Mapping</h4>
 
@@ -493,6 +515,13 @@ export function DotPlot({ dataset }: DotPlotProps) {
             onChange={setCategoryColChoice}
             required
           />
+
+          {aggregation === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setAggregation('sum'); setValueColChoice(countColumn.key); }}
+            />
+          )}
 
           {/* Counting records reads no value column, so none is asked for. */}
           {aggregation !== 'count' && (
@@ -666,7 +695,7 @@ export function DotPlot({ dataset }: DotPlotProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {svgContent ? (
           facetCol ? (
             <FacetWrapper

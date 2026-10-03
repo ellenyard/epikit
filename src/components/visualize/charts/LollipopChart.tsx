@@ -1,7 +1,10 @@
 import { useState, useMemo } from 'react';
-import type { Dataset } from '../../../types/analysis';
-import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { pickCategoryColumn, pickNumericColumn, resolveColumnChoice, looksLikeRate } from '../../../utils/chartDefaults';
 import { ChartContainer } from '../shared/ChartContainer';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { findCountColumn } from '../../../utils/countColumn';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { chartTitle as titleFor, statisticPhrase } from '../../../utils/chartTitles';
 import { VariableMapper } from '../shared/VariableMapper';
 import {
   getDefaultDimensions,
@@ -26,10 +29,6 @@ import {
 } from '../../../utils/chartCategories';
 import { niceScale, formatTick, formatFixed, decimalsForValues, median } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
-
-interface LollipopChartProps {
-  dataset: Dataset;
-}
 
 type ValueMode = 'count' | 'numeric';
 type SortMode = 'value-desc' | 'value-asc' | 'category';
@@ -67,18 +66,21 @@ function wrapCategoryLabel(label: string): string[] {
   return [line1, line2];
 }
 
-export function LollipopChart({ dataset }: LollipopChartProps) {
+export function LollipopChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
   const [categoryColChoice, setCategoryColChoice] = useState('');
-  const [valueMode, setValueMode] = useState<ValueMode>('count');
+  // null means "follow the data": see countColumn below.
+  const [valueModeChoice, setValueMode] = useState<ValueMode | null>(null);
   const [numericColChoice, setNumericColChoice] = useState('');
   // null means "follow the data": categories with an order of their own keep
   // it, and the rest are ranked by value.
   const [sortChoice, setSortChoice] = useState<SortMode | null>(null);
-  const [aggregation, setAggregation] = useState<Aggregation>('mean');
+  const [aggregationChoice, setAggregation] = useState<Aggregation | null>(null);
   const [valueFormat, setValueFormat] = useState<ValueFormat>('number');
   const [highlightCat, setHighlightCat] = useState('');
-  const [flagSmallCounts, setFlagSmallCounts] = useState(true);
+  // null means "follow the data": flagged for a percentage or a rate, where a
+  // small denominator makes the value unstable, and not for a plain count.
+  const [flagSmallCountsChoice, setFlagSmallCounts] = useState<boolean | null>(null);
   const [referenceLine, setReferenceLine] = useState('');
   const [referenceLabel, setReferenceLabel] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
@@ -97,14 +99,30 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
   // current dataset, otherwise an automatic pick. Derived rather than written
   // back through an effect.
   const categoryCol = resolveColumnChoice(dataset, categoryColChoice, useMemo(() => pickCategoryColumn(dataset), [dataset]));
-  const numericCol = resolveColumnChoice(dataset, numericColChoice, useMemo(() => pickNumericColumn(dataset), [dataset]), true);
+  // Aggregated data (one row per report, with a column of cases) starts as
+  // the total of that column, as the bar chart does. Counting its rows drew
+  // the same value for every category.
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const valueMode: ValueMode = valueModeChoice ?? (countColumn ? 'numeric' : 'count');
+  const numericCol = resolveColumnChoice(
+    dataset, numericColChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
+  );
+  const aggregation: Aggregation = aggregationChoice ?? (countColumn?.key === numericCol ? 'sum' : 'mean');
 
   const categoryColumn = useMemo(
     () => dataset.columns.find(c => c.key === categoryCol),
     [dataset.columns, categoryCol]
   );
   const numericLabel = dataset.columns.find(c => c.key === numericCol)?.label || '';
-  const statistic = valueMode === 'count' ? '' : `${aggregation[0].toUpperCase()}${aggregation.slice(1)} of ${numericLabel}`;
+  // A total of cases is called by the column's own name, not "Sum of".
+  const isCaseTotal = valueMode === 'numeric' && aggregation === 'sum' && countColumn?.key === numericCol;
+  const statistic = valueMode === 'count' ? ''
+    : isCaseTotal ? numericLabel
+      : `${aggregation[0].toUpperCase()}${aggregation.slice(1)} of ${numericLabel}`;
+  const flagSmallCounts = flagSmallCountsChoice
+    ?? (valueFormat === 'percent' || (valueMode !== 'count' && looksLikeRate(numericLabel)));
 
   const axisTitle = useMemo(() => {
     if (axisTitleOverride !== null) return axisTitleOverride;
@@ -119,7 +137,10 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
 
   const defaultTitle = !categoryCol
     ? 'Lollipop Chart'
-    : `${valueMode === 'count' ? 'Records' : statistic} by ${categoryColumn?.label || categoryCol}`;
+    : titleFor(
+      statisticPhrase({ statistic: valueMode === 'count' ? 'count' : aggregation, valueLabel: numericLabel, isCountColumn: isCaseTotal }),
+      categoryColumn?.label || categoryCol
+    );
   const title = titleOverride ?? defaultTitle;
 
   const referenceValue = useMemo(() => {
@@ -380,15 +401,16 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
     if (excluded > 0) {
       footnotes.push(`${recordCount(excluded)} excluded due to missing values.`);
     }
+    if (filterNote) footnotes.push(filterNote);
 
     const footer = svgFooter(width, cursorY + 4, footnotes, source || undefined);
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [lollipopData, excluded, included, showLabels, flagSmallCounts, colorScheme, activeHighlight, valueFormat, referenceValue, referenceLabel, axisTitle, title, subtitle, source, valueMode, categoryCol, numericCol, aggregation, dataset, locale]);
+  }, [lollipopData, excluded, included, showLabels, flagSmallCounts, colorScheme, activeHighlight, valueFormat, referenceValue, referenceLabel, axisTitle, title, subtitle, source, valueMode, categoryCol, numericCol, aggregation, dataset, locale, filterNote]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div className="bg-white border border-gray-200 rounded-lg p-4">
           <h4 className="text-sm font-semibold text-gray-700 mb-3">Data Mapping</h4>
 
@@ -427,6 +449,13 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
               </button>
             </div>
           </div>
+
+          {valueMode === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setValueMode('numeric'); setNumericColChoice(countColumn.key); setAggregation('sum'); }}
+            />
+          )}
 
           {valueMode === 'numeric' && (
             <VariableMapper
@@ -610,7 +639,7 @@ export function LollipopChart({ dataset }: LollipopChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {svgContent ? (
           <ChartContainer
             title={title}

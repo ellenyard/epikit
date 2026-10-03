@@ -341,3 +341,24 @@ export function suggestOutcome(
     }))
   );
 }
+
+/**
+ * The measure a forest plot should open with, from the study design saved in
+ * the 2×2 analysis: odds ratios for a case-control design, risk ratios for a
+ * cohort design or when nothing has been saved. The plot used to open on odds
+ * ratios regardless, so the outbreak sample, a cohort study, showed an OR of
+ * 15 here and an RR of 4.5 in the 2×2 tab with nothing to say why.
+ */
+export function defaultForestMeasure(studyDesign: unknown): 'riskRatio' | 'oddsRatio' {
+  return studyDesign === 'case-control' ? 'oddsRatio' : 'riskRatio';
+}
+
+/**
+ * How to refer to an outcome in a title: "illness" for the usual case/illness
+ * column, otherwise the column's own label.
+ */
+export function outcomeNoun(outcomeLabel: string): string {
+  return /\b(ill|illness|sick|case|cases|malade|cas|caso|enfermo|doente)\b/i.test(outcomeLabel)
+    ? 'illness'
+    : outcomeLabel.trim() || 'the outcome';
+}

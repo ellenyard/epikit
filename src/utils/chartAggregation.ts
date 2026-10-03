@@ -239,3 +239,56 @@ export function crossAggregate(
 
   return { categories, groups, cells, excludedMissing, excludedOtherGroup };
 }
+
+export interface PeriodSlopePoint {
+  category: string;
+  startValue: number;
+  endValue: number;
+}
+
+export interface PeriodSlope {
+  /** One line per category, in the order the categories were met. */
+  points: PeriodSlopePoint[];
+  /** Categories met with a value at only one of the two periods, which a line cannot show. */
+  oneEnded: number;
+  /** Records whose period is neither the start nor the end. */
+  excludedOtherPeriods: number;
+  /** Records left out because the category, the period or (outside count mode) the value was missing. */
+  excludedMissing: number;
+}
+
+/**
+ * The two ends of a slope chart from one column of periods: the value of
+ * each category at the start period and at the end period.
+ *
+ * "Cases in 2022 against 2025 by district" lives in one Year column of a
+ * surveillance extract, and the slope chart could only read two numeric
+ * columns. A count of nobody at one end is a real zero and is drawn; a sum or
+ * a mean of nobody does not exist, so that category is left out and counted
+ * in `oneEnded`.
+ */
+export function periodSlope(
+  records: CaseRecord[],
+  categoryKey: string,
+  periodKey: string,
+  start: string,
+  end: string,
+  valueKey: string | null,
+  mode: CrossAggregationMode,
+): PeriodSlope {
+  const table = crossAggregate(records, categoryKey, periodKey, mode === 'count' ? null : valueKey, mode, [start, end]);
+  const points: PeriodSlopePoint[] = [];
+  let oneEnded = 0;
+  for (const category of table.categories) {
+    const s = table.cells.get(category)?.get(start);
+    const e = table.cells.get(category)?.get(end);
+    if (mode === 'count') {
+      points.push({ category, startValue: s?.value ?? 0, endValue: e?.value ?? 0 });
+    } else if (s && e) {
+      points.push({ category, startValue: s.value, endValue: e.value });
+    } else {
+      oneEnded++;
+    }
+  }
+  return { points, oneEnded, excludedOtherPeriods: table.excludedOtherGroup, excludedMissing: table.excludedMissing };
+}

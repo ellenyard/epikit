@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { pickWaffleColumn, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle } from '../../../utils/chartTitles';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
 import { getChartColors, type ChartColorScheme } from '../../../utils/chartColors';
@@ -25,10 +27,6 @@ import {
 import { allocateSquares, formatFixed } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
 
-interface WaffleChartProps {
-  dataset: Dataset;
-}
-
 interface WaffleSlice {
   category: string;
   count: number;
@@ -38,9 +36,9 @@ interface WaffleSlice {
   squares: number;
 }
 
-export function WaffleChart({ dataset }: WaffleChartProps) {
+export function WaffleChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [categoryVar, setCategoryVar] = useState('');
+  const [categoryVarChoice, setCategoryVar] = useState('');
   const [colorScheme, setColorScheme] = useState<ChartColorScheme>('evergreen');
   // null means "follow the data"; a string is what the user typed.
   const [titleOverride, setTitleOverride] = useState<string | null>(null);
@@ -49,6 +47,9 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
   const [showGuide, setShowGuide] = useState(false);
 
   const catColumns = useMemo(() => categoryColumns(dataset), [dataset]);
+  // The user's choice while it is valid for the dataset, else the first
+  // column with few enough values to colour: the chart used to open blank.
+  const categoryVar = resolveColumnChoice(dataset, categoryVarChoice, useMemo(() => pickWaffleColumn(dataset), [dataset]));
   const categoryColumn = useMemo(
     () => dataset.columns.find(c => c.key === categoryVar),
     [dataset.columns, categoryVar]
@@ -83,7 +84,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
     return { slices, total, missing };
   }, [categoryVar, categoryColumn, dataset.records]);
 
-  const defaultTitle = categoryVar ? `Share of records by ${categoryLabel}` : 'Waffle Chart';
+  const defaultTitle = categoryVar ? chartTitle('Share of records', categoryLabel) : 'Waffle Chart';
   const title = titleOverride ?? defaultTitle;
 
   const svgContent = useMemo(() => {
@@ -172,10 +173,11 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
     if (missing > 0) {
       notes.push(`${recordCount(missing)} excluded: no ${categoryLabel} recorded.`);
     }
+    if (filterNote) notes.push(filterNote);
     const footer = svgFooter(width, legendTop + slices.length * legendItemHeight + 2, notes, source || undefined);
 
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [waffle, categoryLabel, colorScheme, title, subtitle, source, locale]);
+  }, [waffle, categoryLabel, colorScheme, title, subtitle, source, locale, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -206,12 +208,12 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
   const isReady = !!categoryVar;
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <VisualizationTip
-          tip="Waffle charts make proportions tangible — each square represents 1% of the whole. They are more accurate than pie charts and easier for audiences to interpret quickly."
-          context="Officially supported in CDC COVE. Best for single metrics like vaccination coverage or test positivity rates."
+          tip="Waffle charts make proportions tangible: each square is 1% of the whole. They are more accurate than pie charts and easier for audiences to read quickly."
+          context="Best for a variable with two to eight values, such as case status or vaccination status."
         />
 
         <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
@@ -310,7 +312,7 @@ export function WaffleChart({ dataset }: WaffleChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {isReady && svgContent ? (
           <ChartContainer
             title={title}

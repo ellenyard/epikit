@@ -356,13 +356,13 @@ export function fitRotatedLabel(text: string, x: number, fontSize: number, maxWi
 }
 
 /** Break a sentence into lines no wider than `maxWidth`. */
-export function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+export function wrapText(text: string, maxWidth: number, fontSize: number, bold = false): string[] {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let line = '';
   for (const word of words) {
     const candidate = line ? `${line} ${word}` : word;
-    if (line && estimateTextWidth(candidate, fontSize) > maxWidth) {
+    if (line && estimateTextWidth(candidate, fontSize, bold) > maxWidth) {
       lines.push(line);
       line = word;
     } else {
@@ -379,21 +379,50 @@ export interface ChartHeader {
   bottom: number;
 }
 
+/** Lines a chart title may run to before the rest is cut. */
+export const MAX_TITLE_LINES = 3;
+const TITLE_FONT = 18;
+const TITLE_LINE_HEIGHT = 22;
+
+/**
+ * A title broken into at most MAX_TITLE_LINES lines that fit `maxWidth`.
+ *
+ * Titles were cut with an ellipsis at the edge of the canvas, and the
+ * automatic ones easily ran past it: "Share of records by Acute Malnutrition
+ * (W…". A second line holds nearly every automatic title, and a third the
+ * titles users write ("Suspected cholera cases by district and week of
+ * onset, Northern Province, January to June 2026"); one that needs more
+ * than three is cut at the end of the third.
+ */
+export function wrapTitle(title: string, maxWidth: number): string[] {
+  const lines = wrapText(title, maxWidth, TITLE_FONT, true);
+  if (lines.length <= MAX_TITLE_LINES) return lines;
+  const kept = lines.slice(0, MAX_TITLE_LINES);
+  kept[MAX_TITLE_LINES - 1] = fitText(lines.slice(MAX_TITLE_LINES - 1).join(' '), maxWidth, TITLE_FONT, true);
+  return kept;
+}
+
 /**
  * Title and subtitle, with the height they occupy.
  *
  * Charts used to place their legend at a fixed y that assumed there was no
- * subtitle, so adding one printed it straight through the legend.
+ * subtitle, so adding one printed it straight through the legend. The title
+ * wraps onto a second line when it is too long for the canvas.
  */
 export function svgHeader(width: number, title: string, subtitle?: string): ChartHeader {
   let svg = '';
   let bottom = 14;
+  let y = 25;
   if (title) {
-    svg += svgText(width / 2, 25, fitText(title, width - 24, 18, true), { fontSize: 18, fontWeight: 'bold', fill: '#111' });
-    bottom = 36;
+    const lines = wrapTitle(title, width - 24);
+    lines.forEach((line, index) => {
+      svg += svgText(width / 2, y + index * TITLE_LINE_HEIGHT, line, { fontSize: TITLE_FONT, fontWeight: 'bold', fill: '#111' });
+    });
+    y += (lines.length - 1) * TITLE_LINE_HEIGHT;
+    bottom = y + 11;
   }
   if (subtitle) {
-    const y = title ? 45 : 22;
+    y = title ? y + 20 : 22;
     svg += svgText(width / 2, y, fitText(subtitle, width - 24, 13), { fontSize: 13, fill: '#555' });
     bottom = y + 12;
   }

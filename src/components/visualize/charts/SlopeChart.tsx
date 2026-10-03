@@ -1,8 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
-import type { Dataset } from '../../../types/analysis';
 import { ChartContainer } from '../shared/ChartContainer';
 import { VariableMapper } from '../shared/VariableMapper';
 import { VisualizationTip } from '../shared/VisualizationTip';
+import { AggregatedDataHint } from '../shared/AggregatedDataHint';
+import { CHART_ROW_CLASS, SETTINGS_COLUMN_CLASS, CHART_COLUMN_CLASS, type ChartProps } from '../shared/ChartLayout';
+import { findCountColumn } from '../../../utils/countColumn';
+import { pickNumericColumn, pickPeriodColumn, pickSlopeCategory, resolveColumnChoice } from '../../../utils/chartDefaults';
+import { chartTitle, statisticPhrase } from '../../../utils/chartTitles';
 import {
   getDefaultDimensions,
   svgWrapper,
@@ -16,15 +20,15 @@ import {
   type ExcelExportData,
 } from '../../../utils/chartExport';
 import { INCREASE_COLOR, DECREASE_COLOR, NEUTRAL_COLOR } from '../../../utils/chartColors';
-import { aggregatePairByCategory, crossAggregate, type AggregationMode } from '../../../utils/chartAggregation';
+import { aggregatePairByCategory, periodSlope, type AggregationMode } from '../../../utils/chartAggregation';
 import { categoryColumns, categoriesInColumn, orderCategories, orderPeriods, recordCount } from '../../../utils/chartCategories';
 import { formatFixed, decimalsForValues } from '../../../utils/chartFormat';
 import { useLocale } from '../../../contexts/LocaleContext';
 
-interface SlopeChartProps {
-  dataset: Dataset;
-}
-
+/**
+ * Where the two ends come from: two numeric columns, or one column of periods
+ * (Year, Before/After) with a value summarised at two of them.
+ */
 type InputMode = 'two-columns' | 'single-column';
 
 interface SlopeDataPoint {
@@ -33,17 +37,21 @@ interface SlopeDataPoint {
   endValue: number;
 }
 
-export function SlopeChart({ dataset }: SlopeChartProps) {
+export function SlopeChart({ dataset, filterNote = '' }: ChartProps) {
   const { config: locale } = useLocale();
-  const [categoryCol, setCategoryCol] = useState('');
+  const [categoryColChoice, setCategoryCol] = useState('');
   const [startCol, setStartCol] = useState('');
   const [endCol, setEndCol] = useState('');
-  const [valueCol, setValueCol] = useState('');
-  const [groupCol, setGroupCol] = useState('');
+  const [valueColChoice, setValueCol] = useState('');
+  const [groupColChoice, setGroupCol] = useState('');
   const [startGroupChoice, setStartGroupChoice] = useState('');
   const [endGroupChoice, setEndGroupChoice] = useState('');
-  const [inputMode, setInputMode] = useState<InputMode>('two-columns');
-  const [aggMode, setAggMode] = useState<AggregationMode>('mean');
+  // null means "follow the data": a dataset with a column of periods opens
+  // in single-column mode, comparing its first period with its last, and
+  // the lines show the total of a count column where there is one. The
+  // chart used to open blank, asking for two numeric columns.
+  const [inputModeChoice, setInputMode] = useState<InputMode | null>(null);
+  const [aggModeChoice, setAggMode] = useState<AggregationMode | null>(null);
   const [showValues, setShowValues] = useState(true);
   // null means "follow the data"; a string is what the user typed.
   const [titleOverride, setTitleOverride] = useState<string | null>(null);
@@ -57,7 +65,25 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
     [dataset.columns]
   );
 
-  // The values of the group variable, earlier period first: Before then After,
+  // Effective selections: the user's choice while it remains valid for the
+  // dataset, otherwise what the data suggests.
+  const period = useMemo(() => pickPeriodColumn(dataset), [dataset]);
+  const countColumn = useMemo(() => findCountColumn(dataset.columns, dataset.records), [dataset.columns, dataset.records]);
+  const inputMode: InputMode = inputModeChoice ?? (period.column ? 'single-column' : 'two-columns');
+  const groupCol = resolveColumnChoice(dataset, groupColChoice, period.column);
+  const categoryCol = resolveColumnChoice(
+    dataset, categoryColChoice,
+    useMemo(() => (period.column ? pickSlopeCategory(dataset, period.column) : ''), [dataset, period.column])
+  );
+  const valueCol = resolveColumnChoice(
+    dataset, valueColChoice,
+    useMemo(() => countColumn?.key ?? pickNumericColumn(dataset), [countColumn, dataset]),
+    true
+  );
+  const aggMode: AggregationMode = aggModeChoice
+    ?? (inputMode === 'single-column' ? (countColumn ? 'sum' : 'count') : 'mean');
+
+  // The values of the period column, earlier period first: Before then After,
   // not the alphabetical After then Before.
   const groupValues = useMemo(() => {
     const column = dataset.columns.find(c => c.key === groupCol);
@@ -65,14 +91,15 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
     return orderPeriods(categoriesInColumn(dataset.records, column), column);
   }, [dataset.records, dataset.columns, groupCol]);
 
-  // The two groups compared. Which is the start is the user's to change.
+  // The two periods compared: the first and the last unless the user says
+  // otherwise, so a Year column opens as its earliest year against its latest.
   const startGroup = groupValues.includes(startGroupChoice) ? startGroupChoice : (groupValues[0] ?? '');
   const endGroup = groupValues.includes(endGroupChoice) && endGroupChoice !== startGroup
     ? endGroupChoice
-    : (groupValues.find(v => v !== startGroup) ?? '');
+    : ([...groupValues].reverse().find(v => v !== startGroup) ?? '');
   const hasTwoGroups = !!startGroup && !!endGroup;
 
-  // Counting needs no value column in Value + Group mode: it counts the records in each group.
+  // Counting needs no numeric column in period mode: it counts the records at each period.
   const needsValueCol = inputMode === 'two-columns' || aggMode !== 'count';
 
   // Build slope data — always aggregates by category
@@ -89,24 +116,15 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       const pairs = aggregatePairByCategory(dataset.records, categoryCol, startCol, endCol, aggMode);
       points = pairs.map(p => ({ category: p.category, startValue: p.valueA, endValue: p.valueB }));
     } else {
-      // single-column mode: pivot on group column
+      // single-column mode: the value at each of two periods
       if (!groupCol || !hasTwoGroups) return empty;
       const mode = aggMode === 'count' ? 'count' : aggMode === 'sum' ? 'sum' : 'mean';
       if (mode !== 'count' && !valueCol) return empty;
-      const table = crossAggregate(
-        dataset.records, categoryCol, groupCol, mode === 'count' ? null : valueCol, mode, [startGroup, endGroup]
-      );
-      points = [];
-      for (const category of table.categories) {
-        const s = table.cells.get(category)?.get(startGroup);
-        const e = table.cells.get(category)?.get(endGroup);
-        // A count of nobody is a real zero; a mean of nobody does not exist.
-        if (mode === 'count') points.push({ category, startValue: s?.value ?? 0, endValue: e?.value ?? 0 });
-        else if (s && e) points.push({ category, startValue: s.value, endValue: e.value });
-      }
-      if (table.excludedOtherGroup > 0) {
+      const slope = periodSlope(dataset.records, categoryCol, groupCol, startGroup, endGroup, valueCol, mode);
+      points = slope.points;
+      if (slope.excludedOtherPeriods > 0) {
         const others = groupValues.filter(v => v !== startGroup && v !== endGroup);
-        notes.push(`${recordCount(table.excludedOtherGroup)} with ${colLabel(groupCol)} of ${others.join(', ')} not shown.`);
+        notes.push(`${recordCount(slope.excludedOtherPeriods)} with ${colLabel(groupCol)} of ${others.join(', ')} not shown.`);
       }
     }
 
@@ -128,18 +146,24 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
   const startLabel = inputMode === 'two-columns' ? (colLabel(startCol) || 'Start') : (startGroup || 'Start');
   const endLabel = inputMode === 'two-columns' ? (colLabel(endCol) || 'End') : (endGroup || 'End');
 
-  // What a point measures
+  // What a point measures. A total of cases is called by the column's own
+  // name, not "Sum of".
+  const isCaseTotal = inputMode === 'single-column' && aggMode === 'sum' && countColumn?.key === valueCol;
   const statistic = useMemo(() => {
     const word = aggMode[0].toUpperCase() + aggMode.slice(1);
     if (inputMode === 'two-columns') return aggMode === 'count' ? 'Number of values recorded' : `${word} per ${colLabel(categoryCol)}`;
-    return aggMode === 'count' ? 'Number of records' : `${word} of ${colLabel(valueCol)}`;
-  }, [aggMode, inputMode, categoryCol, valueCol, colLabel]);
+    if (aggMode === 'count') return 'Number of records';
+    return isCaseTotal ? colLabel(valueCol) : `${word} of ${colLabel(valueCol)}`;
+  }, [aggMode, inputMode, isCaseTotal, categoryCol, valueCol, colLabel]);
 
   const defaultTitle = !categoryCol || slopeData.length === 0
     ? 'Slope Chart'
     : inputMode === 'two-columns'
-      ? `${startLabel} to ${endLabel} by ${colLabel(categoryCol)}`
-      : `${statistic} by ${colLabel(categoryCol)}: ${startLabel} to ${endLabel}`;
+      ? chartTitle(`${startLabel} to ${endLabel}`, colLabel(categoryCol))
+      : `${chartTitle(
+        statisticPhrase({ statistic: aggMode === 'count' ? 'count' : aggMode === 'sum' ? 'sum' : 'mean', valueLabel: colLabel(valueCol), isCountColumn: isCaseTotal }),
+        colLabel(categoryCol)
+      )}, ${startLabel} to ${endLabel}`;
   const title = titleOverride ?? defaultTitle;
 
   // Generate SVG
@@ -244,10 +268,11 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       'The vertical scale covers the range of the values plotted; it does not start at zero.',
       ...slope.notes,
     ];
+    if (filterNote) notes.push(filterNote);
     const footer = svgFooter(width, labelsBottom + 10, notes, source || undefined);
 
     return svgWrapper(width, footer.height, svg + footer.svg);
-  }, [slopeData, slope.notes, showValues, title, subtitle, source, startLabel, endLabel, inputMode, aggMode, categoryCol, groupCol, valueCol, locale, colLabel]);
+  }, [slopeData, slope.notes, showValues, title, subtitle, source, startLabel, endLabel, inputMode, aggMode, categoryCol, groupCol, valueCol, locale, colLabel, filterNote]);
 
   // Build Excel export data
   const excelData = useMemo((): ExcelExportData => {
@@ -271,15 +296,17 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
   }, [slopeData, categoryCol, startLabel, endLabel, statistic, title, subtitle, source, colLabel]);
 
   return (
-    <div className="flex gap-6">
+    <div className={CHART_ROW_CLASS}>
       {/* Config panel */}
-      <div className="w-72 flex-shrink-0 space-y-4">
+      <div className={SETTINGS_COLUMN_CLASS}>
         <div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3">Chart Configuration</h3>
 
           <VisualizationTip
-            tip="Slope charts excel at showing change between exactly two time points. Each line is coloured by its direction (blue for an increase, orange for a decrease), so rises and falls stand out across many categories."
-            context="Best for comparing before/after or two-period data. If you need more than two time points, use a line chart instead."
+            tip="Slope charts show change between exactly two time points. Each line is coloured by its direction (blue for an increase, orange for a decrease), so rises and falls stand out across many categories."
+            context={period.column
+              ? `This dataset has ${colLabel(period.column)}, so the chart opens comparing ${period.start} with ${period.end}. For more than two time points, use a line chart.`
+              : 'Best for before/after or two-period data. For more than two time points, use a line chart instead.'}
           />
 
           <div className="border border-blue-100 rounded-lg overflow-hidden mb-3">
@@ -319,18 +346,8 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
 
           {/* Input mode toggle */}
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Input Mode</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">The two ends come from</label>
             <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
-              <button
-                onClick={() => setInputMode('two-columns')}
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                  inputMode === 'two-columns'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                Two Value Columns
-              </button>
               <button
                 onClick={() => setInputMode('single-column')}
                 className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
@@ -339,7 +356,17 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                Value + Group
+                Two periods in one column
+              </button>
+              <button
+                onClick={() => setInputMode('two-columns')}
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  inputMode === 'two-columns'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Two numeric columns
               </button>
             </div>
           </div>
@@ -376,20 +403,9 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
             </>
           ) : (
             <>
-              {needsValueCol && (
-                <VariableMapper
-                  label="Value Column"
-                  description="Numeric value for each data point"
-                  columns={dataset.columns}
-                  value={valueCol}
-                  onChange={setValueCol}
-                  filterTypes={['number']}
-                  required
-                />
-              )}
               <VariableMapper
-                label="Group Column"
-                description="The two periods or conditions compared (e.g., Before/After)"
+                label="Period column"
+                description="Says which period each record belongs to (e.g. Year, Before/After)"
                 columns={catColumns}
                 value={groupCol}
                 onChange={setGroupCol}
@@ -397,13 +413,13 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
               />
               {groupCol && groupValues.length < 2 && (
                 <p className="text-xs text-red-600 -mt-1">
-                  Found {groupValues.length} group{groupValues.length === 1 ? '' : 's'}. A slope chart needs two.
+                  Found {groupValues.length} period{groupValues.length === 1 ? '' : 's'}. A slope chart needs two.
                 </p>
               )}
               {groupValues.length >= 2 && (
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Start (left)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start period (left)</label>
                     <select
                       value={startGroup}
                       onChange={(e) => setStartGroupChoice(e.target.value)}
@@ -413,7 +429,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">End (right)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End period (right)</label>
                     <select
                       value={endGroup}
                       onChange={(e) => setEndGroupChoice(e.target.value)}
@@ -426,25 +442,52 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
               )}
             </>
           )}
-        </div>
 
-        {/* Display options */}
-        <div className="border-t border-gray-200 pt-4">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Display Options</h4>
-
+          {/* What a point measures */}
           <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Aggregation</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Lines show</label>
             <select
               value={aggMode}
               onChange={e => setAggMode(e.target.value as AggregationMode)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             >
-              <option value="mean">Mean (average)</option>
-              <option value="sum">Sum (total)</option>
-              <option value="count">Count (frequency)</option>
+              {inputMode === 'single-column' ? (
+                <>
+                  <option value="count">Number of records</option>
+                  <option value="sum">Sum of a numeric column</option>
+                  <option value="mean">Mean of a numeric column</option>
+                </>
+              ) : (
+                <>
+                  <option value="mean">Mean of each column per category</option>
+                  <option value="sum">Sum of each column per category</option>
+                  <option value="count">Number of values in each column</option>
+                </>
+              )}
             </select>
-            <p className="text-xs text-gray-400 mt-1">How to combine multiple records per category</p>
           </div>
+          {inputMode === 'single-column' && aggMode === 'count' && countColumn && (
+            <AggregatedDataHint
+              countLabel={countColumn.label}
+              onUseCounts={() => { setAggMode('sum'); setValueCol(countColumn.key); }}
+            />
+          )}
+          {inputMode === 'single-column' && needsValueCol && (
+            <VariableMapper
+              label="Numeric column"
+              description={aggMode === 'sum' ? 'Added up per category at each period' : 'Averaged per category at each period'}
+              columns={dataset.columns}
+              value={valueCol}
+              onChange={setValueCol}
+              filterTypes={['number']}
+              required
+            />
+          )}
+        </div>
+
+        {/* Display options */}
+        <div className="border-t border-gray-200 pt-4">
+          <h4 className="text-sm font-medium text-gray-700 mb-2">Display Options</h4>
 
           <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
             <input
@@ -493,7 +536,7 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-w-0">
+      <div className={CHART_COLUMN_CLASS}>
         {svgContent ? (
           <ChartContainer
             title={title}
@@ -506,7 +549,9 @@ export function SlopeChart({ dataset }: SlopeChartProps) {
         ) : (
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center">
             <p className="text-gray-500 text-sm">
-              Select a category variable and value columns to generate the slope chart.
+              {inputMode === 'single-column'
+                ? 'Select a category and a column of periods to generate the slope chart.'
+                : 'Select a category and two numeric columns to generate the slope chart.'}
             </p>
           </div>
         )}
