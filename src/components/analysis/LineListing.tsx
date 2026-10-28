@@ -371,10 +371,12 @@ export function LineListing({
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-lg font-semibold text-gray-900">{dataset.name}</h2>
+      <div className="bg-white border-b border-gray-200 px-3 lg:px-4 py-2 lg:py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            {/* On a phone the name is already in the dataset picker; repeating
+                it here wrapped onto three lines above the table. */}
+            <h2 className="hidden lg:block text-lg font-semibold text-gray-900">{dataset.name}</h2>
             <span className="text-sm text-gray-500">
               {processedRecords.length} of {dataset.records.length} records
             </span>
@@ -461,7 +463,7 @@ export function LineListing({
 
       {/* Table */}
       <div ref={tableContainerRef} className="flex-1 overflow-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="line-list-table min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50 sticky top-0">
             <tr>
               <th className="sticky left-0 z-20 w-10 px-3 py-3 bg-gray-50 border-r border-gray-200">
@@ -583,13 +585,19 @@ export function LineListing({
                   ${!selectedRows.has(record.id) && !isHighlighted ? 'hover:bg-gray-50' : ''}
                 `}
               >
-                <td className="sticky left-0 z-10 px-3 py-2 border-r border-gray-200 bg-inherit">
-                  <input
-                    type="checkbox"
-                    checked={selectedRows.has(record.id)}
-                    onChange={(e) => handleSelectRow(record.id, e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
+                <td className="sticky left-0 z-10 p-0 border-r border-gray-200 bg-inherit">
+                  {/* The label fills the cell, so a tap anywhere in it toggles
+                      the box: the whole cell is the touch target, not just the
+                      20px checkbox. */}
+                  <label className="flex items-center justify-center px-3 py-2 min-h-[2.5rem] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select row ${pageStart + index + 1}`}
+                      checked={selectedRows.has(record.id)}
+                      onChange={(e) => handleSelectRow(record.id, e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                  </label>
                 </td>
                 <td className="sticky left-10 z-10 px-3 py-2 text-sm text-gray-500 border-r border-gray-200 bg-inherit">{pageStart + index + 1}</td>
                 {dataset.columns.map((col, colIndex) => {
@@ -655,7 +663,7 @@ export function LineListing({
                   </td>
                   );
                 })}
-                <td className="px-3 py-2">
+                <td className="px-3 py-1 lg:py-2">
                   <button
                     aria-label="Delete this record"
                     onClick={() => {
@@ -683,43 +691,54 @@ export function LineListing({
 
       {/* Pager */}
       {processedRecords.length > PAGE_SIZES[0] && (
-        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-white border-t border-gray-200 text-sm text-gray-600">
-          <span>
-            Rows {(pageStart + 1).toLocaleString()}–{Math.min(pageStart + pageSize, processedRecords.length).toLocaleString()} of {processedRecords.length.toLocaleString()}
+        // Below sm the pager is one row: arrows for First/Previous/Next/Last
+        // (named for screen readers) and no "Rows per page" text. It used to
+        // wrap to three rows on a phone and take a fifth of the screen.
+        <div className="flex flex-nowrap sm:flex-wrap items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 sm:py-2 bg-white border-t border-gray-200 text-sm text-gray-600">
+          <span className="whitespace-nowrap">
+            <span className="hidden sm:inline">Rows </span>{(pageStart + 1).toLocaleString()}–{Math.min(pageStart + pageSize, processedRecords.length).toLocaleString()} of {processedRecords.length.toLocaleString()}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             <button
               onClick={() => setPage(0)}
               disabled={currentPage === 0}
+              aria-label="First page"
               className="px-2 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-50"
             >
-              First
+              <span aria-hidden="true" className="sm:hidden">«</span>
+              <span className="hidden sm:inline">First</span>
             </button>
             <button
               onClick={() => setPage(currentPage - 1)}
               disabled={currentPage === 0}
+              aria-label="Previous page"
               className="px-2 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-50"
             >
-              Previous
+              <span aria-hidden="true" className="sm:hidden">‹</span>
+              <span className="hidden sm:inline">Previous</span>
             </button>
-            <span>Page {currentPage + 1} of {pageCount.toLocaleString()}</span>
+            <span className="whitespace-nowrap"><span className="hidden sm:inline">Page </span>{currentPage + 1}<span className="sm:hidden">/</span><span className="hidden sm:inline"> of </span>{pageCount.toLocaleString()}</span>
             <button
               onClick={() => setPage(currentPage + 1)}
               disabled={currentPage >= pageCount - 1}
+              aria-label="Next page"
               className="px-2 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-50"
             >
-              Next
+              <span aria-hidden="true" className="sm:hidden">›</span>
+              <span className="hidden sm:inline">Next</span>
             </button>
             <button
               onClick={() => setPage(pageCount - 1)}
               disabled={currentPage >= pageCount - 1}
+              aria-label="Last page"
               className="px-2 py-1 border border-gray-300 rounded disabled:opacity-40 hover:bg-gray-50"
             >
-              Last
+              <span aria-hidden="true" className="sm:hidden">»</span>
+              <span className="hidden sm:inline">Last</span>
             </button>
           </div>
           <label className="flex items-center gap-2">
-            Rows per page
+            <span className="sr-only sm:not-sr-only">Rows per page</span>
             <select
               value={pageSize}
               onChange={(e) => {

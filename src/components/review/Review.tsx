@@ -165,6 +165,8 @@ export function Review({
     );
   }, []);
 
+  const openIssueCount = dataQualityIssues.filter(i => !i.dismissed).length;
+
   const handleCreateVariable = useCallback((config: VariableConfig, values: unknown[]) => {
     if (!activeDataset) return;
 
@@ -279,9 +281,53 @@ export function Review({
 
   return (
     <div className="h-full flex flex-col bg-white">
-      {/* Dataset Header with name and actions menu */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-200">
+      {/* Dataset Header with name and actions menu. Below lg it doubles as the
+          mobile toolbar: the name is already in the dataset picker above, so a
+          phone gets Tools and Log here instead of a second header row, and the
+          screen goes to the line list. */}
+      <div className="flex items-center justify-between gap-2 px-3 lg:px-4 py-2 lg:py-3 bg-white border-b border-gray-200">
         <div className="flex items-center gap-2 min-w-0">
+          {!isRenaming && (
+            <div className="lg:hidden flex items-center gap-2">
+              <button
+                onClick={() => setShowMobilePanel(true)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                Tools
+                {/* The checks panel is hidden behind Tools on a phone, so the
+                    count of open issues is shown on the button itself. */}
+                {openIssueCount > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-800 rounded-full"
+                    aria-label={`${openIssueCount} data quality ${openIssueCount === 1 ? 'issue' : 'issues'}`}
+                  >
+                    {openIssueCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setShowEditLog(!showEditLog)}
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                  showEditLog
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'text-gray-600 bg-white border border-gray-300'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Log
+                {currentEditLog.length > 0 && (
+                  <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+                    {currentEditLog.length}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
           {isRenaming ? (
             <form
               onSubmit={(e) => {
@@ -308,9 +354,9 @@ export function Review({
               />
             </form>
           ) : (
-            <h1 className="text-lg font-semibold text-gray-900 truncate">{activeDataset.name}</h1>
+            <h1 className="hidden lg:block text-lg font-semibold text-gray-900 truncate">{activeDataset.name}</h1>
           )}
-          <span className="text-sm text-gray-500">
+          <span className="hidden lg:inline text-sm text-gray-500">
             ({activeDataset.records.length} records)
           </span>
         </div>
@@ -411,37 +457,6 @@ export function Review({
             </div>
         </Dialog>
       )}
-
-      {/* Mobile Toolbar - visible only on small screens */}
-      <div className="lg:hidden flex items-center justify-between gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
-        <button
-          onClick={() => setShowMobilePanel(true)}
-          className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-          Tools
-        </button>
-        <button
-          onClick={() => setShowEditLog(!showEditLog)}
-          className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-            showEditLog
-              ? 'bg-blue-100 text-blue-700'
-              : 'text-gray-600 bg-white border border-gray-300'
-          }`}
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
-          Log
-          {currentEditLog.length > 0 && (
-            <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
-              {currentEditLog.length}
-            </span>
-          )}
-        </button>
-      </div>
 
       {/* Desktop Toolbar - visible only on large screens */}
       <div className="hidden lg:flex items-center justify-end gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">

@@ -109,13 +109,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <li key={dataset.id} className="flex items-center gap-2 px-4 py-3 hover:bg-gray-50">
                   <button
                     onClick={() => handleDatasetClick(dataset)}
-                    className="flex-1 flex items-baseline justify-between gap-4 text-left focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded"
+                    // min-w-0 lets the button shrink below its content on a
+                    // phone, so a long name truncates instead of pushing the
+                    // badge, date and delete button off the right edge.
+                    className="flex-1 min-w-0 flex items-baseline justify-between gap-4 text-left focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded"
                   >
                     <span className="min-w-0">
-                      <span className="block font-medium text-gray-900 truncate">
-                        {dataset.name}
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium text-gray-900 truncate">{dataset.name}</span>
                         {isSampleDataset(dataset.id) && (
-                          <span className="ml-2 align-middle text-xs font-normal text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                          <span className="shrink-0 text-xs font-normal text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
                             Sample
                           </span>
                         )}
@@ -126,7 +129,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {dataset.columns.length} variable{dataset.columns.length !== 1 ? 's' : ''}
                       </span>
                     </span>
-                    <span className="text-sm text-gray-400 flex-shrink-0">
+                    <span className="hidden sm:inline text-sm text-gray-400 flex-shrink-0">
                       {formatDate(dataset.updatedAt)}
                     </span>
                   </button>

@@ -230,11 +230,8 @@ textarea:focus-visible {
 }
 
 @media (max-width: 640px) {
-  /* Stack the dataset selector on mobile */
-  .bg-gray-100.border-b {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
+  /* The dataset selector bar used to be stacked here. It now stays one row on
+     a phone (see App.tsx), so the line list below gets that space. */
 
   /* Make tables horizontally scrollable */
   table {
@@ -259,6 +256,24 @@ textarea:focus-visible {
   nav button {
     min-height: 36px;
     padding: 0.375rem 0.5rem;
+  }
+
+  /* The line list's row checkbox and delete button took the 44px rule above,
+     which made every row 67px tall and left room for three rows on a phone.
+     The checkbox sits in a label that fills its cell, so the tap target is
+     the whole cell rather than the 20px box. The row delete button asks for
+     confirmation, so a smaller target there is an acceptable trade for a
+     row about 40px tall. Inputs opened for editing a cell keep their larger
+     size. */
+  .line-list-table input[type='checkbox'] {
+    min-height: 0;
+    width: 20px;
+    height: 20px;
+  }
+
+  .line-list-table td > button {
+    min-height: 0;
+    padding: 0.375rem;
   }
 }
 

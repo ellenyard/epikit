@@ -27,6 +27,7 @@
     "test:histogram": "node scripts/histogramBins.regression.mjs",
     "test:record-filter": "node scripts/recordFilter.regression.mjs && TZ=Asia/Kolkata node scripts/recordFilter.regression.mjs && TZ=Pacific/Auckland node scripts/recordFilter.regression.mjs && TZ=America/New_York node scripts/recordFilter.regression.mjs",
     "test:focus-trap": "node scripts/focusTrap.regression.mjs",
+    "test:app-routes": "node scripts/appRoutes.regression.mjs",
     "test:case-definition": "node scripts/caseDefinition.regression.mjs",
     "test:epicurve-dates": "node scripts/epiCurveDates.regression.mjs && TZ=UTC node scripts/epiCurveDates.regression.mjs && TZ=Africa/Cairo node scripts/epiCurveDates.regression.mjs && TZ=America/Santiago node scripts/epiCurveDates.regression.mjs && TZ=America/Havana node scripts/epiCurveDates.regression.mjs && TZ=Asia/Beirut node scripts/epiCurveDates.regression.mjs && TZ=America/Sao_Paulo node scripts/epiCurveDates.regression.mjs && TZ=Asia/Kolkata node scripts/epiCurveDates.regression.mjs && TZ=Pacific/Auckland node scripts/epiCurveDates.regression.mjs && TZ=America/New_York node scripts/epiCurveDates.regression.mjs",
     "test:epicurve-svg": "node scripts/epiCurveSvg.regression.mjs",
