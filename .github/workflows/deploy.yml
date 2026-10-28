@@ -95,6 +95,13 @@ jobs:
         run: npm run build
         timeout-minutes: 15
 
+      # After the build, so it can also confirm each tool's folder
+      # (/app/epicurve/, /app/maps/, ...) was written; a missing one would
+      # send shared links to the 404 page.
+      - name: Check tool addresses
+        run: npm run test:app-routes
+        timeout-minutes: 5
+
       - name: Setup Pages
         uses: actions/configure-pages@v6
 
