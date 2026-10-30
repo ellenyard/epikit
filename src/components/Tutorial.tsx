@@ -246,18 +246,6 @@ export const Tutorial: React.FC<TutorialProps> = ({
           })}
         </div>
 
-        <section aria-labelledby="how-it-works" className="mb-8 rounded-lg bg-gray-50 border border-gray-200 px-5 py-4">
-          <h2 id="how-it-works" className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-2">
-            How LineList works
-          </h2>
-          <ol className="text-sm text-gray-700 space-y-1 list-decimal list-inside">
-            <li>Import a CSV or Excel file, or paste straight from a spreadsheet.</li>
-            <li>Review and clean: duplicates, date order, ranges, and completeness.</li>
-            <li>Analyze: epi curves, frequencies, cross-tabulations, and 2&times;2 tables.</li>
-            <li>Map and chart the results, then export figures for a report.</li>
-          </ol>
-        </section>
-
         <section className="border-t border-gray-200 pt-6 space-y-4 text-sm text-gray-700">
           <p>
             Review/Clean, Epi Curve, Spot Map, and 2&times;2 each have a <strong>How to Use This Tool</strong>{' '}
