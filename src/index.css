@@ -275,6 +275,14 @@ textarea:focus-visible {
     min-height: 0;
     padding: 0.375rem;
   }
+
+  /* Buttons drawn as underlined text (Start over and Remove on the tutorial
+     page) keep the 44px height for touch, but not the side padding, which
+     pushed them away from the words they sit beside and onto a second line. */
+  button.text-button {
+    padding-left: 0;
+    padding-right: 0;
+  }
 }
 
 /* Slide-up animation for toast notifications */

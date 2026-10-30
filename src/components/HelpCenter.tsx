@@ -531,7 +531,7 @@ export const HelpCenter: React.FC<HelpCenterProps> = ({
                   {
                     id: 'capacity',
                     question: 'How large a dataset can LineList hold?',
-                    answer: 'Work is kept in this browser\'s storage, which holds roughly 10,000 rows of a 20-column line list across all your datasets (the bundled samples can be deleted to make room). A larger file can still be imported and analysed, but LineList will warn that it could not be saved, and it will not be there after you close the tab. Keep your source file, and use Save Project for anything you want to return to.'
+                    answer: 'Work is kept in this browser\'s storage, which holds roughly 10,000 rows of a 20-column line list across all your datasets (example datasets you have opened can be removed from the Tutorial page to make room). A larger file can still be imported and analysed, but LineList will warn that it could not be saved, and it will not be there after you close the tab. Keep your source file, and use Save Project for anything you want to return to.'
                   },
                   {
                     id: 'phi',

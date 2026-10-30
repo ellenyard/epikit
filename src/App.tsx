@@ -29,6 +29,7 @@ import { HelpIcon } from './components/HelpIcon';
 import { AccessibilitySettings } from './components/AccessibilitySettings';
 import { LocaleSettings } from './components/LocaleSettings';
 import { Dashboard } from './components/Dashboard';
+import { Tutorial } from './components/Tutorial';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoadingSpinner } from './components/shared/LoadingSpinner';
 
@@ -40,7 +41,14 @@ const EpiCurve = lazy(() => import('./components/analysis/EpiCurve').then((m) =>
 const Maps = lazy(() => import('./components/analysis/Maps').then((m) => ({ default: m.Maps })));
 const AnalysisWorkflow = lazy(() => import('./components/analysis/AnalysisWorkflow').then((m) => ({ default: m.AnalysisWorkflow })));
 const VisualizeWorkflow = lazy(() => import('./components/visualize/VisualizeWorkflow').then((m) => ({ default: m.VisualizeWorkflow })));
-import { demoColumns, demoCaseRecords, nutritionDemoColumns, nutritionDemoRecords, surveillanceDemoColumns, surveillanceDemoRecords, SAMPLE_DATASET_IDS } from './data/demoData';
+import { isSampleDataset } from './data/demoData';
+import {
+  OUTBREAK_SAMPLE_ID as DEMO_DATASET_ID,
+  SURVEILLANCE_SAMPLE_ID as DEMO_SURVEILLANCE_DATASET_ID,
+  SAMPLE_DATA_VERSION,
+  createSampleDataset,
+  prepareStartingDatasets,
+} from './data/sampleDatasets';
 import { exportToCSV } from './utils/csvParser';
 import { useLocale } from './contexts/LocaleContext';
 import { addVariableToDataset } from './utils/variableCreation';
@@ -54,16 +62,10 @@ import { moduleFromPath, pathForModule, type AppModule } from './utils/appRoutes
 type Module = AppModule;
 
 // =============================================================================
-// DEMO DATA SETUP
-// These functions create the sample foodborne outbreak dataset that ships with
-// the app. Users can explore features without importing their own data first.
+// SAMPLE DATA
+// The bundled samples (src/data/sampleDatasets.ts) load when someone opens one
+// from the tutorial or a ?sample= link, not on a first visit.
 // =============================================================================
-
-const [DEMO_DATASET_ID, DEMO_NUTRITION_DATASET_ID, DEMO_SURVEILLANCE_DATASET_ID] =
-  SAMPLE_DATASET_IDS;
-// Bump this version whenever demo data in demoData.ts changes.
-// Existing users with stale demo data will get the updated version automatically.
-const DEMO_DATA_VERSION = 8;
 
 interface InitialAppEntry {
   activeModule: Module;
@@ -111,46 +113,6 @@ function getInitialAppEntry(): InitialAppEntry {
   };
 }
 
-/** Creates the demo dataset with sample outbreak investigation data */
-const createDemoDataset = (): Dataset => ({
-  id: DEMO_DATASET_ID,
-  name: 'Foodborne Outbreak Investigation',
-  source: 'form',
-  columns: demoColumns,
-  records: demoCaseRecords,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
-
-/** Creates the child nutrition survey demo dataset */
-const createNutritionDemoDataset = (): Dataset => ({
-  id: DEMO_NUTRITION_DATASET_ID,
-  name: 'Child Nutrition Survey - Rapid Assessment',
-  source: 'form',
-  columns: nutritionDemoColumns,
-  records: nutritionDemoRecords,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
-
-/** Creates the disease surveillance time-series demo dataset */
-const createSurveillanceDemoDataset = (): Dataset => ({
-  id: DEMO_SURVEILLANCE_DATASET_ID,
-  name: 'Disease Surveillance - Monthly Reports',
-  source: 'form',
-  columns: surveillanceDemoColumns,
-  records: surveillanceDemoRecords,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
-
-/** Rebuilds a bundled demo dataset that a returning user may have deleted. */
-const DEMO_DATASET_FACTORIES: Record<string, () => Dataset> = {
-  [DEMO_DATASET_ID]: createDemoDataset,
-  [DEMO_NUTRITION_DATASET_ID]: createNutritionDemoDataset,
-  [DEMO_SURVEILLANCE_DATASET_ID]: createSurveillanceDemoDataset,
-};
-
 /**
  * Parse a stored dataset list, keeping only entries the app can render.
  * Returns null when the value is not a list at all.
@@ -169,27 +131,13 @@ function parseStoredDatasets(raw: string | null): Dataset[] | null {
 function loadInitialDatasets(ensureDatasetId?: string): Dataset[] {
   // Parse persisted datasets defensively: corrupted or blocked localStorage
   // must not crash the app at startup. On failure, drop the corrupt key and
-  // fall back to the bundled demo datasets.
+  // start empty, as on a first visit.
   const saved = readStorage('epikit_datasets');
-  let datasets = parseStoredDatasets(saved);
-  if (datasets === null) {
-    if (saved) removeStorage('epikit_datasets');
-    datasets = [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset()];
-  }
+  const stored = parseStoredDatasets(saved);
+  if (stored === null && saved) removeStorage('epikit_datasets');
   const savedVersion = readStorage('epikit_demoDataVersion');
-
-  if (savedVersion && Number(savedVersion) >= DEMO_DATA_VERSION) {
-    const ensureFactory = ensureDatasetId ? DEMO_DATASET_FACTORIES[ensureDatasetId] : undefined;
-    if (ensureFactory && !datasets.some(d => d.id === ensureDatasetId)) {
-      return [ensureFactory(), ...datasets];
-    }
-    return datasets;
-  }
-
-  const withoutOldDemos = datasets.filter(
-    d => d.id !== DEMO_DATASET_ID && d.id !== DEMO_NUTRITION_DATASET_ID && d.id !== DEMO_SURVEILLANCE_DATASET_ID
-  );
-  return [createDemoDataset(), createNutritionDemoDataset(), createSurveillanceDemoDataset(), ...withoutOldDemos];
+  const samplesAreCurrent = !!savedVersion && Number(savedVersion) >= SAMPLE_DATA_VERSION;
+  return prepareStartingDatasets(stored, samplesAreCurrent, ensureDatasetId);
 }
 
 // =============================================================================
@@ -234,8 +182,9 @@ function App() {
   // Which dataset is currently selected for viewing/editing
   const [activeDatasetId, setActiveDatasetId] = useState<string | null>(() => {
     if (initialEntry.activeDatasetId) return initialEntry.activeDatasetId;
-    const saved = readStorage('epikit_activeDatasetId');
-    return saved || DEMO_DATASET_ID;
+    // Nothing is selected on a first visit; there is no data until the person
+    // imports a file or opens a sample.
+    return readStorage('epikit_activeDatasetId') || null;
   });
 
   // ---------------------------------------------------------------------------
@@ -339,7 +288,7 @@ function App() {
   // the deployed demo-data version after the initial state has been built.
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    writeStorage('epikit_demoDataVersion', String(DEMO_DATA_VERSION));
+    writeStorage('epikit_demoDataVersion', String(SAMPLE_DATA_VERSION));
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -518,14 +467,29 @@ function App() {
     URL.revokeObjectURL(url);
   }, [activeDataset, localeConfig]);
 
-  // Handle onboarding demo load
-  const handleLoadDemo = useCallback(() => {
-    // Re-create the demo dataset if the user deleted it, then select it
-    setDatasets(prev =>
-      prev.some(d => d.id === DEMO_DATASET_ID) ? prev : [createDemoDataset(), ...prev]
-    );
-    setActiveDatasetId(DEMO_DATASET_ID);
+  /** Open a sample: load it into this browser if it is not here yet, then select it. */
+  const openSample = useCallback((id: string) => {
+    setDatasets(prev => {
+      if (prev.some(d => d.id === id)) return prev;
+      const sample = createSampleDataset(id);
+      return sample ? [sample, ...prev] : prev;
+    });
+    setActiveDatasetId(id);
   }, []);
+
+  /**
+   * Put a sample back as it shipped, dropping the edits made to it, so a
+   * class can repeat an exercise from the same starting point.
+   */
+  const resetSample = useCallback((id: string) => {
+    const fresh = createSampleDataset(id);
+    if (!fresh) return;
+    setDatasets(prev => prev.map(d => (d.id === id ? fresh : d)));
+    setEditLog(prev => prev.filter(entry => entry.datasetId !== id));
+  }, []);
+
+  // The introductory walkthrough in Help opens the outbreak sample.
+  const handleLoadDemo = useCallback(() => openSample(DEMO_DATASET_ID), [openSample]);
 
   // Handle navigation from onboarding/help
   const handleNavigateToModule = useCallback((module: string) => {
@@ -941,7 +905,7 @@ function App() {
               <option value="">Select a dataset...</option>
               {datasets.map(d => (
                 <option key={d.id} value={d.id}>
-                  {d.name} ({d.records.length} records){initialEntry.sampleOutbreak && d.id === DEMO_DATASET_ID ? ' — Synthetic sample' : ''}
+                  {d.name} ({d.records.length} records){isSampleDataset(d.id) ? ' — Synthetic sample' : ''}
                 </option>
               ))}
             </select>
@@ -994,11 +958,19 @@ function App() {
           <Dashboard
             datasets={datasets}
             onNavigate={handleNavigateToModule}
-            onLoadDemo={handleLoadDemo}
             onImportData={() => setShowImport(true)}
-            onOpenHelp={() => setShowHelpCenter(true)}
             onSelectDataset={(id) => setActiveDatasetId(id)}
             onDeleteDataset={deleteDataset}
+          />
+        ) : activeModule === 'tutorial' ? (
+          <Tutorial
+            datasets={datasets}
+            onOpenSample={openSample}
+            onResetSample={resetSample}
+            onRemoveSample={deleteDataset}
+            onNavigate={handleNavigateToModule}
+            onImportData={() => setShowImport(true)}
+            onOpenHelp={() => setShowHelpCenter(true)}
           />
         ) : activeDataset ? (
           // Modules that require a dataset. Each is lazily loaded, so a shared
@@ -1051,19 +1023,38 @@ function App() {
           ) : null}
           </Suspense>
         ) : (
-          // No dataset selected - show prompt
-          <div className="flex-1 flex items-center justify-center bg-white">
-            <div className="text-center p-8">
-              <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          // No dataset selected. A link to a tool (/app/epicurve/ on a
+          // workshop slide) can arrive here before there is any data at all,
+          // so offer the tutorial's samples as well as an import.
+          <div className="h-full flex items-center justify-center bg-white">
+            <div className="text-center p-8 max-w-md">
+              <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              <p className="text-lg text-gray-500">Select a dataset to begin</p>
-              <button
-                onClick={() => setShowImport(true)}
-                className="mt-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
-              >
-                Import Data
-              </button>
+              <p className="text-lg text-gray-700">
+                {datasets.length === 0 ? 'No data yet' : 'Select a dataset above to begin'}
+              </p>
+              {datasets.length === 0 && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Import your own file, or practice with an example dataset in the tutorial.
+                </p>
+              )}
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={() => setShowImport(true)}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                >
+                  Import data
+                </button>
+                {datasets.length === 0 && (
+                  <button
+                    onClick={() => setActiveModule('tutorial')}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                  >
+                    Open the tutorial
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

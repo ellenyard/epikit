@@ -45,6 +45,9 @@ try {
   assert.equal(moduleFromPath('/app/maps/index.html'), 'maps');
   assert.equal(moduleFromPath('/app/Maps/'), 'maps');
   assert.equal(moduleFromPath('/app/analysis//'), 'analysis');
+  // The tutorial has an address of its own, for workshop slides.
+  assert.equal(pathForModule('tutorial'), '/app/tutorial/');
+  assert.equal(moduleFromPath('/app/Tutorial'), 'tutorial');
 
   // An unknown tool under /app/ opens the home screen instead of nothing.
   assert.equal(moduleFromPath('/app/2x2/'), 'dashboard');

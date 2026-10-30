@@ -12,16 +12,23 @@
  * step.
  */
 
-/** Every screen of the app. 'dashboard' is the home screen at /app/. */
-export type AppModule = 'dashboard' | 'review' | 'epicurve' | 'maps' | 'analysis' | 'visualize';
+/**
+ * Every screen of the app. 'dashboard' is the home screen at /app/;
+ * 'tutorial' is the page of example datasets at /app/tutorial/.
+ */
+export type AppModule = 'dashboard' | 'tutorial' | 'review' | 'epicurve' | 'maps' | 'analysis' | 'visualize';
 
-/** Path segment for each tool, in navigation order. */
+/**
+ * Path segment for every screen other than the home screen: the tools, in
+ * navigation order, then the tutorial. Each gets its own folder in the build.
+ */
 export const TOOL_SLUGS = {
   review: 'review',
   epicurve: 'epicurve',
   maps: 'maps',
   analysis: 'analysis',
   visualize: 'visualize',
+  tutorial: 'tutorial',
 } as const satisfies Record<Exclude<AppModule, 'dashboard'>, string>;
 
 export const APP_BASE_PATH = '/app/';
