@@ -62,8 +62,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     <div className="h-full overflow-y-auto bg-white">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <header className="mb-8">
-          <h1 className="text-3xl font-semibold text-gray-900">LineList</h1>
-          <p className="mt-1 text-lg text-gray-600">The Epidemiologist&rsquo;s Toolkit</p>
+          {/* One line, the name in the heavier weight. On a phone the
+              subtitle wraps under the name. */}
+          <h1 className="text-3xl text-gray-900">
+            <span className="font-semibold">LineList:</span>{' '}
+            <span className="font-normal text-gray-600">The Epidemiologist&rsquo;s Toolkit</span>
+          </h1>
         </header>
 
         {hasOwnData ? (
@@ -89,7 +93,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 Start with your data
               </h2>
               <p className="mt-1 flex-1 text-sm text-gray-600">
-                Import a CSV or Excel file, or paste rows straight from a spreadsheet.
+                Import a CSV or Excel file, or paste rows from a spreadsheet.
               </p>
               <button onClick={onImportData} className={`mt-4 self-start ${primaryButton}`}>
                 Import data
@@ -103,7 +107,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 New here? Take the tutorial
               </h2>
               <p className="mt-1 flex-1 text-sm text-gray-600">
-                Practice on example datasets, with suggested first steps for each one.
+                Practice on example datasets.
               </p>
               <button onClick={() => onNavigate('tutorial')} className={`mt-4 self-start ${secondaryButton}`}>
                 Start the tutorial
