@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Dataset } from '../types/analysis';
 import { isSampleDataset } from '../data/demoData';
 import { Dialog } from './shared';
+import { LogoMark } from './shared/LogoMark';
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO, FEEDBACK_PRIVACY_NOTE } from '../utils/contact';
 
 interface DashboardProps {
@@ -16,6 +17,64 @@ const primaryButton =
   'px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600';
 const secondaryButton =
   'px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600';
+
+// A single-peaked outbreak curve: a slow start, a peak, a long tail.
+const CURVE_HEIGHTS = [1, 1, 2, 3, 5, 8, 12, 15, 13, 10, 7, 5, 4, 3, 2, 2, 1, 1];
+const BAR_WIDTH = 16;
+const BAR_GAP = 4;
+const CURVE_WIDTH = CURVE_HEIGHTS.length * (BAR_WIDTH + BAR_GAP);
+// Where the dashed exposure line sits, just before the first rise.
+const EXPOSURE_X = 3 * (BAR_WIDTH + BAR_GAP) - BAR_GAP / 2;
+
+/**
+ * A faint epidemic curve with a dashed exposure line, drawn behind the page
+ * title. It is decoration only, so it is hidden from screen readers and
+ * drawn in code rather than loaded as an image (about 1 KB, sharp at any
+ * size). "stretch" fills its box, for the full-width strip on phones;
+ * otherwise it keeps its shape and sits in the bottom-right corner.
+ */
+const EpiCurveMotif: React.FC<{ className: string; stretch?: boolean }> = ({ className, stretch }) => (
+  <svg
+    viewBox={`0 0 ${CURVE_WIDTH} 100`}
+    preserveAspectRatio={stretch ? 'none' : 'xMaxYMax meet'}
+    aria-hidden="true"
+    focusable="false"
+    className={`pointer-events-none absolute ${className}`}
+  >
+    <g fill="#3b82f6">
+      {CURVE_HEIGHTS.map((h, i) => (
+        <rect key={i} x={i * (BAR_WIDTH + BAR_GAP)} y={100 - h * 6} width={BAR_WIDTH} height={h * 6} rx="2" />
+      ))}
+    </g>
+    <line
+      x1={EXPOSURE_X}
+      y1="4"
+      x2={EXPOSURE_X}
+      y2="100"
+      stroke="#1e293b"
+      strokeWidth="1.5"
+      strokeDasharray="4 4"
+      opacity="0.6"
+      vectorEffect="non-scaling-stroke"
+    />
+  </svg>
+);
+
+const UploadFileIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+    <path d="M12 18v-6" />
+    <path d="m9 15 3-3 3 3" />
+  </svg>
+);
+
+const GraduationCapIcon = () => (
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+    <path d="M22 10 12 5 2 10l10 5 10-5z" />
+    <path d="M6 12v5c3 2 9 2 12 0v-5" />
+  </svg>
+);
 
 /**
  * The app home at /app/. Most visitors arrive here directly from a shared
@@ -61,13 +120,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="h-full overflow-y-auto bg-white">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-        <header className="mb-8">
-          {/* One line, the name in the heavier weight. On a phone the
-              subtitle wraps under the name. */}
-          <h1 className="text-3xl text-gray-900">
-            <span className="font-semibold">LineList:</span>{' '}
-            <span className="font-normal text-gray-600">The Epidemiologist&rsquo;s Toolkit</span>
-          </h1>
+        {/* The logo and name on a soft band with a faint epi curve behind
+            them. On a phone the curve runs as a strip under the name, so it
+            never sits behind the text; from tablet width up it moves to the
+            right-hand side. Returning users get a shorter band, so their
+            list stays near the top. */}
+        <header
+          className={`relative overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-blue-50 ${
+            hasOwnData ? 'mb-6 px-5 pt-4 pb-9 md:py-4' : 'mb-8 px-5 pt-6 pb-14 sm:px-7 md:pt-7 md:pb-7'
+          }`}
+        >
+          <EpiCurveMotif
+            stretch
+            className={`left-5 bottom-0 w-[calc(100%-2.5rem)] opacity-[0.12] md:hidden ${hasOwnData ? 'h-5' : 'h-9'}`}
+          />
+          <EpiCurveMotif
+            className={`hidden md:block right-5 bottom-0 opacity-[0.14] ${hasOwnData ? 'h-[80%] w-[35%]' : 'h-[85%] w-[45%]'}`}
+          />
+          <div className="relative flex items-center gap-4">
+            <LogoMark size={hasOwnData ? 40 : 52} className="shrink-0" />
+            <h1 className="text-gray-900">
+              <span className={`block font-semibold leading-tight ${hasOwnData ? 'text-2xl' : 'text-3xl'}`}>
+                LineList
+              </span>
+              <span className="sr-only">: </span>
+              <span className={`block font-normal text-slate-600 ${hasOwnData ? 'text-base' : 'mt-1 text-lg'}`}>
+                The Epidemiologist&rsquo;s Toolkit
+              </span>
+            </h1>
+          </div>
         </header>
 
         {hasOwnData ? (
@@ -89,6 +170,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               aria-labelledby="path-import"
               className="flex flex-col rounded-lg border border-blue-200 bg-blue-50 p-5"
             >
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+                <UploadFileIcon />
+              </div>
               <h2 id="path-import" className="text-base font-semibold text-gray-900">
                 Start with your data
               </h2>
@@ -103,6 +187,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
               aria-labelledby="path-tutorial"
               className="flex flex-col rounded-lg border border-gray-200 bg-white p-5"
             >
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                <GraduationCapIcon />
+              </div>
               <h2 id="path-tutorial" className="text-base font-semibold text-gray-900">
                 New here? Take the tutorial
               </h2>

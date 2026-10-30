@@ -32,6 +32,7 @@ import { Dashboard } from './components/Dashboard';
 import { Tutorial } from './components/Tutorial';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { LoadingSpinner } from './components/shared/LoadingSpinner';
+import { LogoMark } from './components/shared/LogoMark';
 
 // Heavy analysis modules are code-split so the initial load (Dashboard + shell)
 // stays small. Maps pulls in Leaflet/markercluster and Visualize pulls in the
@@ -667,12 +668,13 @@ function App() {
           <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={() => { setActiveModule('dashboard'); setShowMobileMenu(false); }}
-              className="text-lg sm:text-xl font-bold text-blue-400 hover:text-blue-300 transition-colors"
+              className="flex items-center gap-2 text-lg sm:text-xl font-bold text-blue-400 hover:text-blue-300 transition-colors"
             >
+              <LogoMark size={26} tone="nav" className="shrink-0" />
               LineList
             </button>
             {/* Desktop nav links */}
-            <div className="hidden md:flex gap-0.5">
+            <div className="hidden lg:flex gap-0.5">
               {([
                 ['review', 'Review/Clean'],
                 ['epicurve', 'Epi Curve'],
@@ -773,7 +775,7 @@ function App() {
             {/* Mobile hamburger button */}
             <button
               onClick={() => setShowMobileMenu(!showMobileMenu)}
-              className="md:hidden p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              className="lg:hidden p-2 text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
               aria-label="Menu"
               title="Menu"
             >
@@ -792,7 +794,7 @@ function App() {
 
         {/* Mobile dropdown menu */}
         {showMobileMenu && (
-          <div className="md:hidden absolute left-0 right-0 top-full bg-slate-800 border-t border-slate-700 shadow-lg z-50">
+          <div className="lg:hidden absolute left-0 right-0 top-full bg-slate-800 border-t border-slate-700 shadow-lg z-50">
             <div className="px-3 py-2 space-y-1">
               {([
                 ['review', 'Review/Clean'],
@@ -880,7 +882,7 @@ function App() {
       {/* Mobile menu backdrop */}
       {showMobileMenu && (
         <div
-          className="md:hidden fixed inset-0 bg-black/30 z-40"
+          className="lg:hidden fixed inset-0 bg-black/30 z-40"
           onClick={() => setShowMobileMenu(false)}
         />
       )}
