@@ -7,37 +7,39 @@ import { FEEDBACK_EMAIL, FEEDBACK_MAILTO, FEEDBACK_PRIVACY_NOTE } from '../utils
 interface DashboardProps {
   datasets: Dataset[];
   onNavigate: (module: string) => void;
-  onLoadDemo: () => void;
   onImportData: () => void;
-  onOpenHelp: () => void;
   onSelectDataset: (datasetId: string) => void;
   onDeleteDataset: (id: string) => void;
 }
 
+const primaryButton =
+  'px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600';
+const secondaryButton =
+  'px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600';
+
+/**
+ * The app home at /app/. Most visitors arrive here directly from a shared
+ * link, never seeing the marketing page, so this screen has to say where to
+ * start: import your own data, or take the tutorial. The samples live on the
+ * tutorial page; this list is only the person's own data.
+ */
 export const Dashboard: React.FC<DashboardProps> = ({
   datasets,
   onNavigate,
-  onLoadDemo,
   onImportData,
-  onOpenHelp,
   onSelectDataset,
   onDeleteDataset,
 }) => {
   const [deleteConfirmDataset, setDeleteConfirmDataset] = useState<Dataset | null>(null);
 
-  // Most recent first. Every dataset is listed: with three samples installed,
-  // a cap of five hid a user's own third import from this screen.
-  const recentDatasets = [...datasets].sort((a, b) =>
-    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  );
+  // Most recent first. Samples are listed on the tutorial page instead.
+  const ownDatasets = datasets
+    .filter((d) => !isSampleDataset(d.id))
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  const hasOwnData = ownDatasets.length > 0;
 
   const handleDatasetClick = (dataset: Dataset) => {
     onSelectDataset(dataset.id);
-    onNavigate('review');
-  };
-
-  const handleLoadDemoAndNavigate = () => {
-    onLoadDemo();
     onNavigate('review');
   };
 
@@ -58,71 +60,83 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="h-full overflow-y-auto bg-white">
-      <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <header className="mb-8">
-          <h1 className="text-2xl font-semibold text-gray-900">LineList</h1>
-          {/* Scope covers routine analysis as well as outbreaks: the same tools
-              summarize surveillance extracts and survey data. */}
-          <p className="mt-2 text-gray-600 max-w-2xl">
-            Clean, analyze, and map line lists, surveillance extracts, and survey data.
-          </p>
+          <h1 className="text-3xl font-semibold text-gray-900">LineList</h1>
+          <p className="mt-1 text-lg text-gray-600">The Epidemiologist&rsquo;s Toolkit</p>
         </header>
 
-        <div className="flex flex-wrap items-center gap-3 mb-10">
-          <button
-            onClick={onImportData}
-            className="px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-md hover:bg-slate-800 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-          >
-            Import data
-          </button>
-          {datasets.length === 0 && (
-            <button
-              onClick={handleLoadDemoAndNavigate}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
-            >
-              Try a sample dataset
+        {hasOwnData ? (
+          // Once someone has their own data, the list is what they came back
+          // for, so the two ways in shrink to a row of buttons above it.
+          <div className="flex flex-wrap items-center gap-3 mb-8">
+            <button onClick={onImportData} className={primaryButton}>
+              Import data
             </button>
-          )}
-          <button
-            onClick={onOpenHelp}
-            className="text-sm text-blue-700 hover:text-blue-900 underline underline-offset-2"
-          >
-            Tutorials and guides
-          </button>
-        </div>
+            <button onClick={() => onNavigate('tutorial')} className={secondaryButton}>
+              Tutorial
+            </button>
+          </div>
+        ) : (
+          // The two ways in. Import comes first in the markup, so it is also
+          // first when the cards stack on a phone.
+          <div className="grid gap-4 sm:grid-cols-2 mb-10">
+            <section
+              aria-labelledby="path-import"
+              className="flex flex-col rounded-lg border border-blue-200 bg-blue-50 p-5"
+            >
+              <h2 id="path-import" className="text-base font-semibold text-gray-900">
+                Start with your data
+              </h2>
+              <p className="mt-1 flex-1 text-sm text-gray-600">
+                Import a CSV or Excel file, or paste rows straight from a spreadsheet.
+              </p>
+              <button onClick={onImportData} className={`mt-4 self-start ${primaryButton}`}>
+                Import data
+              </button>
+            </section>
+            <section
+              aria-labelledby="path-tutorial"
+              className="flex flex-col rounded-lg border border-gray-200 bg-white p-5"
+            >
+              <h2 id="path-tutorial" className="text-base font-semibold text-gray-900">
+                New here? Take the tutorial
+              </h2>
+              <p className="mt-1 flex-1 text-sm text-gray-600">
+                Practice on example datasets, with suggested first steps for each one.
+              </p>
+              <button onClick={() => onNavigate('tutorial')} className={`mt-4 self-start ${secondaryButton}`}>
+                Start the tutorial
+              </button>
+            </section>
+          </div>
+        )}
 
         <section className="mb-10">
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide">
-              Datasets
+              Your data
             </h2>
-            {datasets.length > 0 && (
+            {hasOwnData && (
               <span className="text-sm text-gray-500">
-                {datasets.length} dataset{datasets.length !== 1 ? 's' : ''}
+                {ownDatasets.length} dataset{ownDatasets.length !== 1 ? 's' : ''}
               </span>
             )}
           </div>
 
-          {recentDatasets.length > 0 ? (
+          {hasOwnData ? (
             <ul className="border border-gray-200 rounded-md divide-y divide-gray-200">
-              {recentDatasets.map((dataset) => (
+              {ownDatasets.map((dataset) => (
                 <li key={dataset.id} className="flex items-center gap-2 px-4 py-3 hover:bg-gray-50">
                   <button
                     onClick={() => handleDatasetClick(dataset)}
                     // min-w-0 lets the button shrink below its content on a
                     // phone, so a long name truncates instead of pushing the
-                    // badge, date and delete button off the right edge.
+                    // date and delete button off the right edge.
                     className="flex-1 min-w-0 flex items-baseline justify-between gap-4 text-left focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 rounded"
                   >
                     <span className="min-w-0">
-                      <span className="flex items-center gap-2 min-w-0">
-                        <span className="font-medium text-gray-900 truncate">{dataset.name}</span>
-                        {isSampleDataset(dataset.id) && (
-                          <span className="shrink-0 text-xs font-normal text-gray-600 bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
-                            Sample
-                          </span>
-                        )}
-                      </span>
+                      <span className="block font-medium text-gray-900 truncate">{dataset.name}</span>
                       <span className="block text-sm text-gray-500">
                         {dataset.records.length} record{dataset.records.length !== 1 ? 's' : ''}
                         {' · '}
@@ -150,27 +164,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               ))}
             </ul>
           ) : (
-            <p className="text-gray-600 border border-gray-200 rounded-md px-4 py-6">
-              No datasets yet. Import a CSV or Excel file, or open a sample dataset to look around.
+            <p className="text-sm text-gray-600 border border-dashed border-gray-300 rounded-md px-4 py-5">
+              Nothing imported yet. Files you import will be listed here.
             </p>
           )}
         </section>
-
-        {/* Orientation is for a first run only; afterwards the navigation above
-            is the faster route and this is just something to scroll past. */}
-        {datasets.length === 0 && (
-          <section className="mb-10">
-            <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-3">
-              How it works
-            </h2>
-            <ol className="text-gray-700 space-y-2 list-decimal list-inside">
-              <li>Import a CSV or Excel file, or paste straight from a spreadsheet.</li>
-              <li>Review and clean: duplicates, date consistency, ranges, and completeness.</li>
-              <li>Analyze: epi curves, frequencies, cross-tabulations, and 2&times;2 tables.</li>
-              <li>Map and chart the result, then export figures for a report.</li>
-            </ol>
-          </section>
-        )}
 
         <section className="border-t border-gray-200 pt-6 text-sm text-gray-600 space-y-2">
           <p>

@@ -89,6 +89,7 @@ jobs:
           npm run test:coordinates
           npm run test:epicurve-counts
           npm run test:count-column
+          npm run test:sample-datasets
         timeout-minutes: 10
 
       - name: Build
